@@ -1,6 +1,10 @@
 export interface Patient {
   id: string;
   profile_id: string;
+  first_name: string; // ✅ Adicionado para compatibilidade
+  last_name: string;  // ✅ Adicionado para compatibilidade
+  email: string;      // ✅ Adicionado para compatibilidade
+  phone: string;      // ✅ Adicionado para compatibilidade
   date_of_birth: string;
   cpf: string;
   address: string | null;

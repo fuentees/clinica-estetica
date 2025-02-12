@@ -1,9 +1,10 @@
-import { BrowserRouter as Router, Routes, Route} from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/auth/LoginPage';
+import { NotFoundPage } from "./pages/NotFoundPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import { PatientsPage } from './pages/patients/PatientsPage';
 import { PatientFormPage } from './pages/patients/PatientFormPage';
@@ -17,7 +18,7 @@ import { CashFlowPage } from './pages/payments/CashFlowPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 function App() {
-  console.log("🚀 App.tsx carregando!");
+  console.log("🚀 Aplicação carregada!");
 
   return (
     <Router>
@@ -30,13 +31,8 @@ function App() {
             }} 
           />
           <Routes>
-            {/* Rota pública: Login */}
             <Route path="/login" element={<LoginPage />} />
-
-            {/* Rotas protegidas dentro do Layout */}
-            <Route 
-              path="/" 
-              element={
+            <Route path="/" element={
                 <ProtectedRoute>
                   <Layout />
                 </ProtectedRoute>
@@ -53,6 +49,9 @@ function App() {
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="payments" element={<PaymentsPage />} />
               <Route path="payments/cash-flow" element={<CashFlowPage />} />
+
+              {/* Página de erro para rotas inválidas */}
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Routes>
         </AuthProvider>

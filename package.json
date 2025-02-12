@@ -14,6 +14,7 @@
     "@hookform/resolvers": "^3.3.4",
     "@reduxjs/toolkit": "^2.5.1",
     "@sendgrid/mail": "^8.1.0",
+    "@shadcn/ui": "^0.0.4",
     "@stripe/stripe-js": "^2.4.0",
     "@supabase/supabase-js": "^2.39.7",
     "@tanstack/react-query": "^5.24.1",
@@ -31,6 +32,7 @@
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.1.5",
     "react-signature-canvas": "^1.0.6",
+    "recharts": "^2.15.1",
     "tailwind-merge": "^2.2.1",
     "twilio": "^4.20.0",
     "zod": "^3.22.4"

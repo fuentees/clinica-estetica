@@ -1,127 +1,116 @@
+import { useState } from "react";
+import { usePatients } from "../../hooks/usePatients"; // Hook para carregar pacientes
+import { useAppointments } from "../../hooks/useAppointments";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-hot-toast";
-import { supabase } from "../../lib/supabase"; // ✅ Ajustado caminho
-import type { AppointmentFormData } from "../../types/appointment"; // ✅ Ajustado caminho
-import { scheduleAppointmentReminder } from "../../utils/scheduleReminder";
-import { FormEvent, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import toast from "react-hot-toast";
 
 export function AppointmentFormPage() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState<AppointmentFormData>({
-    patient_id: "",
-    professional_id: "",
-    treatment_id: "",
-    start_time: "",
-    end_time: "",
-  });
+  const { data: patients, isLoading: loadingPatients } = usePatients(); // Obtém pacientes cadastrados
+  const { data: appointments } = useAppointments();
+  const [patientId, setPatientId] = useState(""); // Estado para armazenar o paciente selecionado
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false); // Previne envios duplicados
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); // ✅ Agora é um evento de formulário válido
-
-    try {
-      console.log("🚀 Enviando dados para criar consulta:", formData);
-
-      const { data: appointment, error } = await supabase
-        .from("appointments")
-        .insert({
-          ...formData,
-          status: "scheduled",
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Enviar lembrete para o paciente (se necessário)
-      await scheduleAppointmentReminder(appointment);
-
-      toast.success("Consulta agendada com sucesso!");
-      navigate("/appointments");
-    } catch (error) {
-      console.error("❌ Erro ao salvar consulta:", error);
-      toast.error("Erro ao salvar a consulta. Tente novamente.");
+    if (!patientId || !startTime || !endTime) {
+      toast.error("Por favor, preencha todos os campos obrigatórios.");
+      return;
     }
+
+    setIsSubmitting(true); // Evita envios duplicados
+
+    console.log("Enviando consulta com:", { patientId, startTime, endTime, notes });
+
+    const { error } = await supabase
+      .from("appointments")
+      .insert([{ patient_id: patientId, start_time: startTime, end_time: endTime, notes }]);
+
+    if (error) {
+      console.error("❌ Erro ao salvar consulta:", error);
+      toast.error("Erro ao agendar consulta. Tente novamente.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    toast.success("✅ Consulta salva com sucesso!");
+    navigate("/appointments");
   };
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold">📅 Agendar Consulta</h1>
-      <p className="text-gray-600">Preencha os dados abaixo para criar uma nova consulta.</p>
-
-      <form onSubmit={onSubmit} className="max-w-2xl space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Paciente</label>
-            <input
-              type="text"
-              name="patient_id"
-              value={formData.patient_id}
-              onChange={handleChange}
-              className="w-full border rounded px-3 py-2"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Profissional</label>
-            <input
-              type="text"
-              name="professional_id"
-              value={formData.professional_id}
-              onChange={handleChange}
-              className="w-full border rounded px-3 py-2"
-              required
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Tratamento</label>
-            <input
-              type="text"
-              name="treatment_id"
-              value={formData.treatment_id}
-              onChange={handleChange}
-              className="w-full border rounded px-3 py-2"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Data</label>
-            <input
-              type="date"
-              name="start_time"
-              value={formData.start_time}
-              onChange={handleChange}
-              className="w-full border rounded px-3 py-2"
-              required
-            />
-          </div>
-        </div>
-
+      <h1 className="text-2xl font-bold mb-6">📅 Agendar Consulta</h1>
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Dropdown para selecionar o paciente */}
         <div>
-          <label className="block text-sm font-medium text-gray-700">Hora de término</label>
-          <input
-            type="time"
-            name="end_time"
-            value={formData.end_time}
-            onChange={handleChange}
-            className="w-full border rounded px-3 py-2"
+          <label className="block text-sm font-medium">Paciente *</label>
+          <select
+            value={patientId}
+            onChange={(e) => setPatientId(e.target.value)}
+            className="w-full p-2 border rounded"
             required
+            disabled={loadingPatients}
+          >
+            <option value="">Selecione um paciente</option>
+            {loadingPatients ? (
+              <option>Carregando pacientes...</option>
+            ) : (
+              patients?.map((patient) => (
+                <option key={patient.id} value={patient.id}>
+                  {patient.first_name} {patient.last_name}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+
+        {/* Campo de Data e Hora de Início */}
+        <div>
+          <label className="block text-sm font-medium">Início *</label>
+          <Input
+            type="datetime-local"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            required
+            disabled={isSubmitting}
           />
         </div>
 
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-        >
-          Agendar Consulta
-        </button>
+        {/* Campo de Data e Hora de Término */}
+        <div>
+          <label className="block text-sm font-medium">Término *</label>
+          <Input
+            type="datetime-local"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+            required
+            disabled={isSubmitting}
+          />
+        </div>
+
+        {/* Notas */}
+        <div>
+          <label className="block text-sm font-medium">Notas</label>
+          <textarea
+            className="w-full p-2 border rounded"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            disabled={isSubmitting}
+          ></textarea>
+        </div>
+
+        {/* Botão de salvar */}
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Salvando..." : "Salvar Consulta"}
+        </Button>
       </form>
     </div>
   );

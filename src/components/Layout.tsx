@@ -1,18 +1,9 @@
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import {
-  Calendar,
-  Users,
-  Package,
-  ClipboardList,
-  LogOut,
-  Menu,
-  X,
-  DollarSign,
-  TrendingUp,
-  Sun,
-  Moon
+  Calendar, Users, Package, ClipboardList, LogOut,
+  Menu, X, DollarSign, TrendingUp, Sun, Moon
 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from './ui/button';
@@ -30,6 +21,7 @@ export function Layout() {
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const filteredNavigation = navigation.filter(
@@ -77,6 +69,21 @@ export function Layout() {
               );
             })}
           </nav>
+
+          {/* Botão de Logout */}
+          <div className="p-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                signOut();
+                navigate('/login'); // Redireciona após logout
+              }}
+              className="w-full flex items-center text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
+            >
+              <LogOut className="mr-2 w-4 h-4" />
+              Sair
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -89,4 +96,3 @@ export function Layout() {
     </div>
   );
 }
-

@@ -1,12 +1,41 @@
 import { Plus, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
+import { supabase } from '../../lib/supabase';
 import { PatientList } from './components/PatientList';
+import type { Patient } from "../../types/patient";
 
 export function PatientsPage() {
   const [search, setSearch] = useState('');
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchPatients() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, profile_id, first_name, last_name, email, phone, date_of_birth, cpf, address, medical_history, allergies, created_at, updated_at')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Erro ao carregar pacientes:', error);
+      } else {
+        setPatients(data as Patient[] || []);
+      }
+      setLoading(false);
+    }
+
+    fetchPatients();
+  }, []);
+
+  const filteredPatients = patients.filter((patient) =>
+    `${patient.first_name ?? ''} ${patient.last_name ?? ''}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  );
 
   return (
     <div className="p-6">
@@ -33,7 +62,11 @@ export function PatientsPage() {
         </div>
       </div>
 
-      <PatientList searchTerm={search} />
+      {loading ? (
+        <p className="text-gray-500">Carregando pacientes...</p>
+      ) : (
+        <PatientList patients={filteredPatients} />
+      )}
     </div>
   );
 }

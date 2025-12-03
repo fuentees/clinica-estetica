@@ -1,54 +1,80 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
-// Definindo os tipos de permissão
-export type UserRole = 'admin' | 'medico' | 'paciente';
+// Definição de cargos (deve ser compatível com as correções que fizemos)
+export type UserRole = 'admin' | 'medico' | 'paciente' | 'professional' | 'recepcionista' | 'doutor';
 
-// Definindo como é o perfil do usuário no banco
 export interface UserProfile {
   id: string;
   email: string;
-  full_name: string;
+  first_name: string;
+  last_name: string;
   role: UserRole;
 }
 
 interface AuthContextType {
-  user: SupabaseUser | null;     // Usuário técnico do Auth (email, id, last_sign_in)
-  profile: UserProfile | null;   // Dados do banco (nome, role/função)
-  loading: boolean;
+  user: SupabaseUser | null;     // Usuário do Supabase (dados técnicos)
+  profile: UserProfile | null;   // Dados do Perfil (nome, role)
+  loading: boolean;              // Estado de carregamento
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    console.log("🔄 Verificando sessão...");
+  // Função auxiliar para buscar o perfil do usuário
+  async function fetchUserProfile(userId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*, first_name, last_name')
+        .eq('id', userId)
+        .single();
 
-    // 1. Checa sessão atual
+      if (error) throw error;
+      
+      // Mapeia o perfil para a interface
+      setProfile({
+          id: data.id,
+          email: data.email,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          role: data.role as UserRole
+      });
+    } catch (error) {
+      console.error('❌ Erro ao buscar perfil:', error);
+      setProfile(null);
+    }
+  }
+
+  useEffect(() => {
+    // 1. Verifica sessão inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchUserProfile(currentUser.id).finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
     });
 
-    // 2. Ouve mudanças (Login/Logout em outras abas, etc)
+    // 2. Escuta mudanças (login, logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      
+      if (currentUser) {
+        fetchUserProfile(currentUser.id).finally(() => setLoading(false));
       } else {
         setProfile(null);
         setLoading(false);
@@ -58,69 +84,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function fetchUserProfile(userId: string) {
-    try {
-      // Busca dados na tabela 'profiles'
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        console.error('Erro ao buscar perfil:', error);
-        // Se der erro (ex: perfil não criado), definimos null mas não deslogamos
-        setProfile(null); 
-      } else {
-        console.log("✅ Perfil carregado:", data);
-        setProfile(data as UserProfile);
-      }
-    } catch (error) {
-      console.error('❌ Erro inesperado ao buscar perfil:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const signIn = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       
-      console.log("✅ Login técnico ok. Buscando perfil para redirecionar...");
-      
-      // Precisamos buscar o perfil AGORA para saber para onde mandar
       if (data.user) {
-        const { data: profileData, error: profileError } = await supabase
+        // Busca o perfil para redirecionar corretamente
+        const { data: profileData } = await supabase
           .from('profiles')
-          .select('*')
+          .select('role, first_name')
           .eq('id', data.user.id)
           .single();
 
-        if (profileError || !profileData) {
-          toast.error("Perfil de usuário não encontrado.");
-          return;
-        }
-
-        // --- AQUI ESTÁ A MÁGICA DO REDIRECIONAMENTO ---
-        const userRole = profileData.role as UserRole;
+        const userRole = profileData?.role as UserRole;
         
         if (userRole === 'paciente') {
-          navigate('/portal'); // Manda paciente para o site dele
-          toast.success(`Bem-vindo, ${profileData.full_name || 'Paciente'}!`);
+          navigate('/portal');
+          toast.success(`Bem-vindo(a), ${profileData?.first_name || 'Cliente'}!`);
         } else {
-          navigate('/'); // Manda Admin/Médico para o Dashboard
-          toast.success(`Bem-vindo ao sistema, ${profileData.full_name}!`);
+          navigate('/');
+          toast.success(`Bem-vindo(a), ${profileData?.first_name || 'Admin'}!`);
         }
       }
 
     } catch (error: any) {
       console.error('❌ Erro ao fazer login:', error);
-      toast.error('Erro ao entrar: ' + (error.message || 'Verifique seus dados'));
+      // Aqui usamos o código do erro para dar um toast mais amigável
+      const errorMessage = error.message || 'Erro de conexão ou credenciais.';
+      if (errorMessage.includes('Invalid login credentials')) {
+           toast.error('Credenciais inválidas.');
+      } else {
+           toast.error('Erro ao entrar: ' + errorMessage);
+      }
+      throw error;
     }
   };
 
@@ -131,22 +128,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       navigate('/login');
       toast.success('Você saiu do sistema.');
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Erro ao sair.');
+      throw error;
     }
   };
 
-  return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value: AuthContextType = {
+    user,
+    profile,
+    loading,
+    signIn,
+    signOut,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth deve ser usado dentro de um AuthProvider');
   }
   return context;
-}
+};

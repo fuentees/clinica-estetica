@@ -1,15 +1,19 @@
-import { useState, useEffect } from "react";
-import { Calendar, dateFnsLocalizer, EventPropGetter } from "react-big-calendar";
-import { format, parse, startOfWeek, getDay } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { Link } from "react-router-dom";
-import { Button } from "../../components/ui/button";
-import { useAppointments } from "../../hooks/useAppointments";
-import { Modal } from "../../components/ui/modal";
-import "react-big-calendar/lib/css/react-big-calendar.css";
-import type { Appointment } from "../../types/appointment";
+import { useState, useEffect } from 'react';
+import { Calendar, dateFnsLocalizer, View, Views } from 'react-big-calendar';
+// --- CORREÇÃO DOS IMPORTS DATE-FNS ---
+import { format, parse, startOfWeek, getDay } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+// --------------------------------------
+import { supabase } from '../../lib/supabase';
+import { Link, useNavigate } from 'react-router-dom';
+import { Plus, Loader2 } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { toast } from 'react-hot-toast';
 
-const locales = { "pt-BR": ptBR };
+// Configuração de idioma (Português)
+const locales = {
+  'pt-BR': ptBR,
+};
 
 const localizer = dateFnsLocalizer({
   format,
@@ -19,101 +23,141 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
+// Interface do Evento
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  resource?: any;
+}
+
 export function AppointmentsPage() {
-  const [date, setDate] = useState(new Date());
-  const { data: appointments, isLoading, error } = useAppointments();
-  const [selectedEvent, setSelectedEvent] = useState<Appointment | null>(null);
+  const navigate = useNavigate();
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<View>(Views.WEEK); // Começa na visão Semanal
 
   useEffect(() => {
-    console.log("Compromissos recebidos:", appointments);
-  }, [appointments]);
+    fetchAppointments();
+  }, []);
 
-  if (error) {
-    return (
-      <div className="p-6 bg-red-100 border border-red-400 text-red-700 rounded-md">
-        <h1 className="text-2xl font-bold">Erro ao carregar a agenda ❌</h1>
-        <p>Não foi possível carregar os compromissos. Tente novamente mais tarde.</p>
-      </div>
-    );
+  async function fetchAppointments() {
+    try {
+      setLoading(true);
+      
+      // Busca agendamentos com dados do paciente e tratamento
+      const { data, error } = await supabase
+        .from('appointments')
+        .select(`
+          id,
+          start_time,
+          end_time,
+          status,
+          patients ( first_name, last_name ),
+          treatments ( name )
+        `);
+
+      if (error) throw error;
+
+      // Transforma os dados do Supabase para o formato do Calendário
+      const formattedEvents: CalendarEvent[] = (data || []).map((appt: any) => ({
+        id: appt.id,
+        title: `${appt.patients?.first_name || 'Paciente'} - ${appt.treatments?.name || 'Consulta'}`,
+        start: new Date(appt.start_time),
+        end: new Date(appt.end_time),
+        resource: { status: appt.status }
+      }));
+
+      setEvents(formattedEvents);
+
+    } catch (error) {
+      console.error('Erro ao buscar agenda:', error);
+      toast.error('Erro ao carregar agenda.');
+    } finally {
+      setLoading(false);
+    }
   }
 
-  const events =
-    appointments?.map((appointment) => ({
-      id: appointment.id,
-      title: `${appointment.patient?.first_name || "Paciente"} - ${appointment.treatment?.name || "Sem Tratamento"}`,
-      start: appointment.start_time ? new Date(appointment.start_time) : new Date(),
-      end: appointment.end_time ? new Date(appointment.end_time) : new Date(),
-      resource: appointment,
-    })) || [];
+  // Estilização condicional dos eventos (Cores por status)
+  const eventStyleGetter = (event: CalendarEvent) => {
+    let backgroundColor = '#3b82f6'; // Azul padrão
+    
+    if (event.resource?.status === 'completed') backgroundColor = '#22c55e'; // Verde
+    if (event.resource?.status === 'cancelled') backgroundColor = '#ef4444'; // Vermelho
+    if (event.resource?.status === 'waiting') backgroundColor = '#f59e0b'; // Laranja
 
-  const eventStyleGetter: EventPropGetter<any> = () => {
     return {
       style: {
-        backgroundColor: "#3b82f6",
-        color: "white",
-        borderRadius: "5px",
-        padding: "5px",
-      },
+        backgroundColor,
+        borderRadius: '4px',
+        opacity: 0.8,
+        color: 'white',
+        border: '0px',
+        display: 'block'
+      }
     };
   };
 
-  return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">📅 Agenda</h1>
+  const handleSelectSlot = (slotInfo: { start: Date; end: Date }) => {
+    // Ao clicar num horário vazio, vai para a criação já com a data pré-selecionada
+    navigate(`/appointments/new?date=${slotInfo.start.toISOString()}`);
+  };
 
-      <div className="flex justify-between mb-4">
+  const handleSelectEvent = (event: CalendarEvent) => {
+    // Ao clicar no evento, mostra quem é
+    toast(`Paciente: ${event.title}`);
+  };
+
+  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600" /></div>;
+
+  return (
+    <div className="p-6 h-screen flex flex-col space-y-4">
+      
+      {/* Cabeçalho */}
+      <div className="flex justify-between items-center mb-2">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Agenda</h1>
         <Link to="/appointments/new">
-          <Button variant="primary">➕ Nova Consulta</Button>
+          <Button className="bg-pink-600 hover:bg-pink-700 text-white flex items-center gap-2">
+            <Plus size={18} /> Novo Agendamento
+          </Button>
         </Link>
       </div>
 
-      {isLoading ? (
-        <p className="text-gray-500">Carregando agenda...</p>
-      ) : events.length === 0 ? (
-        <p className="text-gray-500">Nenhum compromisso encontrado.</p>
-      ) : (
+      {/* O Calendário */}
+      <div className="flex-1 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
         <Calendar
           localizer={localizer}
           events={events}
           startAccessor="start"
           endAccessor="end"
-          style={{ height: "calc(100vh - 250px)", borderRadius: "8px" }}
-          date={date}
-          onNavigate={setDate}
-          defaultView="week"
-          views={["month", "week", "day"]}
-          step={30}
-          timeslots={2}
+          style={{ height: '100%', minHeight: '500px' }}
           culture="pt-BR"
           messages={{
-            today: "Hoje",
-            previous: "Anterior",
             next: "Próximo",
+            previous: "Anterior",
+            today: "Hoje",
             month: "Mês",
             week: "Semana",
             day: "Dia",
-            agenda: "Agenda",
+            agenda: "Lista",
+            date: "Data",
+            time: "Hora",
+            event: "Evento",
+            noEventsInRange: "Sem agendamentos neste período."
           }}
+          defaultView={Views.WEEK} // Visão padrão: Semana
+          views={['month', 'week', 'day', 'agenda']} // Opções de visão
+          view={view} // Estado controlado da visão
+          onView={setView} // Atualiza estado ao trocar visão
+          selectable
+          onSelectSlot={handleSelectSlot}
+          onSelectEvent={handleSelectEvent}
           eventPropGetter={eventStyleGetter}
-          onSelectEvent={(event) => setSelectedEvent(event.resource || null)}
+          min={new Date(0, 0, 0, 8, 0, 0)} // Começa a mostrar às 08:00
+          max={new Date(0, 0, 0, 20, 0, 0)} // Termina de mostrar às 20:00
         />
-      )}
-
-      {selectedEvent && (
-        <Modal onClose={() => setSelectedEvent(null)} title="Detalhes da Consulta">
-          <p>
-            <strong>Paciente:</strong> {selectedEvent.patient?.first_name} {selectedEvent.patient?.last_name}
-          </p>
-          <p><strong>Tratamento:</strong> {selectedEvent.treatment?.name}</p>
-          <p>
-            <strong>Início:</strong> {selectedEvent.start_time ? format(new Date(selectedEvent.start_time), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "Não informado"}
-          </p>
-          <p>
-            <strong>Término:</strong> {selectedEvent.end_time ? format(new Date(selectedEvent.end_time), "dd/MM/yyyy HH:mm", { locale: ptBR }) : "Não informado"}
-          </p>
-          <p><strong>Observações:</strong> {selectedEvent.notes || "Nenhuma"}</p>
-        </Modal>
-      )}
+      </div>
     </div>
   );
 }

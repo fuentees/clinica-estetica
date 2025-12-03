@@ -3,28 +3,25 @@ import { Toaster } from "react-hot-toast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // --- CONTEXTOS ---
-import { AuthProvider } from "./contexts/AuthContext";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { AuthProvider } from "./contexts/AuthContext"; 
+import { ThemeProvider } from "./contexts/ThemeContext"; 
 
-// --- LAYOUTS (Onde fica o Menu Lateral) ---
+// --- LAYOUTS (Menu) ---
 import { Layout } from "./components/Layout";
 import { PatientLayout } from "./components/layouts/PatientLayout";
 
 // --- GUARDIÃO DE ROTAS ---
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
-// --- PÁGINAS ---
+// --- PÁGINAS GERAIS ---
 import { LoginPage } from "./pages/auth/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 
-// IMPORTANTE: Verifique se este caminho está exato no seu computador!
-// Se sua pasta for "Dashboard" (maiúsculo) ou não tiver pasta, avise.
+// --- PÁGINAS ADMINISTRATIVAS ---
 import DashboardPage from "./pages/dashboard/DashboardPage"; 
-
 import { PatientsPage } from "./pages/patients/PatientsPage";
 import { PatientFormPage } from "./pages/patients/PatientFormPage";
 import { PatientHistoryPage } from "./pages/patients/PatientHistoryPage";
-import { TreatmentTrackingPage } from "./pages/treatments/TreatmentTrackingPage";
 import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
 import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
@@ -32,6 +29,10 @@ import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage";
 import { InventoryPage } from "./pages/inventory/InventoryPage";
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
 import { CashFlowPage } from "./pages/payments/CashFlowPage";
+
+// --- NOVAS PÁGINAS DE PROFISSIONAIS ---
+import { ProfessionalsPage } from "./pages/professionals/ProfessionalsPage"; 
+import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage.tsx"; 
 
 // Portal do Paciente
 import PatientHome from "./pages/patients/PatientHome";
@@ -50,28 +51,34 @@ function App() {
               {/* === ROTA PÚBLICA === */}
               <Route path="/login" element={<LoginPage />} />
 
-              {/* === 🏥 ÁREA DA CLÍNICA (Admin e Médicos) === */}
-              {/* 1. Protege a rota (só logado entra) */}
-              <Route element={<ProtectedRoute allowedRoles={['admin', 'medico']} />}>
+              {/* === 🏥 ÁREA DA CLÍNICA (Protegida) === */}
+              {/* Rotas acessíveis por administradores, médicos e staff */}
+              <Route element={<ProtectedRoute allowedRoles={['admin', 'medico', 'professional', 'recepcionista', 'doutor']} />}>
                 
-                {/* 2. Aplica o LAYOUT (Aqui que o Menu Lateral é inserido!) */}
                 <Route element={<Layout />}>
                   
-                  {/* 3. As páginas aparecem DENTRO do Layout */}
                   <Route path="/" element={<DashboardPage />} />
                   
+                  {/* Agendamentos */}
                   <Route path="appointments" element={<AppointmentsPage />} />
                   <Route path="appointments/new" element={<AppointmentFormPage />} />
                   
+                  {/* Pacientes */}
                   <Route path="patients" element={<PatientsPage />} />
                   <Route path="patients/new" element={<PatientFormPage />} />
                   <Route path="patients/:id/edit" element={<PatientFormPage />} />
                   <Route path="patients/:id/history" element={<PatientHistoryPage />} />
-                  <Route path="patients/:id/treatments" element={<TreatmentTrackingPage />} />
                   
+                  {/* Tratamentos */}
                   <Route path="treatments" element={<TreatmentsPage />} />
                   <Route path="treatments/new" element={<TreatmentFormPage />} />
+
+                  {/* PROFISSIONAIS (LISTA E FORMULÁRIO) */}
+                  <Route path="professionals" element={<ProfessionalsPage />} />
+                  <Route path="professionals/new" element={<ProfessionalFormPage />} />
+                  <Route path="professionals/:id/edit" element={<ProfessionalFormPage />} />
                   
+                  {/* Estoque e Financeiro */}
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />

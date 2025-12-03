@@ -9,7 +9,8 @@ import {
   DollarSign, 
   LogOut, 
   Menu, 
-  X 
+  X,
+  Stethoscope // Ícone para Profissionais
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -21,10 +22,12 @@ export function Layout() {
 
   const isActive = (path: string) => location.pathname === path;
 
+  // Lista de itens do menu com ícones e labels
   const menuItems = [
     { path: '/', icon: LayoutDashboard, label: 'Visão Geral' },
     { path: '/appointments', icon: Calendar, label: 'Agenda' },
     { path: '/patients', icon: Users, label: 'Pacientes' },
+    { path: '/professionals', icon: Stethoscope, label: 'Profissionais' }, 
     { path: '/treatments', icon: Activity, label: 'Tratamentos' },
     { path: '/inventory', icon: Package, label: 'Estoque' },
     { path: '/payments', icon: DollarSign, label: 'Financeiro' },
@@ -51,13 +54,13 @@ export function Layout() {
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="flex flex-col h-full">
-          {/* Logo */}
+          {/* Logo da Clínica */}
           <div className="h-16 flex items-center px-6 border-b border-gray-100">
             <Activity className="h-8 w-8 text-pink-600 mr-2" />
             <span className="text-xl font-bold text-gray-800">Estética</span>
           </div>
 
-          {/* Info do Usuário */}
+          {/* Info do Usuário Logado */}
           <div className="p-4 border-b border-gray-100 bg-gray-50">
             <p className="text-sm font-medium text-gray-900 truncate">
               {profile?.full_name || 'Usuário'}
@@ -99,7 +102,7 @@ export function Layout() {
         </div>
       </aside>
 
-      {/* CONTEÚDO PRINCIPAL (Onde vai o Dashboard) */}
+      {/* CONTEÚDO PRINCIPAL */}
       <main className="flex-1 overflow-y-auto h-full w-full bg-gray-50">
         <Outlet />
       </main>

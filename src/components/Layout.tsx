@@ -1,98 +1,108 @@
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
-import {
-  Calendar, Users, Package, ClipboardList, LogOut,
-  Menu, X, DollarSign, TrendingUp, Sun, Moon
-} from 'lucide-react';
 import { useState } from 'react';
-import { Button } from './ui/button';
-
-const navigation = [
-  { name: 'Agenda', href: '/appointments', icon: Calendar, roles: ['admin', 'professional', 'receptionist'] },
-  { name: 'Pacientes', href: '/patients', icon: Users, roles: ['admin', 'professional', 'receptionist'] },
-  { name: 'Tratamentos', href: '/treatments', icon: ClipboardList, roles: ['admin', 'professional'] },
-  { name: 'Estoque', href: '/inventory', icon: Package, roles: ['admin', 'receptionist'] },
-  { name: 'Pagamentos', href: '/payments', icon: DollarSign, roles: ['admin', 'receptionist'] },
-  { name: 'Fluxo de Caixa', href: '/payments/cash-flow', icon: TrendingUp, roles: ['admin'] },
-];
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { 
+  LayoutDashboard, 
+  Users, 
+  Calendar, 
+  Activity, 
+  Package, 
+  DollarSign, 
+  LogOut, 
+  Menu, 
+  X 
+} from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export function Layout() {
-  const { user, signOut } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+  const { signOut, profile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const filteredNavigation = navigation.filter(
-    item => item.roles.includes(user?.role || '')
-  );
+  const isActive = (path: string) => location.pathname === path;
+
+  const menuItems = [
+    { path: '/', icon: LayoutDashboard, label: 'Visão Geral' },
+    { path: '/appointments', icon: Calendar, label: 'Agenda' },
+    { path: '/patients', icon: Users, label: 'Pacientes' },
+    { path: '/treatments', icon: Activity, label: 'Tratamentos' },
+    { path: '/inventory', icon: Package, label: 'Estoque' },
+    { path: '/payments', icon: DollarSign, label: 'Financeiro' },
+  ];
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/login');
+  };
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-dark-bg">
-      <a href="#main-content" className="skip-to-content">
-        Pular para o conteúdo principal
-      </a>
+    <div className="flex h-screen bg-gray-50">
+      {/* Botão Mobile (Só aparece em telas pequenas) */}
+      <button 
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md text-gray-700"
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+      >
+        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
 
-      {/* Mobile menu */}
-      <div className="lg:hidden">
-        <div className="flex items-center justify-between p-4 bg-white dark:bg-dark-surface shadow">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300"
-            aria-label={sidebarOpen ? "Fechar menu" : "Abrir menu"}
-          >
-            {sidebarOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
-          <span className="text-lg font-semibold dark:text-dark-text">Clínica Estética</span>
-          <Button variant="ghost" size="sm" onClick={toggleTheme}>
-            {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-          </Button>
-        </div>
-      </div>
+      {/* MENU LATERAL (Sidebar) */}
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
+        <div className="flex flex-col h-full">
+          {/* Logo */}
+          <div className="h-16 flex items-center px-6 border-b border-gray-100">
+            <Activity className="h-8 w-8 text-pink-600 mr-2" />
+            <span className="text-xl font-bold text-gray-800">Estética</span>
+          </div>
 
-      {/* Desktop sidebar */}
-      <div className="hidden lg:flex lg:w-64 lg:fixed lg:inset-y-0">
-        <div className="flex flex-col flex-grow bg-white dark:bg-dark-surface pt-5 pb-4 overflow-y-auto">
-          <nav className="mt-5 flex-1 px-2 space-y-1">
-            {filteredNavigation.map((item) => {
-              const isActive = location.pathname === item.href;
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`${isActive ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white'} group flex items-center px-2 py-2 text-sm font-medium rounded-md`}
-                >
-                  <item.icon className="mr-3 h-6 w-6" />
-                  {item.name}
-                </Link>
-              );
-            })}
+          {/* Info do Usuário */}
+          <div className="p-4 border-b border-gray-100 bg-gray-50">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {profile?.full_name || 'Usuário'}
+            </p>
+            <p className="text-xs text-gray-500 capitalize">
+              {profile?.role || 'Admin'}
+            </p>
+          </div>
+
+          {/* Links de Navegação */}
+          <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+            {menuItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                  isActive(item.path)
+                    ? 'bg-pink-50 text-pink-700'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                <item.icon className="mr-3 h-5 w-5" />
+                {item.label}
+              </Link>
+            ))}
           </nav>
 
-          {/* Botão de Logout */}
-          <div className="p-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                signOut();
-                navigate('/login'); // Redireciona após logout
-              }}
-              className="w-full flex items-center text-red-600 border-red-600 hover:bg-red-600 hover:text-white"
+          {/* Botão Sair */}
+          <div className="p-4 border-t border-gray-100">
+            <button
+              onClick={handleSignOut}
+              className="flex items-center w-full px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
             >
-              <LogOut className="mr-2 w-4 h-4" />
+              <LogOut className="mr-3 h-5 w-5" />
               Sair
-            </Button>
+            </button>
           </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Main content */}
-      <div className="lg:pl-64 flex flex-col flex-1">
-        <main id="main-content" className="flex-1 focus:outline-none">
-          <Outlet />
-        </main>
-      </div>
+      {/* CONTEÚDO PRINCIPAL (Onde vai o Dashboard) */}
+      <main className="flex-1 overflow-y-auto h-full w-full bg-gray-50">
+        <Outlet />
+      </main>
     </div>
   );
 }

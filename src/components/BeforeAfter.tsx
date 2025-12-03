@@ -14,19 +14,19 @@ export function BeforeAfter({
   labelAfter = "Depois" 
 }: BeforeAfterProps) {
   return (
-    <div className="rounded-xl overflow-hidden shadow-xl border-4 border-white">
+    <div className="rounded-xl overflow-hidden shadow-xl border-4 border-white h-full">
       <ReactCompareSlider
         itemOne={
-          <div className="relative">
-            <ReactCompareSliderImage src={beforeImage} alt="Antes" />
+          <div className="relative h-full">
+            <ReactCompareSliderImage src={beforeImage} alt="Antes" style={{ height: '100%', objectFit: 'cover' }} />
             <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded-full text-sm font-medium backdrop-blur-sm">
               {labelBefore}
             </div>
           </div>
         }
         itemTwo={
-          <div className="relative">
-            <ReactCompareSliderImage src={afterImage} alt="Depois" />
+          <div className="relative h-full">
+            <ReactCompareSliderImage src={afterImage} alt="Depois" style={{ height: '100%', objectFit: 'cover' }} />
             <div className="absolute top-4 right-4 bg-pink-600/80 text-white px-3 py-1 rounded-full text-sm font-medium backdrop-blur-sm">
               {labelAfter}
             </div>

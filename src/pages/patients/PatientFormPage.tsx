@@ -74,6 +74,28 @@ const patientSchema = z.object({
   uso_anticoncepcional: z.boolean().optional(),
   historico_queloide: z.boolean().optional(),
 
+  // Segurança / contraindicações específicas
+  historico_trombose: z.boolean().optional(),
+  uso_anticoagulante: z.boolean().optional(),
+  doenca_cardiaca_grave: z.boolean().optional(),
+  marcapasso: z.boolean().optional(),
+  protese_metalica: z.boolean().optional(),
+  epilepsia: z.boolean().optional(),
+  historico_cancer_recente: z.boolean().optional(),
+  neuropatia_periferica: z.boolean().optional(),
+
+  // Medicamentos em uso
+  uso_corticoide: z.boolean().optional(),
+  uso_imunossupressor: z.boolean().optional(),
+  uso_hormonio: z.boolean().optional(),
+  medicamentos_em_uso: z.string().optional(),
+
+  // Vascular / linfático
+  inchaco_pernas: z.boolean().optional(),
+  varizes_importantes: z.boolean().optional(),
+  historico_erisipela: z.boolean().optional(),
+  sensacao_peso_pernas: z.boolean().optional(),
+
   // D. Anamnese Estética (Arrays)
   queixa_principal: z.array(z.string()).optional(),
   objetivo_paciente: z.string().optional(),
@@ -82,7 +104,17 @@ const patientSchema = z.object({
   exposicao_solar: z.string().optional(),
   uso_isotretinoina: z.boolean().optional(),
 
-  // E. Classificações Estéticas (Novos Campos)
+  // Skincare
+  usa_sabonete_especifico: z.boolean().optional(),
+  usa_hidratante: z.boolean().optional(),
+  usa_acidos: z.boolean().optional(),
+  detalhes_acidos: z.string().optional(),
+  uso_protetor_solar: z.string().optional(),
+
+  // Procedimentos prévios
+  procedimentos_previos: z.string().optional(),
+
+  // E. Classificações Estéticas
   fototipo: z.enum(FITZPATRICK_OPTIONS as [string, ...string[]]).optional(),
   biotipo_cutaneo: z.enum(BIOTIPO_OPTIONS as [string, ...string[]]).optional(),
   flacidez_corporal: z.enum(GRAU_OPTIONS as [string, ...string[]]).optional(),
@@ -91,6 +123,26 @@ const patientSchema = z.object({
   // Texto livre
   observacoes_saude: z.string().optional(),
   cirurgias_previas: z.string().optional(),
+
+  // Expectativa / adesão
+  expectativa_resultado: z
+    .enum(["discreto", "visivel_progressivo", "rapido_intenso"])
+    .optional(),
+  adesao_cuidados: z.enum(["alta", "moderada", "baixa"]).optional(),
+
+  // Prioridades de áreas
+  prioridade_area_1: z.string().optional(),
+  prioridade_area_2: z.string().optional(),
+  prioridade_area_3: z.string().optional(),
+
+  // Radar de risco (preenchido manualmente)
+  risco_geral: z.enum(["baixo", "moderado", "alto"]).optional(),
+  risco_eletro: z.enum(["baixo", "moderado", "alto"]).optional(),
+  perfil_aderencia: z.enum(["baixo", "moderado", "alto"]).optional(),
+
+  // Consentimento de imagens
+  consent_uso_clinico: z.boolean().optional(),
+  consent_uso_marketing: z.boolean().optional(),
 
   apto_status: z
     .enum(["Apto", "Apto com ressalvas", "Não apto"], {
@@ -186,7 +238,7 @@ export function PatientFormPage() {
         setValue("phone", data.profiles.phone ?? "");
       }
 
-      // Dados específicos do paciente
+      // Dados básicos
       setValue("cpf", data.cpf);
       setValue("rg", data.rg ?? "");
       setValue("date_of_birth", data.date_of_birth);
@@ -194,11 +246,42 @@ export function PatientFormPage() {
       setValue("profissao", data.profissao ?? "");
       setValue("sexo", data.sexo ?? "");
 
+      // Booleans de saúde e segurança
       setValue("gestante", data.gestante ?? false);
       setValue("lactante", data.lactante ?? false);
       setValue("uso_anticoncepcional", data.uso_anticoncepcional ?? false);
       setValue("historico_queloide", data.historico_queloide ?? false);
-      setValue("uso_isotretinoina", data.uso_isotretinoina ?? false);
+
+      setValue("historico_trombose", data.historico_trombose ?? false);
+      setValue("uso_anticoagulante", data.uso_anticoagulante ?? false);
+      setValue("doenca_cardiaca_grave", data.doenca_cardiaca_grave ?? false);
+      setValue("marcapasso", data.marcapasso ?? false);
+      setValue("protese_metalica", data.protese_metalica ?? false);
+      setValue("epilepsia", data.epilepsia ?? false);
+      setValue(
+        "historico_cancer_recente",
+        data.historico_cancer_recente ?? false
+      );
+      setValue("neuropatia_periferica", data.neuropatia_periferica ?? false);
+
+      setValue("uso_corticoide", data.uso_corticoide ?? false);
+      setValue("uso_imunossupressor", data.uso_imunossupressor ?? false);
+      setValue("uso_hormonio", data.uso_hormonio ?? false);
+      setValue("medicamentos_em_uso", data.medicamentos_em_uso ?? "");
+
+      setValue("inchaco_pernas", data.inchaco_pernas ?? false);
+      setValue("varizes_importantes", data.varizes_importantes ?? false);
+      setValue("historico_erisipela", data.historico_erisipela ?? false);
+      setValue("sensacao_peso_pernas", data.sensacao_peso_pernas ?? false);
+
+      // Estética / hábitos
+      setValue("usa_sabonete_especifico", data.usa_sabonete_especifico ?? false);
+      setValue("usa_hidratante", data.usa_hidratante ?? false);
+      setValue("usa_acidos", data.usa_acidos ?? false);
+      setValue("detalhes_acidos", data.detalhes_acidos ?? "");
+      setValue("uso_protetor_solar", data.uso_protetor_solar ?? "");
+
+      setValue("procedimentos_previos", data.procedimentos_previos ?? "");
 
       setValue("apto_status", data.apto_status ?? "Apto");
       setValue("observacoes_saude", data.observacoes_saude ?? "");
@@ -210,7 +293,7 @@ export function PatientFormPage() {
       setValue("flacidez_corporal", data.flacidez_corporal ?? undefined);
       setValue("celulite_grau", data.celulite_grau ?? undefined);
 
-      // Arrays vindos como strings no banco
+      // Arrays vindos como strings
       setValue("doencas_cronicas", stringToArray(data.doencas_cronicas));
       setValue(
         "alergias_medicamentosas",
@@ -218,10 +301,23 @@ export function PatientFormPage() {
       );
       setValue("queixa_principal", stringToArray(data.queixa_principal));
 
+      // Hábitos / estética
       setValue("consumo_alcool", data.consumo_alcool ?? "");
       setValue("exposicao_solar", data.exposicao_solar ?? "");
       setValue("objetivo_paciente", data.objetivo_paciente ?? "");
       setValue("tabagismo", data.tabagismo ?? false);
+
+      // Expectativa / prioridades / risco / consentimento
+      setValue("expectativa_resultado", data.expectativa_resultado ?? undefined);
+      setValue("adesao_cuidados", data.adesao_cuidados ?? undefined);
+      setValue("prioridade_area_1", data.prioridade_area_1 ?? "");
+      setValue("prioridade_area_2", data.prioridade_area_2 ?? "");
+      setValue("prioridade_area_3", data.prioridade_area_3 ?? "");
+      setValue("risco_geral", data.risco_geral ?? undefined);
+      setValue("risco_eletro", data.risco_eletro ?? undefined);
+      setValue("perfil_aderencia", data.perfil_aderencia ?? undefined);
+      setValue("consent_uso_clinico", data.consent_uso_clinico ?? false);
+      setValue("consent_uso_marketing", data.consent_uso_marketing ?? false);
     } catch (error) {
       console.error("Erro:", error);
       toast.error("Erro ao carregar dados.");
@@ -351,7 +447,6 @@ export function PatientFormPage() {
               <Input type="date" {...register("date_of_birth")} />
             </Field>
 
-            {/* Idade calculada */}
             <Field label="Idade atual">
               <Input
                 readOnly
@@ -396,7 +491,7 @@ export function PatientFormPage() {
         </Section>
 
         {/* --- 2. ANAMNESE DE SAÚDE GERAL --- */}
-        <Section title="2. Anamnese de Saúde Geral">
+        <Section title="2. Anamnese de Saúde Geral e Segurança">
           <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-2">
             Histórico médico
           </h3>
@@ -421,17 +516,92 @@ export function PatientFormPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t">
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mt-6 mb-2">
+            Risco para procedimentos (eletro / calor / crio)
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border p-4 rounded-md bg-gray-50 dark:bg-gray-700/50">
             <Checkbox
-              label="Histórico de queloide?"
+              label="Histórico de trombose / tromboflebite"
+              {...register("historico_trombose")}
+            />
+            <Checkbox
+              label="Uso de anticoagulante / AAS contínuo"
+              {...register("uso_anticoagulante")}
+            />
+            <Checkbox
+              label="Doença cardíaca grave"
+              {...register("doenca_cardiaca_grave")}
+            />
+            <Checkbox label="Marca-passo" {...register("marcapasso")} />
+            <Checkbox
+              label="Prótese metálica na área de tratamento"
+              {...register("protese_metalica")}
+            />
+            <Checkbox label="Epilepsia / convulsões" {...register("epilepsia")} />
+            <Checkbox
+              label="Histórico de câncer recente"
+              {...register("historico_cancer_recente")}
+            />
+            <Checkbox
+              label="Neuropatia / redução de sensibilidade"
+              {...register("neuropatia_periferica")}
+            />
+          </div>
+
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mt-6 mb-2">
+            Medicamentos em uso
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Checkbox label="Uso de corticoide sistêmico" {...register("uso_corticoide")} />
+            <Checkbox
+              label="Uso de imunossupressor"
+              {...register("uso_imunossupressor")}
+            />
+            <Checkbox label="Uso de hormônios (TRH / anabólicos)" {...register("uso_hormonio")} />
+            <Field label="Medicamentos em uso (detalhar)">
+              <Input
+                {...register("medicamentos_em_uso")}
+                placeholder="Principais medicamentos, dose/frequência"
+              />
+            </Field>
+          </div>
+
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mt-6 mb-2">
+            Circulação / retenção / vascular
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Checkbox
+              label="Tendência a inchaço em pernas / tornozelos"
+              {...register("inchaco_pernas")}
+            />
+            <Checkbox
+              label="Varizes importantes / dolorosas"
+              {...register("varizes_importantes")}
+            />
+            <Checkbox
+              label="Histórico de erisipela"
+              {...register("historico_erisipela")}
+            />
+            <Checkbox
+              label="Sensação de peso / cansaço nas pernas"
+              {...register("sensacao_peso_pernas")}
+            />
+          </div>
+
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mt-6 mb-2">
+            Condições específicas (ginecológicas / pele)
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+            <Checkbox
+              label="Histórico de queloide"
               {...register("historico_queloide")}
             />
             <Checkbox
-              label="Uso de anticoncepcional/DIU?"
+              label="Uso de anticoncepcional / DIU"
               {...register("uso_anticoncepcional")}
             />
-            <Checkbox label="Gestante?" {...register("gestante")} />
-            <Checkbox label="Lactante?" {...register("lactante")} />
+            <Checkbox label="Gestante" {...register("gestante")} />
+            <Checkbox label="Lactante" {...register("lactante")} />
           </div>
 
           <div className="mt-4">
@@ -440,15 +610,15 @@ export function PatientFormPage() {
             </label>
             <textarea
               {...register("observacoes_saude")}
-              placeholder="Condições de saúde relevantes, comorbidades, medicamentos em uso..."
+              placeholder="Condições relevantes, laudos, recomendações médicas..."
               className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white h-24 resize-none"
               rows={4}
             />
           </div>
         </Section>
 
-        {/* --- 3. ANAMNESE ESTÉTICA E HÁBITOS --- */}
-        <Section title="3. Anamnese Estética e Hábitos">
+        {/* --- 3. ANAMNESE ESTÉTICA, HÁBITOS E SKINCARE --- */}
+        <Section title="3. Anamnese Estética, Hábitos e Skincare">
           <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-2">
             Queixas e objetivos
           </h3>
@@ -460,16 +630,16 @@ export function PatientFormPage() {
               control={control}
             />
             <div className="space-y-3">
-              <Field label="Objetivo específico">
+              <Field label="Objetivo específico do paciente">
                 <Input
                   {...register("objetivo_paciente")}
-                  placeholder="Ex: Reduzir 5 cm na cintura"
+                  placeholder="Ex: Reduzir 5 cm na cintura, suavizar manchas, etc."
                 />
               </Field>
-              <Field label="Procedimentos já realizados">
+              <Field label="Procedimentos estéticos prévios">
                 <Input
-                  {...register("consumo_alcool")}
-                  placeholder="Ex: Toxina, preenchimento, peelings..."
+                  {...register("procedimentos_previos")}
+                  placeholder="Ex: toxina botulínica, preenchedores, peelings, laser..."
                 />
               </Field>
             </div>
@@ -478,29 +648,61 @@ export function PatientFormPage() {
           <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-2 mt-6">
             Hábitos e fatores de risco
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t items-end">
-            <Checkbox label="Tabagismo?" {...register("tabagismo")} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t">
+            <Checkbox label="Tabagismo" {...register("tabagismo")} />
             <Field label="Consumo de álcool">
               <Input
                 {...register("consumo_alcool")}
-                placeholder="Ex: Socialmente, diariamente"
+                placeholder="Ex: Socialmente, 1x por semana, diariamente..."
               />
             </Field>
             <Checkbox
-              label="Uso de isotretinoína (Roacutan)?"
+              label="Uso de isotretinoína (Roacutan)"
               {...register("uso_isotretinoina")}
             />
             <Field label="Exposição solar">
               <Input
                 {...register("exposicao_solar")}
-                placeholder="Ex: Diária, não usa protetor"
+                placeholder="Ex: Diária, trabalha ao ar livre, não usa protetor..."
+              />
+            </Field>
+          </div>
+
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-2 mt-6">
+            Rotina de cuidados com a pele (skincare)
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+            <Checkbox
+              label="Usa sabonete específico para o rosto"
+              {...register("usa_sabonete_especifico")}
+            />
+            <Checkbox
+              label="Usa hidratante facial regularmente"
+              {...register("usa_hidratante")}
+            />
+            <Checkbox
+              label="Usa ácidos na rotina"
+              {...register("usa_acidos")}
+            />
+            <Field label="Protetor solar">
+              <Input
+                {...register("uso_protetor_solar")}
+                placeholder="Ex: FPS 30 diário, só na praia, não usa..."
+              />
+            </Field>
+          </div>
+          <div className="mt-3">
+            <Field label="Detalhes sobre ácidos utilizados">
+              <Input
+                {...register("detalhes_acidos")}
+                placeholder="Ex: Ácido retinóico 0,025% à noite, ácido glicólico 10%, etc."
               />
             </Field>
           </div>
         </Section>
 
         {/* --- 4. CLASSIFICAÇÕES ESTÉTICAS --- */}
-        <Section title="4. Classificações estéticas">
+        <Section title="4. Classificações Estéticas">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Field label="Fototipo de Fitzpatrick">
               <select
@@ -560,9 +762,111 @@ export function PatientFormPage() {
           </div>
         </Section>
 
-        {/* --- 5. FINALIZAÇÃO E STATUS --- */}
-        <Section title="5. Finalização e documentação">
-          <div className="mt-2">
+        {/* --- 5. EXPECTATIVA, PRIORIDADES, RISCO, CONSENTIMENTO --- */}
+        <Section title="5. Expectativas, Prioridades e Risco">
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-2">
+            Expectativa de resultado
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="Como você espera os resultados?">
+              <select
+                {...register("expectativa_resultado")}
+                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-pink-500 outline-none"
+              >
+                <option value="">Selecione</option>
+                <option value="discreto">Discretos e naturais</option>
+                <option value="visivel_progressivo">
+                  Visíveis, mas progressivos
+                </option>
+                <option value="rapido_intenso">Rápidos e intensos</option>
+              </select>
+            </Field>
+
+            <Field label="Disposição para seguir orientações em casa">
+              <select
+                {...register("adesao_cuidados")}
+                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-pink-500 outline-none"
+              >
+                <option value="">Selecione</option>
+                <option value="alta">Alta (segue tudo certinho)</option>
+                <option value="moderada">Moderada</option>
+                <option value="baixa">Baixa (prefere só o procedimento)</option>
+              </select>
+            </Field>
+          </div>
+
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mt-6 mb-2">
+            Áreas de maior prioridade (na visão do paciente)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="1ª prioridade (mais importante)">
+              <Input
+                {...register("prioridade_area_1")}
+                placeholder="Ex: Abdômen, papada, coxas..."
+              />
+            </Field>
+            <Field label="2ª prioridade">
+              <Input {...register("prioridade_area_2")} />
+            </Field>
+            <Field label="3ª prioridade">
+              <Input {...register("prioridade_area_3")} />
+            </Field>
+          </div>
+
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mt-6 mb-2">
+            Radar de risco (preenchido pelo profissional)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Field label="Risco clínico geral">
+              <select
+                {...register("risco_geral")}
+                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-pink-500 outline-none"
+              >
+                <option value="">Selecione</option>
+                <option value="baixo">Baixo</option>
+                <option value="moderado">Moderado</option>
+                <option value="alto">Alto</option>
+              </select>
+            </Field>
+            <Field label="Risco para procedimentos eletro / térmicos">
+              <select
+                {...register("risco_eletro")}
+                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-pink-500 outline-none"
+              >
+                <option value="">Selecione</option>
+                <option value="baixo">Baixo</option>
+                <option value="moderado">Moderado</option>
+                <option value="alto">Alto</option>
+              </select>
+            </Field>
+            <Field label="Perfil de adesão esperado">
+              <select
+                {...register("perfil_aderencia")}
+                className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-pink-500 outline-none"
+              >
+                <option value="">Selecione</option>
+                <option value="alto">Alto</option>
+                <option value="moderado">Moderado</option>
+                <option value="baixo">Baixo</option>
+              </select>
+            </Field>
+          </div>
+
+          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mt-6 mb-2">
+            Consentimento de imagens
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Checkbox
+              label="Autorizo uso de fotos para acompanhamento clínico"
+              {...register("consent_uso_clinico")}
+            />
+            <Checkbox
+              label="Autorizo uso de fotos em redes sociais, sem identificação"
+              {...register("consent_uso_marketing")}
+            />
+          </div>
+
+          <div className="mt-6 pt-4 border-t">
             <Field
               label="Status de aptidão clínica"
               error={errors.apto_status?.message}
@@ -573,22 +877,22 @@ export function PatientFormPage() {
               >
                 <option value="Apto">Apto</option>
                 <option value="Apto com ressalvas">
-                  Apto com ressalvas (detalhar nas observações)
+                  Apto com ressalvas (detalhar em observações de saúde)
                 </option>
                 <option value="Não apto">Não apto (contraindicação)</option>
               </select>
             </Field>
             <p className="text-xs text-gray-500 mt-1">
-              Definido pelo profissional após avaliação clínica.
+              Definido pelo profissional após análise das informações clínicas.
             </p>
           </div>
 
           <div className="md:w-1/2 mt-4">
-            <Field label="URL foto rosto (identificação)">
-              <Input placeholder="Campo futuro para upload de imagem de rosto" />
+            <Field label="URL da foto de rosto (identificação)">
+              <Input placeholder="Campo futuro para upload direto de imagem" />
             </Field>
             <p className="text-xs text-gray-500 mt-1">
-              Fotos de antes/depois são salvas na galeria do paciente.
+              Fotos de antes/depois serão organizadas na galeria do paciente.
             </p>
           </div>
 

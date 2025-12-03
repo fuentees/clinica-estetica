@@ -1,11 +1,23 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import type { User } from '../types/auth';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+
+// Definindo os tipos de permissão
+export type UserRole = 'admin' | 'medico' | 'paciente';
+
+// Definindo como é o perfil do usuário no banco
+export interface UserProfile {
+  id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+}
 
 interface AuthContextType {
-  user: User | null;
+  user: SupabaseUser | null;     // Usuário técnico do Auth (email, id, last_sign_in)
+  profile: UserProfile | null;   // Dados do banco (nome, role/função)
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -14,30 +26,31 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    console.log("🔄 Verificando sessão do usuário...");
+    console.log("🔄 Verificando sessão...");
 
-    async function checkSession() {
-      const { data: { session } } = await supabase.auth.getSession();
+    // 1. Checa sessão atual
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
       if (session?.user) {
         fetchUserProfile(session.user.id);
       } else {
         setLoading(false);
       }
-    }
+    });
 
-    checkSession();
-
+    // 2. Ouve mudanças (Login/Logout em outras abas, etc)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log("🔄 Estado de autenticação mudou:", session);
+      setUser(session?.user ?? null);
       if (session?.user) {
         fetchUserProfile(session.user.id);
       } else {
-        setUser(null);
+        setProfile(null);
         setLoading(false);
       }
     });
@@ -47,19 +60,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function fetchUserProfile(userId: string) {
     try {
-      console.log("📥 Buscando perfil do usuário...");
+      // Busca dados na tabela 'profiles'
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (error) throw error;
-
-      console.log("✅ Perfil carregado:", data);
-      setUser(data);
+      if (error) {
+        console.error('Erro ao buscar perfil:', error);
+        // Se der erro (ex: perfil não criado), definimos null mas não deslogamos
+        setProfile(null); 
+      } else {
+        console.log("✅ Perfil carregado:", data);
+        setProfile(data as UserProfile);
+      }
     } catch (error) {
-      console.error('❌ Erro ao buscar perfil do usuário:', error);
+      console.error('❌ Erro inesperado ao buscar perfil:', error);
     } finally {
       setLoading(false);
     }
@@ -67,35 +84,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (error) throw error;
-      console.log("✅ Login bem-sucedido!");
-      navigate('/');
-    } catch (error) {
+      
+      console.log("✅ Login técnico ok. Buscando perfil para redirecionar...");
+      
+      // Precisamos buscar o perfil AGORA para saber para onde mandar
+      if (data.user) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+        if (profileError || !profileData) {
+          toast.error("Perfil de usuário não encontrado.");
+          return;
+        }
+
+        // --- AQUI ESTÁ A MÁGICA DO REDIRECIONAMENTO ---
+        const userRole = profileData.role as UserRole;
+        
+        if (userRole === 'paciente') {
+          navigate('/portal'); // Manda paciente para o site dele
+          toast.success(`Bem-vindo, ${profileData.full_name || 'Paciente'}!`);
+        } else {
+          navigate('/'); // Manda Admin/Médico para o Dashboard
+          toast.success(`Bem-vindo ao sistema, ${profileData.full_name}!`);
+        }
+      }
+
+    } catch (error: any) {
       console.error('❌ Erro ao fazer login:', error);
-      toast.error('Erro ao fazer login. Verifique suas credenciais.');
+      toast.error('Erro ao entrar: ' + (error.message || 'Verifique seus dados'));
     }
   };
 
   const signOut = async () => {
     try {
-      console.log("🚪 Realizando logout...");
-      setUser(null); // Resetando antes de chamar signOut
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      await supabase.auth.signOut();
+      setUser(null);
+      setProfile(null);
       navigate('/login');
+      toast.success('Você saiu do sistema.');
     } catch (error) {
-      console.error('❌ Erro ao fazer logout:', error);
-      toast.error('Erro ao fazer logout.');
+      toast.error('Erro ao sair.');
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
@@ -104,7 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
   }
   return context;
 }

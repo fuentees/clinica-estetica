@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-hot-toast';
-import { Loader2, ArrowLeft, Stethoscope } from 'lucide-react'; 
+import { Loader2, ArrowLeft, Stethoscope } from 'lucide-react'; // Ícones úteis
 import { addMinutes, format, parseISO } from 'date-fns';
 
 // Schema de Validação
@@ -26,6 +26,7 @@ export function AppointmentFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
+  // Pega data/hora pré-selecionada do calendário
   const preSelectedDate = searchParams.get('date'); 
   const initialDate = preSelectedDate ? format(parseISO(preSelectedDate), 'yyyy-MM-dd') : '';
   const initialTime = preSelectedDate ? format(parseISO(preSelectedDate), 'HH:mm') : '';
@@ -50,18 +51,18 @@ export function AppointmentFormPage() {
       try {
         setLoading(true);
 
-        // 1. Buscar Pacientes (Fazemos uma LEFT JOIN para garantir que o paciente apareça, mesmo sem nome)
+        // 1. Buscar Pacientes (CORREÇÃO: Usar um caminho mais robusto para a relação)
         const { data: patients, error: patError } = await supabase
           .from('patients')
           .select(`
             id,
             cpf,
-            profiles (id, first_name, last_name)
+            profiles:profile_id (first_name, last_name, email)
           `)
           .order('created_at', { ascending: false });
 
         if (patError) throw patError;
-        
+
         // 2. Buscar Tratamentos
         const { data: treatments, error: treatError } = await supabase
           .from('treatments')
@@ -70,11 +71,11 @@ export function AppointmentFormPage() {
 
         if (treatError) throw treatError;
 
-        // 3. Buscar Profissionais (Excluindo apenas quem tem o cargo 'paciente' e pegando a formação)
+        // 3. Buscar Profissionais (Admin/Médico/Doutor)
         const { data: professionals, error: profError } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, role, formacao') 
-          .neq('role', 'paciente'); 
+          .select('id, first_name, last_name, role')
+          .in('role', ['professional', 'admin', 'medico', 'doutor']);
 
         if (profError) throw profError;
 
@@ -84,7 +85,7 @@ export function AppointmentFormPage() {
 
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
-        toast.error('Erro ao carregar listas. Tente cadastrar um Paciente/Profissional e verifique as RLS.');
+        toast.error('Erro ao carregar listas.');
       } finally {
         setLoading(false);
       }
@@ -98,6 +99,7 @@ export function AppointmentFormPage() {
     try {
       const startDateTime = new Date(`${data.date}T${data.time}`);
       
+      // Lógica de duração
       const selectedTreatment = treatmentsList.find(t => t.id === data.treatment_id);
       let durationMinutes = 60;
       
@@ -113,6 +115,7 @@ export function AppointmentFormPage() {
 
       const endDateTime = addMinutes(startDateTime, durationMinutes);
 
+      // Salva Agendamento
       const { error } = await supabase
         .from('appointments')
         .insert({
@@ -165,15 +168,20 @@ export function AppointmentFormPage() {
             <option value="">Selecione um paciente...</option>
             {patientsList.map(p => (
               <option key={p.id} value={p.id}>
-                {p.profiles && p.profiles.first_name 
+                {p.profiles?.first_name 
                   ? `${p.profiles.first_name} ${p.profiles.last_name || ''}`
                   : `Paciente (CPF: ${p.cpf})`}
               </option>
             ))}
           </select>
           {errors.patient_id && <span className="text-xs text-red-500">{errors.patient_id.message}</span>}
-          {patientsList.length === 0 && <p className="text-xs text-orange-500 mt-1">Nenhum paciente encontrado. <span className='text-pink-600 hover:underline cursor-pointer' onClick={() => navigate('/patients/new')}>Cadastrar novo?</span></p>}
+          {patientsList.length === 0 && <p className="text-xs text-orange-500 mt-1">Nenhum paciente encontrado.</p>}
           
+          <div className="mt-2 text-right">
+             <button type="button" onClick={() => navigate('/patients/new')} className="text-xs text-pink-600 hover:underline">
+                + Cadastrar novo paciente
+             </button>
+          </div>
         </div>
 
         {/* Profissional */}
@@ -188,7 +196,7 @@ export function AppointmentFormPage() {
             <option value="">Selecione o doutor(a)...</option>
             {professionalsList.map(p => (
               <option key={p.id} value={p.id}>
-                {p.first_name} {p.last_name} ({p.formacao || p.role}) 
+                {p.first_name} {p.last_name} ({p.role})
               </option>
             ))}
           </select>

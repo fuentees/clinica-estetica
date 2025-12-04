@@ -19,20 +19,30 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 
 // --- PÁGINAS ADMINISTRATIVAS ---
 import DashboardPage from "./pages/dashboard/DashboardPage"; 
+
+// Agendamentos
+import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
+import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
+
+// Pacientes
 import { PatientsPage } from "./pages/patients/PatientsPage";
 import { PatientFormPage } from "./pages/patients/PatientFormPage";
 import { PatientHistoryPage } from "./pages/patients/PatientHistoryPage";
-import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
-import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
+import { SessionEvolutionPage } from "./pages/patients/SessionEvolutionPage"; // Evolução de Sessão
+
+// Tratamentos e Injetáveis
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage";
+import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; // <--- NOVA PÁGINA
+
+// Profissionais
+import { ProfessionalsPage } from "./pages/professionals/ProfessionalsPage"; 
+import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage"; 
+
+// Financeiro e Estoque
 import { InventoryPage } from "./pages/inventory/InventoryPage";
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
 import { CashFlowPage } from "./pages/payments/CashFlowPage";
-
-// --- NOVAS PÁGINAS DE PROFISSIONAIS ---
-import { ProfessionalsPage } from "./pages/professionals/ProfessionalsPage"; 
-import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage.tsx"; 
 
 // Portal do Paciente
 import PatientHome from "./pages/patients/PatientHome";
@@ -68,12 +78,16 @@ function App() {
                   <Route path="patients/new" element={<PatientFormPage />} />
                   <Route path="patients/:id/edit" element={<PatientFormPage />} />
                   <Route path="patients/:id/history" element={<PatientHistoryPage />} />
+                  <Route path="patients/:patientId/sessions/new" element={<SessionEvolutionPage />} />
                   
-                  {/* Tratamentos */}
+                  {/* Planejamento de Injetáveis (NOVA ROTA) */}
+                  <Route path="patients/:id/injectables" element={<InjectablesPlanningPage />} />
+                  
+                  {/* Tratamentos (Catálogo) */}
                   <Route path="treatments" element={<TreatmentsPage />} />
                   <Route path="treatments/new" element={<TreatmentFormPage />} />
 
-                  {/* PROFISSIONAIS (LISTA E FORMULÁRIO) */}
+                  {/* Profissionais */}
                   <Route path="professionals" element={<ProfessionalsPage />} />
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                   <Route path="professionals/:id/edit" element={<ProfessionalFormPage />} />

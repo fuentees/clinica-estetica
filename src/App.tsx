@@ -30,7 +30,7 @@ import { PatientFormPage } from "./pages/patients/PatientFormPage";
 import { PatientHistoryPage } from "./pages/patients/PatientHistoryPage";
 import { SessionEvolutionPage } from "./pages/patients/SessionEvolutionPage"; // Evolução de Sessão
 import { PatientAnamnesisPage } from "./pages/patients/PatientAnamnesisPage"; // <--- NOVA IMPORTAÇÃO DA ANAMNESE
-import { PatientBioimpedanceHistoryPage } from "./pages/patients/PatientBioimpedanceHistoryPage";
+
 
 // Tratamentos e Injetáveis
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";

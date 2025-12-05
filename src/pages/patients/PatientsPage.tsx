@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Plus, Search, Calendar, // Removido 'Phone'
+  Plus, Search, Calendar, 
   ClipboardList, Activity, UserCog, MessageCircle, DollarSign, CalendarPlus 
 } from 'lucide-react';
 import { Input } from '../../components/ui/input';
@@ -11,7 +11,6 @@ import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 
 export function PatientsPage() {
-  // Removido 'navigate' pois não estava sendo usado (usamos Link)
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -136,7 +135,6 @@ export function PatientsPage() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                             <span className="text-gray-600 dark:text-gray-300 text-sm">{patient.profiles?.phone || '-'}</span>
-                            {/* BOTÃO WHATSAPP */}
                             {patient.profiles?.phone && (
                                 <button 
                                     onClick={() => handleWhatsApp(patient.profiles.phone)}
@@ -152,41 +150,40 @@ export function PatientsPage() {
                     
                     {/* AÇÕES COMPLETAS */}
                     <td className="px-6 py-4">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex justify-end gap-2 items-center">
                         
-                        {/* 1. Agendar (Tamanho corrigido para 'sm') */}
+                        {/* Atalhos: Agendar e Pagar */}
                         <Link to={`/appointments/new`}> 
-                          <Button variant="ghost" size="sm" className="text-gray-500 hover:text-blue-600 hover:bg-blue-50 h-9 w-9 p-0" title="Agendar Consulta">
-                            <CalendarPlus size={18} />
+                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-blue-600 hover:bg-blue-50 h-8 w-8 p-0" title="Agendar Consulta">
+                            <CalendarPlus size={16} />
                           </Button>
                         </Link>
-
-                        {/* 2. Financeiro (Tamanho corrigido para 'sm') */}
+                        
                         <Link to={`/payments`}> 
-                          <Button variant="ghost" size="sm" className="text-gray-500 hover:text-green-600 hover:bg-green-50 h-9 w-9 p-0" title="Financeiro">
-                            <DollarSign size={18} />
+                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-green-600 hover:bg-green-50 h-8 w-8 p-0" title="Financeiro">
+                            <DollarSign size={16} />
                           </Button>
                         </Link>
 
-                        <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1 self-center"></div>
+                        <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1"></div>
 
-                        {/* 3. Anamnese */}
+                        {/* 1. ANAMNESE (Separada) */}
                         <Link to={`/patients/${patient.id}/anamnesis`}>
-                          <Button variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50 h-9 px-3">
-                            <ClipboardList size={16} className="mr-2" /> Anamnese
+                          <Button variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50 h-8 px-3 text-xs font-medium">
+                            <ClipboardList size={14} className="mr-1.5" /> Anamnese
                           </Button>
                         </Link>
 
-                        {/* 4. Tratamentos (Histórico) */}
+                        {/* 2. PRONTUÁRIO / TRATAMENTOS (Separado) */}
                         <Link to={`/patients/${patient.id}/history`}>
-                          <Button variant="outline" size="sm" className="text-purple-600 border-purple-200 hover:bg-purple-50 h-9 px-3">
-                            <Activity size={16} className="mr-2" /> Prontuário
+                          <Button variant="outline" size="sm" className="text-purple-600 border-purple-200 hover:bg-purple-50 h-8 px-3 text-xs font-medium">
+                            <Activity size={14} className="mr-1.5" /> Prontuário
                           </Button>
                         </Link>
 
-                        {/* 5. Editar Dados */}
+                        {/* 3. DADOS (Edição Simples) */}
                         <Link to={`/patients/${patient.id}/edit`}>
-                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-800 hover:bg-gray-100 h-9 w-9 p-0">
+                          <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-800 hover:bg-gray-100 h-8 w-8 p-0" title="Editar Cadastro">
                             <UserCog size={16} />
                           </Button>
                         </Link>

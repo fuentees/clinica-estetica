@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { Plus, Search, Edit, Phone, Calendar, FileText } from 'lucide-react';
+import { 
+  Plus, Search, Calendar, // Removido 'Phone'
+  ClipboardList, Activity, UserCog, MessageCircle, DollarSign, CalendarPlus 
+} from 'lucide-react';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 
 export function PatientsPage() {
+  // Removido 'navigate' pois não estava sendo usado (usamos Link)
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,7 +23,6 @@ export function PatientsPage() {
   async function fetchPatients() {
     try {
       setLoading(true);
-      // Busca pacientes e os dados pessoais da tabela profiles
       const { data, error } = await supabase
         .from('patients')
         .select(`
@@ -45,13 +48,20 @@ export function PatientsPage() {
     }
   }
 
-  // Filtragem local
   const filteredPatients = patients.filter(p => {
     const fullName = `${p.profiles?.first_name || ''} ${p.profiles?.last_name || ''}`.toLowerCase();
     const cpf = p.cpf || '';
     const search = searchTerm.toLowerCase();
     return fullName.includes(search) || cpf.includes(search);
   });
+
+  // Função para abrir WhatsApp
+  const handleWhatsApp = (phone: string) => {
+      if (!phone) return toast.error("Telefone não cadastrado.");
+      const cleanPhone = phone.replace(/\D/g, '');
+      const finalPhone = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+      window.open(`https://wa.me/${finalPhone}`, '_blank');
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -60,10 +70,10 @@ export function PatientsPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Pacientes</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Gerencie seus clientes e prontuários.</p>
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Gerencie seus clientes.</p>
         </div>
         <Link to="/patients/new">
-          <Button className="bg-pink-600 hover:bg-pink-700 text-white flex items-center gap-2">
+          <Button className="bg-pink-600 hover:bg-pink-700 text-white flex items-center gap-2 shadow-sm">
             <Plus size={18} /> Novo Paciente
           </Button>
         </Link>
@@ -85,7 +95,7 @@ export function PatientsPage() {
       {/* Lista / Tabela */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-gray-500">Carregando pacientes...</div>
+          <div className="p-10 text-center text-gray-500">Carregando pacientes...</div>
         ) : filteredPatients.length === 0 ? (
           <div className="p-12 text-center flex flex-col items-center gap-3">
             <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-full">
@@ -100,8 +110,7 @@ export function PatientsPage() {
                 <tr>
                   <th className="px-6 py-4">Nome</th>
                   <th className="px-6 py-4">Contato</th>
-                  <th className="px-6 py-4">CPF</th>
-                  <th className="px-6 py-4 text-right">Ações</th>
+                  <th className="px-6 py-4 text-right">Ações Rápidas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -109,7 +118,7 @@ export function PatientsPage() {
                   <tr key={patient.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center font-bold uppercase text-sm">
+                        <div className="h-10 w-10 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center font-bold uppercase text-sm border border-pink-200">
                           {patient.profiles?.first_name?.charAt(0) || '?'}
                         </div>
                         <div>
@@ -125,32 +134,64 @@ export function PatientsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="space-y-1">
-                        <p className="text-gray-600 dark:text-gray-300 flex items-center gap-2">
-                          <Phone size={14} className="text-green-500" />
-                          {patient.profiles?.phone || '-'}
-                        </p>
-                        <p className="text-xs text-gray-400">{patient.profiles?.email}</p>
+                        <div className="flex items-center gap-2">
+                            <span className="text-gray-600 dark:text-gray-300 text-sm">{patient.profiles?.phone || '-'}</span>
+                            {/* BOTÃO WHATSAPP */}
+                            {patient.profiles?.phone && (
+                                <button 
+                                    onClick={() => handleWhatsApp(patient.profiles.phone)}
+                                    className="text-green-500 hover:text-green-600 bg-green-50 p-1 rounded-full transition-colors"
+                                    title="Abrir WhatsApp"
+                                >
+                                    <MessageCircle size={14} />
+                                </button>
+                            )}
+                        </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600 dark:text-gray-400">
-                      {patient.cpf}
-                    </td>
-                    <td className="px-6 py-4 text-right flex justify-end gap-2">
-                      
-                      {/* BOTÃO PRONTUÁRIO / HISTÓRICO (Novo) */}
-                      <Link to={`/patients/${patient.id}/history`}>
-                        <Button variant="ghost" size="sm" className="text-blue-600 hover:bg-blue-50">
-                          <FileText size={16} className="mr-2" /> Histórico
-                        </Button>
-                      </Link>
+                    
+                    {/* AÇÕES COMPLETAS */}
+                    <td className="px-6 py-4">
+                      <div className="flex justify-end gap-2">
+                        
+                        {/* 1. Agendar (Tamanho corrigido para 'sm') */}
+                        <Link to={`/appointments/new`}> 
+                          <Button variant="ghost" size="sm" className="text-gray-500 hover:text-blue-600 hover:bg-blue-50 h-9 w-9 p-0" title="Agendar Consulta">
+                            <CalendarPlus size={18} />
+                          </Button>
+                        </Link>
 
-                      {/* BOTÃO EDITAR DADOS */}
-                      <Link to={`/patients/${patient.id}/edit`}>
-                        <Button variant="ghost" size="sm" className="hover:text-pink-600 hover:bg-pink-50">
-                          <Edit size={16} className="mr-2" /> Dados
-                        </Button>
-                      </Link>
+                        {/* 2. Financeiro (Tamanho corrigido para 'sm') */}
+                        <Link to={`/payments`}> 
+                          <Button variant="ghost" size="sm" className="text-gray-500 hover:text-green-600 hover:bg-green-50 h-9 w-9 p-0" title="Financeiro">
+                            <DollarSign size={18} />
+                          </Button>
+                        </Link>
 
+                        <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1 self-center"></div>
+
+                        {/* 3. Anamnese */}
+                        <Link to={`/patients/${patient.id}/anamnesis`}>
+                          <Button variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50 h-9 px-3">
+                            <ClipboardList size={16} className="mr-2" /> Anamnese
+                          </Button>
+                        </Link>
+
+                        {/* 4. Tratamentos (Histórico) */}
+                        <Link to={`/patients/${patient.id}/history`}>
+                          <Button variant="outline" size="sm" className="text-purple-600 border-purple-200 hover:bg-purple-50 h-9 px-3">
+                            <Activity size={16} className="mr-2" /> Prontuário
+                          </Button>
+                        </Link>
+
+                        {/* 5. Editar Dados */}
+                        <Link to={`/patients/${patient.id}/edit`}>
+                          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-800 hover:bg-gray-100 h-9 w-9 p-0">
+                            <UserCog size={16} />
+                          </Button>
+                        </Link>
+
+                      </div>
                     </td>
                   </tr>
                 ))}

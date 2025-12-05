@@ -81,7 +81,7 @@ function App() {
                   <Route path="patients/:id/edit" element={<PatientFormPage />} />
                   <Route path="patients/:id/history" element={<PatientHistoryPage />} />
                   <Route path="patients/:patientId/sessions/new" element={<SessionEvolutionPage />} />
-                  <Route path="patients/:id/bioimpedance-history" element={<PatientBioimpedanceHistoryPage />} />
+                  
                   
                   {/* NOVA ROTA DE ANAMNESE */}
                   <Route path="patients/:id/anamnesis" element={<PatientAnamnesisPage />} />

@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-hot-toast';
-import { Loader2, ArrowLeft, Stethoscope } from 'lucide-react'; // Ícones úteis
+import { Loader2, ArrowLeft, Stethoscope, Calendar as CalendarIcon, Clock } from 'lucide-react'; 
 import { addMinutes, format, parseISO } from 'date-fns';
 
 // Schema de Validação
@@ -26,7 +26,6 @@ export function AppointmentFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
-  // Pega data/hora pré-selecionada do calendário
   const preSelectedDate = searchParams.get('date'); 
   const initialDate = preSelectedDate ? format(parseISO(preSelectedDate), 'yyyy-MM-dd') : '';
   const initialTime = preSelectedDate ? format(parseISO(preSelectedDate), 'HH:mm') : '';
@@ -51,41 +50,39 @@ export function AppointmentFormPage() {
       try {
         setLoading(true);
 
-        // 1. Buscar Pacientes (CORREÇÃO: Usar um caminho mais robusto para a relação)
+        // --- 1. CARREGAR PACIENTES ---
         const { data: patients, error: patError } = await supabase
           .from('patients')
-          .select(`
-            id,
-            cpf,
-            profiles:profile_id (first_name, last_name, email)
-          `)
+          .select(`id, cpf, profiles (id, first_name, last_name)`)
           .order('created_at', { ascending: false });
 
         if (patError) throw patError;
+        setPatientsList(patients || []);
 
-        // 2. Buscar Tratamentos
+        // --- 2. CARREGAR TRATAMENTOS ---
         const { data: treatments, error: treatError } = await supabase
           .from('treatments')
           .select('*')
           .order('name');
 
         if (treatError) throw treatError;
+        setTreatmentsList(treatments || []);
 
-        // 3. Buscar Profissionais (Admin/Médico/Doutor)
+        // --- 3. CARREGAR PROFISSIONAIS ---
         const { data: professionals, error: profError } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, role')
-          .in('role', ['professional', 'admin', 'medico', 'doutor']);
-
+          .select('id, first_name, last_name, role, formacao') 
+          .neq('role', 'paciente');
+          
         if (profError) throw profError;
-
-        setPatientsList(patients || []);
-        setTreatmentsList(treatments || []);
-        setProfessionalsList(professionals || []);
+        
+        // Filtro extra no frontend para garantir
+        const nonPatients = (professionals || []).filter(p => p.role !== 'paciente');
+        setProfessionalsList(nonPatients);
 
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
-        toast.error('Erro ao carregar listas.');
+        toast.error('Erro ao carregar listas.'); 
       } finally {
         setLoading(false);
       }
@@ -99,7 +96,6 @@ export function AppointmentFormPage() {
     try {
       const startDateTime = new Date(`${data.date}T${data.time}`);
       
-      // Lógica de duração
       const selectedTreatment = treatmentsList.find(t => t.id === data.treatment_id);
       let durationMinutes = 60;
       
@@ -115,7 +111,6 @@ export function AppointmentFormPage() {
 
       const endDateTime = addMinutes(startDateTime, durationMinutes);
 
-      // Salva Agendamento
       const { error } = await supabase
         .from('appointments')
         .insert({
@@ -135,11 +130,7 @@ export function AppointmentFormPage() {
 
     } catch (error: any) {
       console.error('Erro ao agendar:', error);
-      if (error.message?.includes('professional_id')) {
-         toast.error('Erro: Coluna de profissional não encontrada no banco.');
-      } else {
-         toast.error('Erro ao salvar: ' + (error.message || 'Desconhecido'));
-      }
+      toast.error('Erro ao salvar: ' + (error.message || 'Desconhecido'));
     } finally {
       setIsSubmitting(false);
     }
@@ -168,20 +159,19 @@ export function AppointmentFormPage() {
             <option value="">Selecione um paciente...</option>
             {patientsList.map(p => (
               <option key={p.id} value={p.id}>
-                {p.profiles?.first_name 
+                {p.profiles && p.profiles.first_name 
                   ? `${p.profiles.first_name} ${p.profiles.last_name || ''}`
                   : `Paciente (CPF: ${p.cpf})`}
               </option>
             ))}
           </select>
           {errors.patient_id && <span className="text-xs text-red-500">{errors.patient_id.message}</span>}
-          {patientsList.length === 0 && <p className="text-xs text-orange-500 mt-1">Nenhum paciente encontrado.</p>}
           
-          <div className="mt-2 text-right">
-             <button type="button" onClick={() => navigate('/patients/new')} className="text-xs text-pink-600 hover:underline">
-                + Cadastrar novo paciente
-             </button>
-          </div>
+          {patientsList.length === 0 && (
+             <p className="text-xs text-orange-500 mt-1">
+                Nenhum paciente encontrado. <span className='text-pink-600 hover:underline cursor-pointer' onClick={() => navigate('/patients/new')}>Cadastrar novo?</span>
+             </p>
+          )}
         </div>
 
         {/* Profissional */}
@@ -196,16 +186,11 @@ export function AppointmentFormPage() {
             <option value="">Selecione o doutor(a)...</option>
             {professionalsList.map(p => (
               <option key={p.id} value={p.id}>
-                {p.first_name} {p.last_name} ({p.role})
+                {p.first_name} {p.last_name} ({p.formacao || p.role}) 
               </option>
             ))}
           </select>
           {errors.professional_id && <span className="text-xs text-red-500">{errors.professional_id.message}</span>}
-          {professionalsList.length === 0 && (
-             <p className="text-xs text-red-500 mt-1">
-                Atenção: Nenhum profissional cadastrado.
-             </p>
-          )}
         </div>
 
         {/* Tratamento */}
@@ -225,15 +210,30 @@ export function AppointmentFormPage() {
           {errors.treatment_id && <span className="text-xs text-red-500">{errors.treatment_id.message}</span>}
         </div>
 
-        {/* Data e Hora */}
+        {/* Data e Hora (CORRIGIDO) */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Data</label>
-            <Input type="date" {...register('date')} error={errors.date?.message} />
+            <div className="relative">
+                <Input 
+                    type="date" 
+                    {...register('date')} 
+                />
+                <CalendarIcon size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+            </div>
+            {errors.date && <span className="text-xs text-red-500">{errors.date.message}</span>}
           </div>
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Horário</label>
-            <Input type="time" {...register('time')} error={errors.time?.message} />
+            <div className="relative">
+                <Input 
+                    type="time" 
+                    {...register('time')} 
+                />
+                <Clock size={16} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+            </div>
+            {errors.time && <span className="text-xs text-red-500">{errors.time.message}</span>}
           </div>
         </div>
 
@@ -242,7 +242,7 @@ export function AppointmentFormPage() {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Observações</label>
           <textarea 
             {...register('notes')}
-            className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white h-24 resize-none"
+            className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white h-24 resize-none focus:ring-2 focus:ring-pink-500 outline-none"
             placeholder="Detalhes adicionais..."
           />
         </div>

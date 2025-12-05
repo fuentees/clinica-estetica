@@ -33,7 +33,7 @@
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.1.5",
     "react-signature-canvas": "^1.0.7",
-    "recharts": "^2.15.1",
+    "recharts": "^2.15.4",
     "tailwind-merge": "^2.2.1",
     "twilio": "^4.20.0",
     "zod": "^3.22.4"

@@ -30,6 +30,7 @@ import { PatientFormPage } from "./pages/patients/PatientFormPage";
 import { PatientHistoryPage } from "./pages/patients/PatientHistoryPage";
 import { SessionEvolutionPage } from "./pages/patients/SessionEvolutionPage"; // Evolução de Sessão
 import { PatientAnamnesisPage } from "./pages/patients/PatientAnamnesisPage"; // <--- NOVA IMPORTAÇÃO DA ANAMNESE
+import { PatientBioimpedanceHistoryPage } from "./pages/patients/PatientBioimpedanceHistoryPage";
 
 // Tratamentos e Injetáveis
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
@@ -80,6 +81,7 @@ function App() {
                   <Route path="patients/:id/edit" element={<PatientFormPage />} />
                   <Route path="patients/:id/history" element={<PatientHistoryPage />} />
                   <Route path="patients/:patientId/sessions/new" element={<SessionEvolutionPage />} />
+                  <Route path="patients/:id/bioimpedance-history" element={<PatientBioimpedanceHistoryPage />} />
                   
                   {/* NOVA ROTA DE ANAMNESE */}
                   <Route path="patients/:id/anamnesis" element={<PatientAnamnesisPage />} />

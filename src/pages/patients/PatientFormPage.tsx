@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
@@ -7,10 +7,9 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
-import { Loader2, ArrowLeft } from "lucide-react";
-import React from "react";
+import { Loader2, ArrowLeft } from "lucide-react"; // Removido 'Search'
 
-// Schema APENAS para Dados Cadastrais
+// Schema APENAS para Dados Cadastrais (Sem Anamnese)
 const patientSchema = z.object({
   // Identificação
   first_name: z.string().min(1, "Nome é obrigatório"),
@@ -26,14 +25,14 @@ const patientSchema = z.object({
   email: z.string().email("Email inválido").optional().or(z.literal('')),
   phone: z.string().min(1, "Telefone é obrigatório"),
   
-  // Endereço
+  // Endereço (Separado)
   cep: z.string().optional(),
   rua: z.string().optional(),
   numero: z.string().optional(),
   bairro: z.string().optional(),
   cidade: z.string().optional(),
   estado: z.string().optional(),
-  address: z.string().optional(), // Mantido para compatibilidade com banco
+  address: z.string().optional(), // Mantido para compatibilidade (string completa)
 });
 
 type PatientFormData = z.infer<typeof patientSchema>;
@@ -56,7 +55,7 @@ export function PatientFormPage() {
     resolver: zodResolver(patientSchema),
   });
 
-  // Monitora data para calcular idade
+  // Monitora data para calcular idade em tempo real
   const dateOfBirth = watch('date_of_birth');
   
   const calculateAge = (dateString: string) => {
@@ -70,10 +69,9 @@ export function PatientFormPage() {
     }
     return isNaN(age) ? '' : age;
   };
-
   const patientAge = calculateAge(dateOfBirth);
 
-  // Busca de CEP
+  // Busca de CEP automática
   const checkCEP = async (e: any) => {
       const cep = e.target.value.replace(/\D/g, '');
       if (cep.length !== 8) return;
@@ -139,7 +137,7 @@ export function PatientFormPage() {
         setValue('profissao', data.profissao || '');
         setValue('sexo', data.sexo || '');
         
-        // Endereço (Tenta carregar no campo genérico se os específicos estiverem vazios)
+        // Endereço (Se não tiver campos separados, usa o address no campo rua)
         setValue('rua', data.address || '');
       }
     } catch (error) {
@@ -155,7 +153,7 @@ export function PatientFormPage() {
       const ageCalc = data.date_of_birth ? calculateAge(data.date_of_birth) : null;
       const ageInt = typeof ageCalc === 'number' ? ageCalc : null;
 
-      // Junta endereço para salvar no campo único do banco
+      // Junta endereço para salvar no campo único do banco (compatibilidade)
       const fullAddress = `${data.rua || ''}, ${data.numero || ''} - ${data.bairro || ''}, ${data.cidade || ''} - ${data.estado || ''}, CEP: ${data.cep || ''}`;
 
       const patientDataToSave = {
@@ -218,7 +216,7 @@ export function PatientFormPage() {
   if (isLoadingData) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600" /></div>;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-8 pb-20">
+    <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
         <Button variant="ghost" onClick={() => navigate('/patients')}>
            <ArrowLeft size={20} />
@@ -245,7 +243,7 @@ export function PatientFormPage() {
                 {/* IDADE CALCULADA */}
                 <div>
                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Idade</label>
-                     <div className="w-full p-2 border rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 h-[38px] flex items-center">
+                     <div className="w-full p-2 border rounded-md bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 h-[38px] flex items-center px-3">
                         {patientAge ? `${patientAge} anos` : '-'}
                      </div>
                 </div>
@@ -293,12 +291,11 @@ export function PatientFormPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
                  <InputWithLabel label="Cidade" {...register("cidade")} />
                  <InputWithLabel label="Estado (UF)" {...register("estado")} />
-                 <input type="hidden" {...register("address")} />
             </div>
         </Section>
 
         <div className="flex justify-end gap-4 pt-4 border-t dark:border-gray-700 mt-4">
-            <Button type="button" variant="secondary" onClick={() => navigate("/patients")}>Voltar</Button>
+            <Button type="button" variant="secondary" onClick={() => navigate("/patients")}>Cancelar</Button>
             <Button type="submit" disabled={isSubmitting} className="bg-pink-600 hover:bg-pink-700 text-white px-8">
                 {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : "Salvar Cadastro"}
             </Button>
@@ -311,6 +308,7 @@ export function PatientFormPage() {
 
 // --- COMPONENTES VISUAIS AUXILIARES ---
 
+// Wrapper que garante que o Label apareça
 const InputWithLabel = React.forwardRef(({ label, error, ...props }: any, ref) => (
     <div className="w-full">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>

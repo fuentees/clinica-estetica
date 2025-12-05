@@ -1,19 +1,31 @@
-// Tipos para a IA
-interface PatientAnamnesis {
+// Tipos de entrada (Baseados na Anamnese)
+export interface PatientAnamnesis {
   age: number;
-  skinType: string; // Fitzpatrick
+  sex: string;
   complaints: string[]; // Queixas
-  chronicConditions: string[];
-  medications: string[]; // Ex: Roacutan
+  chronicConditions: string[]; // Doenças
+  medications: string[]; 
   lifestyle: {
-    smoker: boolean;
     pregnant: boolean;
     lactating: boolean;
     keloidHistory: boolean;
+    isotretinoin: boolean; // Roacutan
+    smoker: boolean;
+    sunExposure: string;
+  };
+  skin: {
+    fototipo: string; // I-VI
+    glogau: string; // I-IV
+    biotipo: string; // Seca, Oleosa, Mista
+    flacidez: string; // Leve/Mod/Grave
+    acne: boolean;
+    melasma: boolean;
   };
 }
 
+// JSON de Retorno Expandido
 export interface AIPlanResult {
+  // Injetáveis (O que já tínhamos)
   botox: Record<string, number>;
   preenchimento: Record<string, string>;
   bioestimuladores: {
@@ -21,92 +33,120 @@ export interface AIPlanResult {
     sessoes: number;
     intervalo: string;
   };
+  
+  // NOVO: Gerenciamento de Pele
+  pele: {
+    limpeza: string; // Frequência sugerida
+    peeling: string; // Tipo de ácido sugerido
+    microagulhamento: string; // Indicação
+  };
+
+  // NOVO: Tecnologias
+  tecnologias: {
+    laser: string;
+    radiofrequencia: string;
+    outros: string;
+  };
+
   alertas: string[];
   contraindicacoes: string[];
   justificativa: string;
 }
 
-/**
- * Simula uma IA Clínica que gera recomendações baseadas em protocolos dermatológicos
- */
 export function generateInjectablePlan(patient: PatientAnamnesis): AIPlanResult {
   const result: AIPlanResult = {
     botox: {},
     preenchimento: {},
-    bioestimuladores: { produto: "Não indicado", sessoes: 0, intervalo: "-" },
+    bioestimuladores: { produto: "A avaliar", sessoes: 0, intervalo: "-" },
+    pele: { limpeza: "Mensal", peeling: "Não indicado", microagulhamento: "Não" },
+    tecnologias: { laser: "Não", radiofrequencia: "Não", outros: "-" },
     alertas: [],
     contraindicacoes: [],
-    justificativa: "Análise baseada nos dados clínicos fornecidos."
+    justificativa: "Protocolo global gerado com base na avaliação clínica."
   };
 
-  // 1. ANÁLISE DE SEGURANÇA (Critical Checks)
-  if (patient.lifestyle.pregnant || patient.lifestyle.lactating) {
-    result.contraindicacoes.push("Gestação/Lactação: Contraindicação absoluta para toxina e bioestimuladores.");
-    result.justificativa = "Procedimento suspenso devido à gestação/lactação.";
-    return result; // Para a análise aqui por segurança
+  // --- 1. SEGURANÇA (CRÍTICA) ---
+  if (patient.lifestyle.pregnant) {
+    result.contraindicacoes.push("Gestante: Apenas limpeza de pele básica e hidratação permitidas.");
+    result.justificativa = "Protocolo restrito devido à gestação.";
+    return result; 
+  }
+  if (patient.lifestyle.isotretinoin) {
+    result.alertas.push("Uso de Roacutan: Pele extremamente sensível. Proibido laser ablativo e peelings médios/profundos.");
+  }
+  if (patient.skin.melasma && patient.lifestyle.sunExposure.includes('Alta')) {
+    result.alertas.push("Melasma + Sol: Risco altíssimo de efeito rebote. Focar em gerenciamento térmico.");
   }
 
-  if (patient.medications.some(m => m.toLowerCase().includes('roacutan') || m.toLowerCase().includes('isotretinoína'))) {
-    result.alertas.push("Uso de Isotretinoína: Pele sensível e cicatrização lenta. Evitar procedimentos ablativos.");
-  }
-
-  if (patient.lifestyle.keloidHistory) {
-    result.alertas.push("Histórico de Queloide: Evitar bioestimuladores corporais ou injetáveis com muita reação inflamatória.");
-  }
-
-  // 2. PROTOCOLO DE TOXINA BOTULÍNICA (Baseado em Idade e Queixa)
-  const needsBotox = patient.complaints.some(c => c.includes('Rugas') || c.includes('Linhas') || c.includes('Envelhecimento'));
+  // --- 2. GERENCIAMENTO DE PELE (NOVO) ---
   
-  if (needsBotox) {
-    // Doses sugeridas (Conservative approach)
+  // Limpeza de Pele
+  if (patient.skin.biotipo.includes('Oleosa') || patient.skin.acne) {
+      result.pele.limpeza = "A cada 21 dias (Controle de oleosidade)";
+      result.pele.peeling = "Ácido Salicílico ou Mandélico (Superficial)";
+  } else if (patient.skin.biotipo.includes('Seca')) {
+      result.pele.limpeza = "A cada 45 dias (Foco em Hidratação)";
+  }
+
+  // Microagulhamento / Cicatrizes
+  if (patient.complaints.some(c => c.includes('Cicatrizes') || c.includes('Poros'))) {
+      if (!patient.lifestyle.keloidHistory && !patient.lifestyle.isotretinoin) {
+          result.pele.microagulhamento = "Indicado (Drug Delivery com Fatores de Crescimento)";
+      } else {
+          result.pele.microagulhamento = "Contraindicado (Histórico de Queloide ou Roacutan)";
+      }
+  }
+
+  // --- 3. TECNOLOGIAS (NOVO) ---
+  
+  // Manchas / Melasma
+  if (patient.skin.melasma || patient.complaints.some(c => c.includes('Manchas'))) {
+      result.tecnologias.laser = "Luz Pulsada (IPL) ou Laser Q-Switched (Baixa energia)";
+      result.tecnologias.outros = "LEDterapia Ambar/Vermelho";
+  }
+
+  // Flacidez (Tecnologias)
+  if (patient.complaints.some(c => c.includes('Flacidez'))) {
+      result.tecnologias.radiofrequencia = "Indicada (Ex: Multipolar) - Estimulo de colágeno sem agulhas";
+      if (patient.age > 45) {
+          result.tecnologias.outros += " / Considerar Ultraformer (HIFU)";
+      }
+  }
+
+  // --- 4. INJETÁVEIS (LÓGICA ANTERIOR MANTIDA) ---
+  
+  const multiplier = patient.sex === 'Masculino' ? 1.5 : 1;
+  
+  // Toxina
+  if (patient.age > 25 || patient.complaints.some(c => c.includes('Rugas'))) {
     result.botox = {
-      "Glabela (Bravo)": patient.age > 45 ? 25 : 20,
-      "Frontal (Testa)": patient.age > 50 ? 10 : 12, // Em idosos, cuidado com ptose
-      "Orbicular (Pés de galinha)": 12,
+      "Glabela": Math.ceil((patient.age > 45 ? 25 : 20) * multiplier),
+      "Testa": Math.ceil((patient.age > 55 ? 10 : 12) * multiplier),
+      "Olhos": Math.ceil(12 * multiplier),
     };
-    
-    if (patient.complaints.includes("Bruxismo") || patient.complaints.includes("Rosto quadrado")) {
-      result.botox["Masseter"] = 30;
-    }
   }
 
-  // 3. PROTOCOLO DE PREENCHIMENTO (Baseado em Perda de Volume)
-  const needsVolume = patient.age > 35 || patient.complaints.includes("Flacidez") || patient.complaints.includes("Olheiras");
-
-  if (needsVolume) {
-    if (patient.complaints.includes("Olheiras")) result.preenchimento["Olheiras (Redensity II)"] = "1.0ml";
-    if (patient.complaints.includes("Bigode Chinês")) result.preenchimento["Sulco Nasogeniano"] = "1.0ml";
-    
-    // Harmonização básica
+  // Preenchimento
+  if (patient.age > 35 || patient.complaints.some(c => c.includes('Olheiras') || c.includes('Bigode'))) {
     if (patient.age > 40) {
-      result.preenchimento["Malar (Sustentação)"] = "1.0ml por lado";
-      result.preenchimento["Mentual (Queixo)"] = "1.0ml";
+        result.preenchimento["Malar"] = "1.0ml/lado (Sustentação)";
+        result.preenchimento["Mento"] = "1.0ml";
+    }
+    if (patient.complaints.some(c => c.includes('Olheiras'))) {
+        result.preenchimento["Olheiras"] = "1.0ml (Redensity II)";
     }
   }
 
-  // 4. PROTOCOLO DE BIOESTIMULADORES (Baseado em Flacidez e Pele)
-  if (patient.complaints.includes("Flacidez") || patient.age > 30) {
-    if (patient.skinType === 'IV' || patient.skinType === 'V' || patient.skinType === 'VI') {
-      // Peles morenas/negras
-      result.bioestimuladores = {
-        produto: "Radiesse (Hidroxiapatita)",
-        sessoes: 2,
-        intervalo: "45 dias"
-      };
-      result.justificativa += " Radiesse escolhido por menor risco de edema em fototipos altos.";
+  // Bioestimulador
+  const hasFlacidez = patient.complaints.some(c => c.includes("Flacidez")) || patient.age > 30;
+  if (hasFlacidez) {
+    const isDarkSkin = ['IV', 'V', 'VI'].includes(patient.skin.fototipo);
+    if (isDarkSkin) {
+      result.bioestimuladores = { produto: "Radiesse (Hidroxiapatita)", sessoes: 2, intervalo: "45 dias" };
+      result.justificativa += " Radiesse preferido para fototipos altos.";
     } else {
-      // Peles claras
-      result.bioestimuladores = {
-        produto: "Sculptra (Ácido P. L-Lático)",
-        sessoes: 3,
-        intervalo: "30 dias"
-      };
+      result.bioestimuladores = { produto: "Sculptra", sessoes: 3, intervalo: "30 dias" };
     }
-  }
-
-  // 5. RECOMENDAÇÕES GERAIS
-  if (patient.lifestyle.smoker) {
-    result.alertas.push("Tabagismo: Resultados de bioestimuladores podem ser reduzidos em até 40%.");
   }
 
   return result;

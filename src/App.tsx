@@ -28,8 +28,9 @@ import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
 import { PatientsPage } from "./pages/patients/PatientsPage";
 import { PatientFormPage } from "./pages/patients/PatientFormPage";
 import { PatientHistoryPage } from "./pages/patients/PatientHistoryPage";
-import { SessionEvolutionPage } from "./pages/patients/SessionEvolutionPage"; // Evolução de Sessão
-import { PatientAnamnesisPage } from "./pages/patients/PatientAnamnesisPage"; // <--- NOVA IMPORTAÇÃO DA ANAMNESE
+import { SessionEvolutionPage } from "./pages/patients/SessionEvolutionPage"; 
+// ⚠️ CERTIFIQUE-SE QUE ESTE CAMINHO ESTÁ CORRETO NO SEU PROJETO
+import { PatientAnamnesisPage } from "./pages/patients/PatientAnamnesisPage"; 
 
 
 // Tratamentos e Injetáveis
@@ -82,8 +83,7 @@ function App() {
                   <Route path="patients/:id/history" element={<PatientHistoryPage />} />
                   <Route path="patients/:patientId/sessions/new" element={<SessionEvolutionPage />} />
                   
-                  
-                  {/* NOVA ROTA DE ANAMNESE */}
+                  {/* ✅ ROTA DE ANAMNESE CORRIGIDA (COM :ID) */}
                   <Route path="patients/:id/anamnesis" element={<PatientAnamnesisPage />} />
 
                   {/* Planejamento de Injetáveis */}

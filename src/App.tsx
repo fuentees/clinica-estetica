@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -6,9 +6,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "./contexts/AuthContext"; 
 import { ThemeProvider } from "./contexts/ThemeContext"; 
 
-// --- LAYOUTS (Menu) ---
-import { Layout } from "./components/Layout";
-import { PatientLayout } from "./components/layouts/PatientLayout";
+// --- LAYOUTS ---
+import { Layout } from "./components/Layout"; 
+import { PatientLayout } from "./components/layouts/PatientLayout"; 
+import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"; 
 
 // --- GUARDIÃO DE ROTAS ---
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -24,16 +25,19 @@ import DashboardPage from "./pages/dashboard/DashboardPage";
 import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
 import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
 
-// Pacientes
-import { PatientsPage } from "./pages/patients/PatientsPage";
+// --- PACIENTES ---
+import { PatientsListPage } from "./pages/patients/PatientsListPage"; 
 import { PatientFormPage } from "./pages/patients/PatientFormPage";
-import { PatientHistoryPage } from "./pages/patients/PatientHistoryPage";
-import { SessionEvolutionPage } from "./pages/patients/SessionEvolutionPage"; 
-// ⚠️ CERTIFIQUE-SE QUE ESTE CAMINHO ESTÁ CORRETO NO SEU PROJETO
+import { PatientOverviewPage } from "./pages/patients/PatientOverviewPage";
 import PatientAnamnesisPage from "./pages/patients/PatientAnamnesisPage";
+import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage";
+import { PatientEvolutionPage } from "./pages/patients/PatientEvolutionPage";
+import { PatientFinancialPage } from "./pages/patients/PatientFinancialPage";
+import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";
+import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
+import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
 
-
-// Tratamentos e Injetáveis
+// Tratamentos
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage";
 import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
@@ -42,12 +46,12 @@ import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningP
 import { ProfessionalsPage } from "./pages/professionals/ProfessionalsPage"; 
 import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage"; 
 
-// Financeiro e Estoque
+// Financeiro
 import { InventoryPage } from "./pages/inventory/InventoryPage";
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
 import { CashFlowPage } from "./pages/payments/CashFlowPage";
 
-// Portal do Paciente
+// Portal
 import PatientHome from "./pages/patients/PatientHome";
 
 const queryClient = new QueryClient();
@@ -55,70 +59,72 @@ const queryClient = new QueryClient();
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <Router>
         <ThemeProvider>
           <AuthProvider>
-            <Toaster position="top-right" toastOptions={{ className: "dark:bg-dark-surface dark:text-dark-text" }} />
+            <Toaster position="top-right" toastOptions={{ className: "dark:bg-gray-800 dark:text-white" }} />
             
             <Routes>
-              {/* === ROTA PÚBLICA === */}
+              {/* ROTA PÚBLICA */}
               <Route path="/login" element={<LoginPage />} />
 
-              {/* === 🏥 ÁREA DA CLÍNICA (Protegida) === */}
-              {/* Rotas acessíveis por administradores, médicos e staff */}
+              {/* ÁREA PROTEGIDA */}
               <Route element={<ProtectedRoute allowedRoles={['admin', 'medico', 'professional', 'recepcionista', 'doutor']} />}>
                 
                 <Route element={<Layout />}>
                   
-                  <Route path="/" element={<DashboardPage />} />
+                  {/* CORREÇÃO AQUI: Redireciona raiz para o Dashboard, não para Pacientes */}
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  
+                  <Route path="/dashboard" element={<DashboardPage />} />
                   
                   {/* Agendamentos */}
                   <Route path="appointments" element={<AppointmentsPage />} />
                   <Route path="appointments/new" element={<AppointmentFormPage />} />
                   
                   {/* Pacientes */}
-                  <Route path="patients" element={<PatientsPage />} />
+                  <Route path="patients" element={<PatientsListPage />} />
                   <Route path="patients/new" element={<PatientFormPage />} />
-                  <Route path="patients/:id/edit" element={<PatientFormPage />} />
-                  <Route path="patients/:id/history" element={<PatientHistoryPage />} />
-                  <Route path="patients/:patientId/sessions/new" element={<SessionEvolutionPage />} />
-                  
-                  {/* ✅ ROTA DE ANAMNESE CORRIGIDA (COM :ID) */}
-                  <Route path="patients/:id/anamnesis" element={<PatientAnamnesisPage />} />
 
-                  {/* Planejamento de Injetáveis */}
-                  <Route path="patients/:id/injectables" element={<InjectablesPlanningPage />} />
+                  {/* Prontuário do Paciente */}
+                  <Route path="patients/:id" element={<PatientDashboardLayout />}>
+                      <Route index element={<PatientOverviewPage />} />
+                      <Route path="details" element={<PatientFormPage />} />
+                      <Route path="anamnesis" element={<PatientAnamnesisPage />} />
+                      <Route path="bioimpedance" element={<PatientBioimpedancePage />} />
+                      <Route path="planning" element={<PatientPlanningPage />} />
+                      <Route path="terms" element={<PatientTermsPage />} />
+                      <Route path="gallery" element={<PatientGalleryPage />} />
+                      <Route path="evolution" element={<PatientEvolutionPage />} />
+                      <Route path="financial" element={<PatientFinancialPage />} />
+                      <Route path="injectables" element={<InjectablesPlanningPage />} />
+                  </Route>
                   
-                  {/* Tratamentos (Catálogo) */}
+                  {/* Outros Módulos */}
                   <Route path="treatments" element={<TreatmentsPage />} />
                   <Route path="treatments/new" element={<TreatmentFormPage />} />
-
-                  {/* Profissionais */}
                   <Route path="professionals" element={<ProfessionalsPage />} />
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                   <Route path="professionals/:id/edit" element={<ProfessionalFormPage />} />
-                  
-                  {/* Estoque e Financeiro */}
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
                 </Route>
               </Route>
 
-              {/* === 👤 PORTAL DO PACIENTE === */}
+              {/* Portal do Paciente */}
               <Route path="/portal" element={<ProtectedRoute allowedRoles={['paciente']} />}>
                 <Route element={<PatientLayout />}>
                   <Route index element={<PatientHome />} />
                 </Route>
               </Route>
 
-              {/* Rota 404 */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
 
           </AuthProvider>
         </ThemeProvider>
-      </BrowserRouter>
+      </Router>
     </QueryClientProvider>
   );
 }

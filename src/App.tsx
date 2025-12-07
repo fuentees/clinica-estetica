@@ -30,7 +30,7 @@ import { PatientFormPage } from "./pages/patients/PatientFormPage";
 import { PatientHistoryPage } from "./pages/patients/PatientHistoryPage";
 import { SessionEvolutionPage } from "./pages/patients/SessionEvolutionPage"; 
 // ⚠️ CERTIFIQUE-SE QUE ESTE CAMINHO ESTÁ CORRETO NO SEU PROJETO
-import { PatientAnamnesisPage } from "./pages/patients/PatientAnamnesisPage"; 
+import PatientAnamnesisPage from "./pages/patients/PatientAnamnesisPage";
 
 
 // Tratamentos e Injetáveis

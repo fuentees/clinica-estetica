@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useForm, useController } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast, Toaster } from "react-hot-toast";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ArrowLeft,
   Save,
@@ -19,16 +21,16 @@ import {
   Camera,
   Upload,
   Trash2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Printer
 } from "lucide-react";
 
-// 🔹 IMPORT REAL DO SUPABASE
 import { supabase } from "../../lib/supabase"; 
-// 🔹 IMPORT DO SLIDER
 import { BeforeAfterSlider } from "../../components/BeforeAfterSlider";
+import generateAnamnesisPdf from "../../utils/generateAnamnesisPdf"; 
 
 // ============================================================================
-// 1. UTILS
+// 1. UTILS E HELPERS (Estrutura de Dados e Lógica)
 // ============================================================================
 
 const strToArray = (s: string | null | undefined) => s ? s.split("; ").map((v) => v.trim()).filter(Boolean) : [];
@@ -36,12 +38,155 @@ const arrayToStr = (a: any) => (Array.isArray(a) ? a.join("; ") : a);
 
 const toNumOrNull = (val: any) => {
   if (val === "" || val === null || val === undefined) return null;
-  const num = Number(val);
+  const valStr = String(val).replace(',', '.');
+  const num = Number(valStr);
   return isNaN(num) ? null : num;
 };
 
 // ============================================================================
-// 2. COMPONENTES UI (VERMELHO)
+// 2. DADOS ESTÁTICOS (Constantes Globais)
+// ============================================================================
+
+const DOENCAS = ["Hipertensão", "Diabetes", "Cardiopatias", "Autoimunes", "Epilepsia", "Tireoide"];
+const ALERGIAS = ["Antibióticos", "Anestésicos", "Látex", "Cosméticos", "AAS/Dipirona", "Frutos do Mar"];
+const QUEIXAS = ["Gordura Localizada", "Flacidez", "Celulite", "Melasma", "Acne", "Rugas", "Cicatrizes", "Estrias"];
+const FOTOTIPOS = ["I", "II", "III", "IV", "V", "VI"];
+const BIOTIPOS = ["Normal", "Seca", "Oleosa", "Mista", "Sensível"];
+const TEXTURAS_PELE = ["Lisa", "Áspera"];
+const GRAUS_ACNE = ["Grau I", "Grau II", "Grau III", "Grau IV"];
+const LESOES_ACNE = ["Comedões", "Foliculite", "Pápulas", "Pústulas", "Milium", "Cistos", "Nódulo", "Placa", "Vesícula", "Abcesso"];
+const PATOLOGIAS_PELE = ["Rosácea", "Dermatite Seborreica", "Dermatite de Contato", "Dermatite Atópica"];
+const DISCROMIAS = ["Acromia", "Hipocromia", "Hipercromia"];
+const ENVELHECIMENTO_SINAIS = ["Rugas Dinâmicas", "Rugas Estáticas", "Elastose", "Flacidez Muscular", "Flacidez Tissular"];
+const ALTERACOES_POSTURAIS = ["Cifose", "Escoliose", "Hiperlordose"];
+const TIPOS_LIPODISTROFIA = ["Flácida", "Compacta", "Edematosa"];
+const TIPOS_ESTRIAS = ["Vermelhas", "Nacaradas", "Brancas"];
+const FLACIDEZ_CORPORAL = ["Tissular", "Muscular"];
+const PROCEDIMENTOS_LISTA = ["Toxina Botulínica", "Preenchimento", "Bioestimulador", "Fios de PDO", "Laser / Luz Pulsada", "Peeling Químico", "Microagulhamento", "Cirurgia Plástica"];
+
+const REGIOES_FACIAIS = ["Frontal (Testa)", "Glabela", "Periorbital (Olhos)", "Malar (Maçãs)", "Nasal", "Nasogeniano (Bigode Chinês)", "Perioral (Boca)", "Mentual (Queixo)", "Mandibular", "Pescoço", "Colo"];
+const REGIOES_CORPORAIS = ["Braços", "Abdômen Sup.", "Abdômen Inf.", "Flancos", "Costas", "Glúteos", "Coxa Anterior", "Coxa Posterior", "Interno Coxa", "Culote", "Panturrilha"];
+
+const TERMO_LGPD_COMPLETO = `
+Eu, paciente identificado no prontuário desta clínica, declaro que fui devidamente informado(a), de forma clara, adequada e suficiente, sobre a necessidade de realização de registros fotográficos e/ou audiovisuais, antes, durante e após procedimentos estéticos, exclusivamente para fins de avaliação, acompanhamento clínico, registro técnico e documentação da evolução do tratamento ao qual serei submetido(a).
+
+Autorizo, de maneira livre, informada e inequívoca, que minhas imagens sejam captadas, armazenadas, tratadas e utilizadas pela clínica e por seus profissionais, para compor meu prontuário, subsidiar decisões terapêuticas, permitir comparações entre estágios de tratamento, registrar intercorrências, dar suporte à conduta técnica adotada, e eventualmente servir como documento de comprovação em auditorias internas, demandas profissionais, perícias ou processos éticos, caso necessário. Declaro estar ciente de que tais imagens possuem caráter estritamente técnico e que têm como finalidade principal a garantia de segurança, transparência, rastreabilidade e qualidade assistencial.
+
+Autorizo ainda que as imagens possam ser utilizadas para fins de treinamento técnico da equipe, aprimoramento de protocolos internos, estudos comparativos, pesquisa clínica sem identificação direta e padronização de resultados, desde que meu nome e dados pessoais não sejam divulgados, em conformidade com o princípio da anonimização previsto na Lei Geral de Proteção de Dados (LGPD – Lei nº 13.709/2018). Fica vedada qualquer forma de comercialização, cessão ou compartilhamento das minhas imagens com terceiros que não tenham relação direta com o serviço prestado ou necessidade técnica comprovada.
+
+Declaro estar ciente de que o uso externo das imagens, como divulgação em redes sociais, sites, materiais publicitários, folders, palestras, congressos ou quaisquer meios de comunicação, somente ocorrerá mediante minha autorização adicional e expressa, colhida separadamente no sistema. Tal autorização poderá abranger imagens anonimizadas ou parcialmente identificáveis, de acordo com minha escolha e ciência. Caso eu não concorde com a divulgação externa, nenhuma imagem será utilizada para esse fim.
+
+Estou ciente de que todas as imagens serão armazenadas em ambiente seguro e que a clínica adotará medidas técnicas e administrativas compatíveis com a legislação vigente, visando impedir acessos não autorizados, vazamentos, perdas ou manipulações indevidas. Reconheço, porém, que mesmo diante das melhores práticas de segurança, nenhum sistema digital está completamente imune a riscos, e concordo que a clínica não poderá ser responsabilizada por eventos decorrentes de ataques cibernéticos ou atos de terceiros, desde que não haja negligência por parte da instituição.
+
+Reconheço que posso, a qualquer momento, solicitar acesso às imagens, requerer correções, obter informações sobre o tratamento dos dados e revogar parcialmente esta autorização, respeitando-se a legalidade do uso anterior à revogação. Declaro compreender que a revogação não impede a clínica de manter as imagens no prontuário, por obrigação legal, ética, regulatória e sanitária, conforme prevê o Código de Ética e legislações correlatas.
+
+Concordo que a clínica não se responsabiliza por interpretações equivocadas, expectativas irreais ou comparações feitas pelo próprio paciente com imagens externas, de terceiros ou manipuladas digitalmente. Reconheço que resultados estéticos podem variar conforme características individuais, e que imagens de outros pacientes não constituem garantia de resultado.
+
+Por fim, autorizo o uso das imagens para fins internos e assistenciais, conforme descrito acima, e declaro que li atentamente todas as cláusulas deste termo, não restando dúvidas quanto ao seu conteúdo. Confirmo minha concordância mediante assinatura digital registrada no sistema, para que produza efeitos legais.
+`;
+
+// ============================================================================
+// 3. SCHEMA ZOD (Tipagem Completa)
+// ============================================================================
+
+const stringOrNull = z.string().optional();
+const arrayOrNull = z.array(z.string()).optional();
+const boolOrNull = z.boolean().optional();
+
+// 1. Definição dos campos fixos
+const fixedSchemaFields = {
+    // --- ABA 1: QUEIXA ---
+    queixa_principal: arrayOrNull,
+    queixa_principal_detalhada: stringOrNull,
+    tempo_queixa: stringOrNull,
+    fatores_agravantes: stringOrNull,
+    fatores_melhora: stringOrNull,
+    evento_especifico: stringOrNull,
+    nivel_urgencia: stringOrNull,
+    procedimentos_previos: arrayOrNull,
+    outros_procedimentos: stringOrNull,
+    teve_intercorrencia: stringOrNull, // Radio: 'true'/'false'
+    intercorrencias_detalhes: stringOrNull, // Detalhes da intercorrência
+    
+    // --- ABA 2: SAÚDE GERAL ---
+    doencas_cronicas: arrayOrNull,
+    outros_doencas: stringOrNull,
+    alergias_medicamentosas: arrayOrNull,
+    alergia_cosmeticos: stringOrNull,
+    usa_medicacao_continua: z.boolean().optional(),
+    lista_medicacoes: stringOrNull,
+    gestante: boolOrNull,
+    lactante: boolOrNull,
+    uso_anticoncepcional: boolOrNull,
+    fumante: boolOrNull,
+    uso_anticoagulante: boolOrNull,
+    uso_retinoide: boolOrNull,
+    implantes_metalicos: boolOrNull,
+    historico_queloide: boolOrNull,
+    pratica_atividade: stringOrNull, // Radio: 'true'/'false'
+    atividade_fisica_detalhes: stringOrNull,
+    ingere_agua: stringOrNull, // Radio: 'true'/'false'
+    ingestao_agua_qtd: stringOrNull,
+    sono_horas: stringOrNull,
+
+    // --- ABA 3: FACIAL ---
+    biotipo_cutaneo: stringOrNull,
+    fototipo: stringOrNull,
+    facial_textura: stringOrNull,
+    facial_acne_grau: stringOrNull,
+    class_glogau: stringOrNull,
+    pele_sensivel: boolOrNull,
+    rosacea: boolOrNull,
+    facial_lesoes: arrayOrNull,
+    facial_patologias: arrayOrNull,
+    tem_telangiectasias: stringOrNull, // Radio: 'true'/'false'
+    facial_telangiectasias_local: arrayOrNull,
+    facial_discromias: arrayOrNull,
+    facial_discromias_local: arrayOrNull,
+    facial_envelhecimento: arrayOrNull,
+    facial_rugas_local: arrayOrNull,
+    facial_observacoes: stringOrNull,
+
+    // --- ABA 4: CORPORAL ---
+    peso: stringOrNull,
+    altura: stringOrNull,
+    imc: stringOrNull,
+    pressao_arterial: stringOrNull,
+    cintura_cm: stringOrNull,
+    quadril_cm: stringOrNull,
+    corporal_postura: arrayOrNull,
+    corporal_lipodistrofia: arrayOrNull,
+    corporal_gordura_local: arrayOrNull,
+    corporal_celulite_grau: stringOrNull,
+    corporal_celulite_local: arrayOrNull,
+    corporal_estrias: arrayOrNull,
+    corporal_estrias_local: arrayOrNull,
+    corporal_flacidez_tipo: arrayOrNull,
+    corporal_flacidez_local: arrayOrNull,
+    corporal_observacoes: stringOrNull,
+
+    // --- ABA 5: PLANO ---
+    satisfacao_imagem_corporal: stringOrNull,
+    preferencia_plano: stringOrNull,
+    plano_inicial: stringOrNull,
+    numero_sessoes_estimado: stringOrNull,
+    intervalo_sessoes: stringOrNull,
+    prioridade_regioes: stringOrNull,
+    red_flags_profissional: stringOrNull,
+
+    // --- ABA 6: TERMOS ---
+    termo_aceito: boolOrNull,
+    autoriza_foto: boolOrNull,
+    autoriza_midia: boolOrNull,
+};
+
+// 2. Usamos z.object(fixedFields).catchall() para aceitar os campos dinâmicos (data_proc_X)
+const anamnesisSchema = z.object(fixedSchemaFields).catchall(z.any().optional());
+
+type AnamnesisFormData = z.infer<typeof anamnesisSchema>;
+
+// ============================================================================
+// 4. COMPONENTES UI AUXILIARES
 // ============================================================================
 
 function Button({ className, variant = 'default', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'ghost' | 'outline' | 'danger' }) {
@@ -83,6 +228,7 @@ function Section({ title, children, className = "" }: any) {
 function TabButton({ active, onClick, icon, label }: any) {
   return (
     <button 
+      type="button"
       onClick={(e) => { e.preventDefault(); onClick(); }} 
       className={`flex items-center gap-2 py-2 px-4 rounded-lg transition-all whitespace-nowrap ${active ? "bg-red-50 text-red-700 font-bold border border-red-300 shadow-sm" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-300"}`}
     >
@@ -232,7 +378,7 @@ function SelectField({ label, name, register, options }: any) {
   return (
     <div className="w-full">
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
-      <select {...register(name)} className="w-full p-2 border rounded-md dark:bg-gray-800 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-red-500 outline-none">
+      <select {...register(name)} className="w-full p-2 border rounded-md dark:bg-gray-800 dark:border-gray-600 dark:text-white focus:ring-2 focus-visible:ring-red-500 outline-none">
         <option value="">Selecione</option>
         {options.map((o: string) => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -272,15 +418,7 @@ function YesNoRadio({ label, name, register, watchValue, trueLabel = "Sim", fals
   );
 }
 
-function SignaturePad({ 
-  onEnd, 
-  existingSignature, 
-  isLoading 
-}: { 
-  onEnd: (data: string) => void;
-  existingSignature: string | null;
-  isLoading?: boolean;
-}) {
+function SignaturePad({ onEnd, existingSignature, isLoading }: { onEnd: (data: string) => void; existingSignature: string | null; isLoading?: boolean; }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasSignature, setHasSignature] = useState(!!existingSignature);
@@ -374,49 +512,7 @@ function SignaturePad({
 }
 
 // ============================================================================
-// 3. DADOS ESTÁTICOS
-// ============================================================================
-
-const DOENCAS = ["Hipertensão", "Diabetes", "Cardiopatias", "Autoimunes", "Epilepsia", "Tireoide"];
-const ALERGIAS = ["Antibióticos", "Anestésicos", "Látex", "Cosméticos", "AAS/Dipirona", "Frutos do Mar"];
-const QUEIXAS = ["Gordura Localizada", "Flacidez", "Celulite", "Melasma", "Acne", "Rugas", "Cicatrizes", "Estrias"];
-const FOTOTIPOS = ["I", "II", "III", "IV", "V", "VI"];
-const BIOTIPOS = ["Normal", "Seca", "Oleosa", "Mista", "Sensível"];
-const TEXTURAS_PELE = ["Lisa", "Áspera"];
-const GRAUS_ACNE = ["Grau I", "Grau II", "Grau III", "Grau IV"];
-const LESOES_ACNE = ["Comedões", "Foliculite", "Pápulas", "Pústulas", "Milium", "Cistos", "Nódulo", "Placa", "Vesícula", "Abcesso"];
-const PATOLOGIAS_PELE = ["Rosácea", "Dermatite Seborreica", "Dermatite de Contato", "Dermatite Atópica"];
-const DISCROMIAS = ["Acromia", "Hipocromia", "Hipercromia"];
-const ENVELHECIMENTO_SINAIS = ["Rugas Dinâmicas", "Rugas Estáticas", "Elastose", "Flacidez Muscular", "Flacidez Tissular"];
-const ALTERACOES_POSTURAIS = ["Cifose", "Escoliose", "Hiperlordose"];
-const TIPOS_LIPODISTROFIA = ["Flácida", "Compacta", "Edematosa"];
-const TIPOS_ESTRIAS = ["Vermelhas", "Nacaradas", "Brancas"];
-const FLACIDEZ_CORPORAL = ["Tissular", "Muscular"];
-const PROCEDIMENTOS_LISTA = ["Toxina Botulínica", "Preenchimento", "Bioestimulador", "Fios de PDO", "Laser / Luz Pulsada", "Peeling Químico", "Microagulhamento", "Cirurgia Plástica"];
-
-const REGIOES_FACIAIS = ["Frontal (Testa)", "Glabela", "Periorbital (Olhos)", "Malar (Maçãs)", "Nasal", "Nasogeniano (Bigode Chinês)", "Perioral (Boca)", "Mentual (Queixo)", "Mandibular", "Pescoço", "Colo"];
-const REGIOES_CORPORAIS = ["Braços", "Abdômen Sup.", "Abdômen Inf.", "Flancos", "Costas", "Glúteos", "Coxa Anterior", "Coxa Posterior", "Interno Coxa", "Culote", "Panturrilha"];
-
-const TERMO_LGPD_COMPLETO = `
-Eu, paciente identificado no prontuário desta clínica, declaro que fui devidamente informado(a), de forma clara, adequada e suficiente, sobre a necessidade de realização de registros fotográficos e/ou audiovisuais, antes, durante e após procedimentos estéticos, exclusivamente para fins de avaliação, acompanhamento clínico, registro técnico e documentação da evolução do tratamento ao qual serei submetido(a).
-
-Autorizo, de maneira livre, informada e inequívoca, que minhas imagens sejam captadas, armazenadas, tratadas e utilizadas pela clínica e por seus profissionais, para compor meu prontuário, subsidiar decisões terapêuticas, permitir comparações entre estágios de tratamento, registrar intercorrências, dar suporte à conduta técnica adotada, e eventualmente servir como documento de comprovação em auditorias internas, demandas profissionais, perícias ou processos éticos, caso necessário. Declaro estar ciente de que tais imagens possuem caráter estritamente técnico e que têm como finalidade principal a garantia de segurança, transparência, rastreabilidade e qualidade assistencial.
-
-Autorizo ainda que as imagens possam ser utilizadas para fins de treinamento técnico da equipe, aprimoramento de protocolos internos, estudos comparativos, pesquisa clínica sem identificação direta e padronização de resultados, desde que meu nome e dados pessoais não sejam divulgados, em conformidade com o princípio da anonimização previsto na Lei Geral de Proteção de Dados (LGPD – Lei nº 13.709/2018). Fica vedada qualquer forma de comercialização, cessão ou compartilhamento das minhas imagens com terceiros que não tenham relação direta com o serviço prestado ou necessidade técnica comprovada.
-
-Declaro estar ciente de que o uso externo das imagens, como divulgação em redes sociais, sites, materiais publicitários, folders, palestras, congressos ou quaisquer meios de comunicação, somente ocorrerá mediante minha autorização adicional e expressa, colhida separadamente no sistema. Tal autorização poderá abranger imagens anonimizadas ou parcialmente identificáveis, de acordo com minha escolha e ciência. Caso eu não concorde com a divulgação externa, nenhuma imagem será utilizada para esse fim.
-
-Estou ciente de que todas as imagens serão armazenadas em ambiente seguro e que a clínica adotará medidas técnicas e administrativas compatíveis com a legislação vigente, visando impedir acessos não autorizados, vazamentos, perdas ou manipulações indevidas. Reconheço, porém, que mesmo diante das melhores práticas de segurança, nenhum sistema digital está completamente imune a riscos, e concordo que a clínica não poderá ser responsabilizada por eventos decorrentes de ataques cibernéticos ou atos de terceiros, desde que não haja negligência por parte da instituição.
-
-Reconheço que posso, a qualquer momento, solicitar acesso às imagens, requerer correções, obter informações sobre o tratamento dos dados e revogar parcialmente esta autorização, respeitando-se a legalidade do uso anterior à revogação. Declaro compreender que a revogação não impede a clínica de manter as imagens no prontuário, por obrigação legal, ética, regulatória e sanitária, conforme prevê o Código de Ética e legislações correlatas.
-
-Concordo que a clínica não se responsabiliza por interpretações equivocadas, expectativas irreais ou comparações feitas pelo próprio paciente com imagens externas, de terceiros ou manipuladas digitalmente. Reconheço que resultados estéticos podem variar conforme características individuais, e que imagens de outros pacientes não constituem garantia de resultado.
-
-Por fim, autorizo o uso das imagens para fins internos e assistenciais, conforme descrito acima, e declaro que li atentamente todas as cláusulas deste termo, não restando dúvidas quanto ao seu conteúdo. Confirmo minha concordância mediante assinatura digital registrada no sistema, para que produza efeitos legais.
-`;
-
-// ============================================================================
-// 4. COMPONENTE PRINCIPAL
+// 5. COMPONENTE PRINCIPAL
 // ============================================================================
 
 export function PatientAnamnesisPage() {
@@ -425,7 +521,7 @@ export function PatientAnamnesisPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false); // Estado para o upload de foto
+  const [uploading, setUploading] = useState(false);
   const [showTermoModal, setShowTermoModal] = useState(false);
   
   const [activeTab, setActiveTab] = useState<"queixa" | "saude" | "facial" | "corporal" | "plano" | "termos" | "fotos">("queixa");
@@ -434,10 +530,21 @@ export function PatientAnamnesisPage() {
   const [signatureData, setSignatureData] = useState("");
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   
-  // Estado para armazenar as fotos carregadas
   const [patientPhotos, setPatientPhotos] = useState<string[]>([]);
+  const [fullPatientData, setFullPatientData] = useState<any>(null);
 
-  const { register, handleSubmit, setValue, reset, control, watch } = useForm();
+  const { register, handleSubmit, setValue, reset, control, watch } = useForm<AnamnesisFormData>({
+    resolver: zodResolver(anamnesisSchema),
+    defaultValues: {
+        doencas_cronicas: [], alergias_medicamentosas: [], queixa_principal: [], procedimentos_previos: [],
+        facial_lesoes: [], facial_patologias: [], facial_discromias: [], facial_envelhecimento: [],
+        corporal_postura: [], corporal_lipodistrofia: [], corporal_estrias: [], corporal_flacidez_tipo: [],
+        facial_telangiectasias_local: [], facial_discromias_local: [], facial_rugas_local: [],
+        corporal_gordura_local: [], corporal_celulite_local: [], corporal_estrias_local: [], corporal_flacidez_local: [],
+        teve_intercorrencia: 'false', pratica_atividade: 'false', ingere_agua: 'false', tem_telangiectasias: 'false',
+    }
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Monitores
@@ -451,13 +558,13 @@ export function PatientAnamnesisPage() {
 
   useEffect(() => {
     if (peso && altura) {
-      const pesoNum = Number(peso);
-      const alturaNum = Number(altura);
-      if (alturaNum > 0) {
-        const imcCalc = pesoNum / (alturaNum * alturaNum);
+      const pesoNum = toNumOrNull(peso);
+      const alturaNum = toNumOrNull(altura);
+      if (alturaNum && alturaNum > 0) {
+        const imcCalc = (pesoNum || 0) / (alturaNum * alturaNum);
         if (!isNaN(imcCalc) && isFinite(imcCalc)) setValue("imc", imcCalc.toFixed(2));
-      }
-    }
+      } else { setValue("imc", ""); }
+    } else { setValue("imc", ""); }
   }, [peso, altura, setValue]);
 
   useEffect(() => {
@@ -466,22 +573,26 @@ export function PatientAnamnesisPage() {
 
   async function fetchAnamnesis() {
     try {
-      if (!id) return;
+      if (!id || id === 'new') {
+        setLoading(false);
+        setPatientName("Novo Paciente");
+        return;
+      }
       
-      const { data, error } = await supabase.from("patients").select(`*, profiles:profile_id(first_name, last_name)`).eq("id", id).single();
+      const { data: dbData, error } = await supabase.from("patients").select(`*, profiles:profile_id(first_name, last_name)`).eq("id", id).single();
       
       if (error) throw error;
-      if (!data) return;
+      if (!dbData) return;
 
-      // 🔴 FIX DO NOME: BUSCA ROBUSTA
+      const data = dbData as any; 
+      setFullPatientData(data);
+
       const nameFromTable = data.name || data.nome || data.full_name;
-      // @ts-ignore
       const nameFromProfile = data.profiles ? `${data.profiles.first_name} ${data.profiles.last_name}` : null;
       setPatientName(nameFromTable || nameFromProfile || "Paciente Sem Nome");
 
       const formData: any = { ...data };
 
-      // Arrays
       [
         "doencas_cronicas", "alergias_medicamentosas", "queixa_principal", "procedimentos_previos",
         "facial_lesoes", "facial_patologias", "facial_discromias", "facial_envelhecimento",
@@ -492,19 +603,13 @@ export function PatientAnamnesisPage() {
         formData[key] = strToArray(data[key]);
       });
 
-      // JSON Data & Assinatura & FOTOS
       const procDates = data.procedimentos_detalhes_json || {};
       if (typeof procDates === 'object') {
-        Object.keys(procDates).forEach(key => {
-           formData[key] = procDates[key];
-        });
-        
+        Object.keys(procDates).forEach(key => { formData[key] = procDates[key]; });
         if (procDates.assinatura_base64) {
             setSavedSignature(procDates.assinatura_base64);
             setSignatureData(procDates.assinatura_base64);
         }
-
-        // 📸 CARREGAR FOTOS SALVAS
         if (procDates.galeria_fotos && Array.isArray(procDates.galeria_fotos)) {
             setPatientPhotos(procDates.galeria_fotos);
         }
@@ -528,85 +633,60 @@ export function PatientAnamnesisPage() {
     }
   }
 
-  // --- FUNÇÃO DE UPLOAD ---
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0 || !id) return;
-    
     setUploading(true);
     const file = event.target.files[0];
     const fileExt = file.name.split('.').pop();
     const fileName = `${id}/${Date.now()}.${fileExt}`;
-    const filePath = fileName;
-
     try {
-        // 1. Upload para o Supabase Storage
-        const { error: uploadError } = await supabase.storage
-            .from('patient-photos')
-            .upload(filePath, file);
-
+        const { error: uploadError } = await supabase.storage.from('patient-photos').upload(fileName, file);
         if (uploadError) throw uploadError;
-
-        // 2. Obter URL Pública
-        const { data: publicUrlData } = supabase.storage
-            .from('patient-photos')
-            .getPublicUrl(filePath);
-
-        const publicUrl = publicUrlData.publicUrl;
-
-        // 3. Atualizar o Array local e Salvar no Banco
-        const newPhotos = [...patientPhotos, publicUrl];
+        const { data: publicUrlData } = supabase.storage.from('patient-photos').getPublicUrl(fileName);
+        const newPhotos = [...patientPhotos, publicUrlData.publicUrl];
         setPatientPhotos(newPhotos);
-
-        // Salvar imediatamente no JSON do paciente
-        // Precisamos buscar o JSON atual primeiro para não perder a assinatura
         const { data: currentData } = await supabase.from('patients').select('procedimentos_detalhes_json').eq('id', id).single();
         const currentJson = currentData?.procedimentos_detalhes_json || {};
-        
-        await supabase.from('patients').update({
-            procedimentos_detalhes_json: { ...currentJson, galeria_fotos: newPhotos }
-        }).eq('id', id);
-
-        toast.success("Foto enviada com sucesso!");
-
+        await supabase.from('patients').update({ procedimentos_detalhes_json: { ...currentJson, galeria_fotos: newPhotos } }).eq('id', id);
+        toast.success("Foto enviada!");
     } catch (error: any) {
-        console.error('Erro no upload:', error);
-        toast.error("Erro ao enviar foto: " + error.message);
+        console.error(error);
+        toast.error("Erro ao enviar foto.");
     } finally {
         setUploading(false);
-        if (fileInputRef.current) fileInputRef.current.value = ""; // Limpar input
+        if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
   const deletePhoto = async (photoUrl: string) => {
-      if(!confirm("Tem certeza que deseja remover esta foto?")) return;
-      
+      if(!confirm("Remover esta foto?")) return;
       const newPhotos = patientPhotos.filter(p => p !== photoUrl);
       setPatientPhotos(newPhotos);
-
-      // Atualizar banco
       const { data: currentData } = await supabase.from('patients').select('procedimentos_detalhes_json').eq('id', id).single();
       const currentJson = currentData?.procedimentos_detalhes_json || {};
-      
-      await supabase.from('patients').update({
-          procedimentos_detalhes_json: { ...currentJson, galeria_fotos: newPhotos }
-      }).eq('id', id);
+      await supabase.from('patients').update({ procedimentos_detalhes_json: { ...currentJson, galeria_fotos: newPhotos } }).eq('id', id);
       toast.success("Foto removida.");
   }
 
+  const handlePrint = () => {
+    const currentData = watch(); 
+    const patientProfileData = fullPatientData || { name: patientName };
+    generateAnamnesisPdf(patientProfileData, currentData, savedSignature || signatureData || null);
+    toast.success("PDF gerado!");
+  };
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: AnamnesisFormData) => {
     setSaving(true);
     try {
       let intercorrenciaFinal = "Não";
-      if (data.teve_intercorrencia === "true" || data.teve_intercorrencia === true) {
+      if (data.teve_intercorrencia === "true") {
         intercorrenciaFinal = data.intercorrencias_detalhes || "Sim, sem detalhes.";
       }
 
       const procedimentosDatas: any = {};
       PROCEDIMENTOS_LISTA.forEach(proc => {
-         if(data[`data_proc_${proc}`]) {
-            procedimentosDatas[`data_proc_${proc}`] = data[`data_proc_${proc}`];
-         }
+         // @ts-ignore
+         if(data[`data_proc_${proc}`]) procedimentosDatas[`data_proc_${proc}`] = data[`data_proc_${proc}`];
       });
 
       if (signatureData) procedimentosDatas.assinatura_base64 = signatureData;
@@ -651,16 +731,15 @@ export function PatientAnamnesisPage() {
         procedimentos_detalhes_json: procedimentosDatas
       };
 
-      delete payload.profiles;
-      delete payload.teve_intercorrencia;
-      delete payload.intercorrencias_detalhes;
+      // CORREÇÃO CRÍTICA AQUI: Usando 'as any' para permitir delete
+      const payloadToSend = payload as any;
+      delete payloadToSend.profiles; 
+      delete payloadToSend.teve_intercorrencia;
+      delete payloadToSend.intercorrencias_detalhes;
 
-      await supabase.from("patients").update(payload).eq("id", id);
-      
+      await supabase.from("patients").update(payloadToSend).eq("id", id);
       if (signatureData) setSavedSignature(signatureData);
-
-      toast.success("Rascunho salvo com sucesso!");
-
+      toast.success("Salvo com sucesso!");
     } catch (err) {
       console.error(err);
       toast.error("Erro ao salvar.");
@@ -675,7 +754,6 @@ export function PatientAnamnesisPage() {
     <div className="p-6 max-w-7xl mx-auto pb-20 bg-gray-50 dark:bg-gray-900 min-h-screen font-sans">
       <Toaster position="top-right" />
       
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={() => navigate(`/patients/${id}/history`)}>
@@ -686,13 +764,18 @@ export function PatientAnamnesisPage() {
             <p className="text-sm text-gray-500 font-bold">{patientName}</p>
           </div>
         </div>
-        <Button onClick={handleSubmit(onSubmit)} disabled={saving} className="bg-red-600 text-white hover:bg-red-700 shadow-sm border border-transparent">
-          {saving ? <Loader2 className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />}
-          Salvar Rascunho
-        </Button>
+        
+        <div className="flex gap-2">
+            <Button type="button" onClick={handlePrint} variant="outline" className="gap-2 text-gray-700 border-gray-300 hover:bg-gray-50">
+              <Printer size={18} /> Imprimir / PDF
+            </Button>
+            <Button onClick={handleSubmit(onSubmit)} disabled={saving} className="bg-red-600 text-white hover:bg-red-700 shadow-sm border border-transparent">
+              {saving ? <Loader2 className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />}
+              Salvar Rascunho
+            </Button>
+        </div>
       </div>
 
-      {/* Menu de Abas */}
       <div className="flex flex-wrap gap-2 bg-white dark:bg-gray-800 p-1 rounded-xl mb-6 overflow-x-auto shadow-sm border border-gray-200 dark:border-gray-700">
         <TabButton active={activeTab === "queixa"} onClick={() => setActiveTab("queixa")} icon={<ClipboardList size={18} />} label="1. Queixa" />
         <TabButton active={activeTab === "saude"} onClick={() => setActiveTab("saude")} icon={<Heart size={18} />} label="2. Saúde" />
@@ -703,9 +786,8 @@ export function PatientAnamnesisPage() {
         <TabButton active={activeTab === "fotos"} onClick={() => setActiveTab("fotos")} icon={<Camera size={18} />} label="7. Fotos" />
       </div>
 
-      <form className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 min-h-[600px]">
+      <form onSubmit={handleSubmit(onSubmit)} className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 min-h-[600px]">
         
-        {/* ... ABAS 1-5 (CÓDIGO JÁ EXISTENTE MANTIDO) ... */}
         {/* --- ABA 1: QUEIXA --- */}
         <div className={activeTab === "queixa" ? "block" : "hidden"}>
           <Section title="Queixa Principal & Objetivos">
@@ -728,7 +810,7 @@ export function PatientAnamnesisPage() {
              <div className="mt-4"><InputWithLabel label="Outros Procedimentos / Detalhes" {...register("outros_procedimentos")} /></div>
             <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-lg border border-red-200 mt-4">
               <YesNoRadio label="Já teve alguma intercorrência?" name="teve_intercorrencia" register={register} watchValue={teveIntercorrencia} />
-              {(teveIntercorrencia === "true" || teveIntercorrencia === true) && (<textarea {...register("intercorrencias_detalhes")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="Descreva a complicação..." />)}
+              {(teveIntercorrencia === "true") && (<textarea {...register("intercorrencias_detalhes")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="Descreva a complicação..." />)}
             </div>
           </Section>
         </div>
@@ -761,11 +843,11 @@ export function PatientAnamnesisPage() {
             <div className="grid md:grid-cols-2 gap-8 mt-6 pt-6 border-t dark:border-gray-700">
                <div>
                   <YesNoRadio label="Pratica atividade física?" name="pratica_atividade" register={register} watchValue={praticaAtividade} />
-                  {(praticaAtividade === "true" || praticaAtividade === true) && (<div className="bg-gray-50 p-4 rounded-md"><InputWithLabel label="Frequência (vezes/semana)" {...register("atividade_fisica_detalhes")} placeholder="Ex: 3x" /></div>)}
+                  {(praticaAtividade === "true") && (<div className="bg-gray-50 p-4 rounded-md"><InputWithLabel label="Frequência (vezes/semana)" {...register("atividade_fisica_detalhes")} placeholder="Ex: 3x" /></div>)}
                </div>
                <div>
                   <YesNoRadio label="Ingestão de água adequada?" name="ingere_agua" register={register} watchValue={ingereAgua} />
-                  {(ingereAgua === "true" || ingereAgua === true) && (<div className="bg-gray-50 p-4 rounded-md"><InputWithLabel label="Quantidade Aproximada (Litros/dia)" {...register("ingestao_agua_qtd")} type="number" step="0.1" /></div>)}
+                  {(ingereAgua === "true") && (<div className="bg-gray-50 p-4 rounded-md"><InputWithLabel label="Quantidade Aproximada (Litros/dia)" {...register("ingestao_agua_qtd")} type="number" step="0.1" /></div>)}
                </div>
             </div>
             <div className="grid md:grid-cols-2 gap-6 mt-6"><InputWithLabel label="Sono (h/noite)" {...register("sono_horas")} type="number" /></div>
@@ -794,7 +876,7 @@ export function PatientAnamnesisPage() {
                 <div>
                    <h4 className="font-semibold mb-2">Vascularização</h4>
                    <YesNoRadio label="Possui Telangiectasias?" name="tem_telangiectasias" register={register} watchValue={temTelangiectasias} />
-                   {(temTelangiectasias === "true" || temTelangiectasias === true) && (<div className="bg-red-50 p-3 rounded-lg border border-red-100"><label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><MapPin size={12}/> Região Acometida:</label><RegionGrid name="facial_telangiectasias_local" options={REGIOES_FACIAIS} control={control} /></div>)}
+                   {(temTelangiectasias === "true") && (<div className="bg-red-50 p-3 rounded-lg border border-red-100"><label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><MapPin size={12}/> Região Acometida:</label><RegionGrid name="facial_telangiectasias_local" options={REGIOES_FACIAIS} control={control} /></div>)}
                 </div>
                 <div>
                    <h4 className="font-semibold mb-2">Discromias (Manchas)</h4>
@@ -814,17 +896,17 @@ export function PatientAnamnesisPage() {
         {/* --- ABA 4: CORPORAL --- */}
         <div className={activeTab === "corporal" ? "block" : "hidden"}>
            <Section title="Medidas e Sinais Vitais">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                  <InputWithLabel label="Peso (kg)" type="number" step="0.1" {...register("peso")} />
                  <InputWithLabel label="Altura (m)" type="number" step="0.01" {...register("altura")} />
                  <InputWithLabel label="IMC" readOnly {...register("imc")} className="bg-gray-100 dark:bg-gray-700" />
                  <InputWithLabel label="PA" {...register("pressao_arterial")} />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4"><InputWithLabel label="Cintura (cm)" type="number" {...register("cintura_cm")} /><InputWithLabel label="Quadril (cm)" type="number" {...register("quadril_cm")} /></div>
+             </div>
+             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4"><InputWithLabel label="Cintura (cm)" type="number" {...register("cintura_cm")} /><InputWithLabel label="Quadril (cm)" type="number" {...register("quadril_cm")} /></div>
            </Section>
            <Section title="Análise Corporal (Visual/Palpatória)">
-              <div className="mb-6"><CheckboxGroup name="corporal_postura" label="Alterações Posturais:" options={ALTERACOES_POSTURAIS} control={control} /></div>
-              <div className="grid md:grid-cols-2 gap-8 pt-6 border-t dark:border-gray-700">
+             <div className="mb-6"><CheckboxGroup name="corporal_postura" label="Alterações Posturais:" options={ALTERACOES_POSTURAIS} control={control} /></div>
+             <div className="grid md:grid-cols-2 gap-8 pt-6 border-t dark:border-gray-700">
                  <div>
                     <h4 className="font-semibold mb-2 text-red-700">Lipodistrofia (Gordura Localizada)</h4>
                     <CheckboxGroup name="corporal_lipodistrofia" label="Tipo:" options={TIPOS_LIPODISTROFIA} control={control} />
@@ -835,8 +917,8 @@ export function PatientAnamnesisPage() {
                     <SelectField label="Grau Predominante" name="corporal_celulite_grau" register={register} options={GRAUS_ACNE} />
                     <div className="mt-3 bg-red-50 p-3 rounded-lg border border-red-100"><label className="block text-xs font-bold text-red-800 mb-1 flex items-center gap-1"><MapPin size={12}/> Região da Celulite:</label><RegionGrid name="corporal_celulite_local" options={REGIOES_CORPORAIS} control={control} /></div>
                  </div>
-              </div>
-              <div className="grid md:grid-cols-2 gap-8 mt-6 pt-6 border-t dark:border-gray-700">
+             </div>
+             <div className="grid md:grid-cols-2 gap-8 mt-6 pt-6 border-t dark:border-gray-700">
                  <div>
                     <h4 className="font-semibold mb-2 text-red-700">Estrias</h4>
                     <CheckboxGroup name="corporal_estrias" label="Tipo:" options={TIPOS_ESTRIAS} control={control} />
@@ -847,49 +929,47 @@ export function PatientAnamnesisPage() {
                     <CheckboxGroup name="corporal_flacidez_tipo" label="Tipo:" options={FLACIDEZ_CORPORAL} control={control} />
                     <div className="mt-3 bg-red-50 p-3 rounded-lg border border-red-100"><label className="block text-xs font-bold text-red-800 mb-1 flex items-center gap-1"><MapPin size={12}/> Região da Flacidez:</label><RegionGrid name="corporal_flacidez_local" options={REGIOES_CORPORAIS} control={control} /></div>
                  </div>
-              </div>
-              <div className="mt-6"><Field label="Observações Corporais Gerais"><textarea {...register("corporal_observacoes")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="Outras alterações, edema, cicatrizes..." /></Field></div>
+             </div>
+             <div className="mt-6"><Field label="Observações Corporais Gerais"><textarea {...register("corporal_observacoes")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="Outras alterações, edema, cicatrizes..." /></Field></div>
            </Section>
         </div>
 
         {/* --- ABA 5: PLANO --- */}
         <div className={activeTab === "plano" ? "block" : "hidden"}>
            <Section title="Diagnóstico e Planejamento">
-              <div className="grid md:grid-cols-2 gap-6">
+             <div className="grid md:grid-cols-2 gap-6">
                  <LabelSlider label="Satisfação Imagem Corporal (0-10)" name="satisfacao_imagem_corporal" register={register} min="0" max="10" low="Péssima" high="Ótima" />
                  <SelectField label="Preferência de Plano" name="preferencia_plano" register={register} options={["Rápido/Intensivo", "Gradual/Suave", "A critério profissional"]} />
-              </div>
-              <div className="mt-6"><Field label="Plano Terapêutico Proposto"><textarea {...register("plano_inicial")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none min-h-[200px]" placeholder="Protocolos sugeridos, número de sessões, home care..." /></Field></div>
-              <div className="grid md:grid-cols-3 gap-4 mt-4"><InputWithLabel label="Nº Sessões (Estimado)" {...register("numero_sessoes_estimado")} type="number" /><InputWithLabel label="Intervalo (dias)" {...register("intervalo_sessoes")} /><InputWithLabel label="Regiões Prioritárias" {...register("prioridade_regioes")} /></div>
-              <div className="mt-6"><Field label="Alertas / Red Flags"><textarea {...register("red_flags_profissional")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none bg-red-50 border-red-200" placeholder="Restrições, cuidados especiais..." /></Field></div>
+             </div>
+             <div className="mt-6"><Field label="Plano Terapêutico Proposto"><textarea {...register("plano_inicial")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none min-h-[200px]" placeholder="Protocolos sugeridos, número de sessões, home care..." /></Field></div>
+             <div className="grid md:grid-cols-3 gap-4 mt-4"><InputWithLabel label="Nº Sessões (Estimado)" {...register("numero_sessoes_estimado")} type="number" /><InputWithLabel label="Intervalo (dias)" {...register("intervalo_sessoes")} /><InputWithLabel label="Regiões Prioritárias" {...register("prioridade_regioes")} /></div>
+             <div className="mt-6"><Field label="Alertas / Red Flags"><textarea {...register("red_flags_profissional")} className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-red-500 outline-none bg-red-50 border-red-200" placeholder="Restrições, cuidados especiais..." /></Field></div>
            </Section>
         </div>
 
         {/* --- ABA 6: TERMOS --- */}
         <div className={activeTab === "termos" ? "block" : "hidden"}>
            <div className="max-w-2xl mx-auto space-y-8 py-6">
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800 text-center">
-                 <h3 className="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">Consentimento & LGPD</h3>
+             <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-xl border border-blue-200 dark:border-blue-800 text-center">
+                 <h3 className="font-bold text-lg text-blue-900 dark:text-blue-100 mb-2">Consentimento & LGPD</h3>
                  <p className="text-sm text-blue-700 dark:text-blue-200 mb-6">Antes de coletar a assinatura, é obrigatório que o paciente tenha ciência do termo de uso de imagem e dados.</p>
                  <Button type="button" onClick={() => setShowTermoModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto gap-2 py-6 text-base shadow-md"><FileText size={20} /> Ler Termo de Consentimento Completo</Button>
-              </div>
-              <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                 <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><CheckSquare className="text-gray-500" /> Checklist Final</h3>
+             </div>
+             <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+                 <h3 className="font-bold mb-4 flex items-center gap-2"><CheckSquare className="text-gray-500" /> Checklist Final</h3>
                  <div className="space-y-4 text-left">
                     <CheckboxItem name="termo_aceito" label="Declaro que LI E ACEITO o Termo de Consentimento e Autorização de Imagem (LGPD)" register={register} />
                     <CheckboxItem name="autoriza_foto" label="Autoriza captura de fotos para prontuário médico/técnico" register={register} />
                     <CheckboxItem name="autoriza_midia" label="Autoriza uso de imagem em redes sociais (opcional)" register={register} />
                  </div>
-              </div>
-              
-              <div className="pt-6 border-t mt-8">
+             </div>
+             <div className="pt-6 border-t mt-8">
                  <div className="text-left mb-10">
                    <label className="font-bold mb-2 block text-gray-700">Assinatura Digital do Paciente</label>
-                   {/* COMPONENTE DE ASSINATURA QUE RECEBE A SALVA */}
                    <SignaturePad 
-                      onEnd={(data) => setSignatureData(data)} 
-                      existingSignature={savedSignature}
-                      isLoading={saving} 
+                     onEnd={(data) => setSignatureData(data)} 
+                     existingSignature={savedSignature}
+                     isLoading={saving} 
                    />
                    <p className="text-xs text-gray-400 mt-2 text-center">Ao assinar, o paciente concorda com todos os termos apresentados acima.</p>
                  </div>
@@ -897,76 +977,36 @@ export function PatientAnamnesisPage() {
                     {saving ? <Loader2 className="animate-spin" /> : <CheckCircle size={24} />}
                     Finalizar e Salvar Anamnese
                  </Button>
-              </div>
+             </div>
            </div>
         </div>
 
-        {/* --- 🔹 ABA 7: FOTOS (AGORA COM UPLOAD FUNCIONAL) --- */}
+        {/* --- ABA 7: FOTOS --- */}
         <div className={activeTab === "fotos" ? "block" : "hidden"}>
           <Section title="Registro Fotográfico & Evolução">
-            
-            {/* ÁREA DE UPLOAD */}
             <div className="mb-8 p-6 bg-gray-50 dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 text-center">
-                <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    ref={fileInputRef} 
-                    onChange={handlePhotoUpload} 
-                />
-                <Button 
-                    type="button" 
-                    onClick={() => fileInputRef.current?.click()} 
-                    disabled={uploading} 
-                    className="gap-2 mx-auto"
-                >
-                    {uploading ? <Loader2 className="animate-spin" /> : <Upload size={18} />}
-                    Carregar Nova Foto
-                </Button>
+                <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handlePhotoUpload} />
+                <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading} className="gap-2 mx-auto">{uploading ? <Loader2 className="animate-spin" /> : <Upload size={18} />} Carregar Nova Foto</Button>
                 <p className="text-xs text-gray-500 mt-2">Formatos aceitos: JPG, PNG. Máx 5MB.</p>
             </div>
-
-            {/* GALERIA DE FOTOS DO PACIENTE */}
             {patientPhotos.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {patientPhotos.map((url, index) => (
                         <div key={index} className="relative group rounded-lg overflow-hidden border border-gray-200 shadow-sm aspect-square">
                             <img src={url} alt={`Foto ${index}`} className="w-full h-full object-cover" />
-                            <button 
-                                type="button"
-                                onClick={() => deletePhoto(url)}
-                                className="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
-                            >
-                                <Trash2 size={14} />
-                            </button>
+                            <button type="button" onClick={() => deletePhoto(url)} className="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"><Trash2 size={14} /></button>
                         </div>
                     ))}
                 </div>
             )}
-
-            {/* COMPARATIVO */}
             <div className="mb-8 text-center border-t pt-8">
-              <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white flex items-center justify-center gap-2">
-                  <ImageIcon size={20}/> Comparativo (Exemplo)
-              </h3>
-              
-              {/* SE TIVER PELO MENOS 2 FOTOS, MOSTRA O SLIDER COM AS REAIS, SENÃO MOSTRA EXEMPLO */}
+              <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white flex items-center justify-center gap-2"><ImageIcon size={20}/> Comparativo (Exemplo)</h3>
               {patientPhotos.length >= 2 ? (
-                  <BeforeAfterSlider
-                    beforeImage={patientPhotos[0]}
-                    afterImage={patientPhotos[patientPhotos.length - 1]}
-                    beforeLabel="Primeira Foto"
-                    afterLabel="Última Foto"
-                  />
+                  <BeforeAfterSlider beforeImage={patientPhotos[0]} afterImage={patientPhotos[patientPhotos.length - 1]} beforeLabel="Primeira Foto" afterLabel="Última Foto" />
               ) : (
                   <div className="opacity-70">
                       <p className="text-sm text-gray-500 mb-2">Carregue pelo menos 2 fotos para ver o comparativo real.</p>
-                      <BeforeAfterSlider
-                        beforeImage="https://images.unsplash.com/photo-1589992896844-9b32159b2526?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80"
-                        afterImage="https://images.unsplash.com/photo-1512291313931-65595900407b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80"
-                        beforeLabel="Exemplo Antes"
-                        afterLabel="Exemplo Depois"
-                      />
+                      <BeforeAfterSlider beforeImage="https://images.unsplash.com/photo-1589992896844-9b32159b2526?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80" afterImage="https://images.unsplash.com/photo-1512291313931-65595900407b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80" beforeLabel="Exemplo Antes" afterLabel="Exemplo Depois" />
                   </div>
               )}
             </div>

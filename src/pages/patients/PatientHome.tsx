@@ -1,90 +1,101 @@
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Clock, MapPin, Phone, Calendar } from 'lucide-react';
-import { BeforeAfter } from '../../components/BeforeAfter'; // <--- Importe aqui
+import { Calendar, Clock, FileText, User } from 'lucide-react';
+import { Link } from 'react-router-dom'; // Agora estamos usando o Link!
 
 export default function PatientHome() {
-  const { profile } = useAuth();
+  const { user, signOut } = useAuth();
 
-  // Dados fictícios
-  const proximaConsulta = {
-    data: '15 Out',
-    hora: '14:30',
-    procedimento: 'Botox (Retorno)',
-    doutor: 'Dr. Victor Fuentes'
+  // Função segura para pegar o nome do user_metadata do Supabase
+  const getDisplayName = () => {
+    if (!user) return 'Paciente';
+    
+    // Tenta pegar dos metadados (Padrão Supabase)
+    const meta = user.user_metadata;
+    if (meta && meta.first_name) {
+      return `${meta.first_name} ${meta.last_name || ''}`.trim();
+    }
+
+    // Fallback para email caso não tenha nome
+    return user.email?.split('@')[0] || 'Paciente';
   };
 
   return (
-    <div className="p-6 space-y-8 pb-24">
-      {/* Cabeçalho */}
-      <header className="flex justify-between items-center pt-2">
-        <div>
-          <p className="text-gray-500 text-sm">Olá, bem-vindo(a)</p>
-          <h1 className="text-2xl font-bold text-gray-800">
-            {profile?.full_name?.split(' ')[0] || 'Paciente'}
-          </h1>
-        </div>
-        <div className="h-12 w-12 bg-pink-100 rounded-full flex items-center justify-center text-pink-600 font-bold text-xl border-2 border-pink-200">
-          {profile?.full_name?.charAt(0) || 'P'}
-        </div>
-      </header>
+    <div className="p-6 max-w-6xl mx-auto space-y-8">
+      {/* Cabeçalho de Boas-Vindas */}
+      <div className="bg-gradient-to-r from-red-600 to-red-800 rounded-2xl p-8 text-white shadow-lg">
+        <h1 className="text-3xl font-bold mb-2">
+          Olá, {getDisplayName()}!
+        </h1>
+        <p className="opacity-90">Bem-vindo ao seu portal exclusivo de estética e saúde.</p>
+      </div>
 
-      {/* --- NOVO: Seção de Resultados (Onde brilha o componente) --- */}
-      <section>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="p-1.5 bg-pink-100 rounded-lg text-pink-600">
-            <Calendar size={20} />
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Card: Meus Agendamentos */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div className="bg-red-50 dark:bg-red-900/20 w-12 h-12 rounded-full flex items-center justify-center text-red-600 mb-4">
+            <Calendar size={24} />
           </div>
-          <h2 className="font-bold text-gray-800 text-lg">Seu Último Resultado</h2>
+          <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2">Meus Agendamentos</h3>
+          <p className="text-gray-500 text-sm mb-4">Consulte seus horários e próximas sessões.</p>
+          {/* Link corrigido */}
+          <Link to="/portal/appointments" className="text-red-600 font-medium text-sm cursor-pointer hover:underline">
+            Ver agenda &rarr;
+          </Link>
         </div>
-        
-        {/* Aqui usamos o componente novo */}
-        <BeforeAfter 
-          // Usando fotos de exemplo da internet (depois virão do banco)
-          beforeImage="https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?q=80&w=800&auto=format&fit=crop"
-          afterImage="https://images.unsplash.com/photo-1522337660859-02fbefca4702?q=80&w=800&auto=format&fit=crop"
-          labelBefore="Início do Tratamento"
-          labelAfter="Hoje"
-        />
-        <p className="text-xs text-center text-gray-400 mt-2">Arraste a barra para comparar</p>
-      </section>
 
-      {/* Card de Próxima Consulta */}
-      <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white shadow-xl shadow-gray-200">
-        <div className="flex justify-between items-start mb-6">
-          <div>
-            <span className="bg-pink-500 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide">Próxima Visita</span>
-            <h3 className="text-xl font-bold mt-3">{proximaConsulta.procedimento}</h3>
-            <p className="text-gray-400 text-sm">{proximaConsulta.doutor}</p>
+        {/* Card: Histórico / Tratamentos */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div className="bg-blue-50 dark:bg-blue-900/20 w-12 h-12 rounded-full flex items-center justify-center text-blue-600 mb-4">
+            <FileText size={24} />
           </div>
-          <div className="text-center bg-white/10 backdrop-blur-md rounded-xl p-3 min-w-[70px] border border-white/10">
-            <p className="font-bold text-xl">{proximaConsulta.data}</p>
-            <p className="text-xs text-gray-300">{proximaConsulta.hora}</p>
-          </div>
+          <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2">Meus Tratamentos</h3>
+          <p className="text-gray-500 text-sm mb-4">Acesse seu histórico e recomendações.</p>
+          {/* Link corrigido */}
+          <Link to="/portal/history" className="text-blue-600 font-medium text-sm cursor-pointer hover:underline">
+            Acessar histórico &rarr;
+          </Link>
         </div>
-        
-        <div className="flex gap-4 pt-4 border-t border-white/10">
-            <div className="flex items-center gap-2 text-xs text-gray-300">
-                <Clock size={14} /> Chegue 10min antes
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-300">
-                <MapPin size={14} /> Sala 04
-            </div>
+
+        {/* Card: Perfil */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
+          <div className="bg-gray-50 dark:bg-gray-700 w-12 h-12 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 mb-4">
+            <User size={24} />
+          </div>
+          <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-2">Meu Perfil</h3>
+          <p className="text-gray-500 text-sm mb-4">Atualize seus dados cadastrais.</p>
+          <button onClick={signOut} className="text-gray-500 font-medium text-sm hover:text-red-600 transition-colors">
+            Sair da conta
+          </button>
         </div>
       </div>
 
-      {/* Acesso Rápido */}
-      <div>
-        <h2 className="font-bold text-gray-800 mb-4 text-lg">Precisa de ajuda?</h2>
-        <button 
-          onClick={() => window.open('https://wa.me/5511999999999', '_blank')} 
-          className="w-full p-4 bg-green-50 border border-green-100 rounded-xl shadow-sm flex items-center justify-center gap-3 hover:bg-green-100 transition active:scale-95"
-        >
-          <div className="h-8 w-8 bg-green-500 text-white rounded-full flex items-center justify-center">
-            <Phone size={18} />
-          </div>
-          <span className="font-semibold text-green-800">Falar no WhatsApp da Clínica</span>
-        </button>
+      {/* Área de Próxima Consulta (Exemplo) */}
+      <div className="mt-8">
+        <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+          <Clock size={20} className="text-red-600" />
+          Próxima Consulta
+        </h2>
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 flex flex-col md:flex-row md:items-center justify-between gap-4">
+           <div>
+             <p className="text-gray-500 text-sm">Você não possui agendamentos futuros no momento.</p>
+           </div>
+           {/* Botão de ação (Exemplo: Link para WhatsApp ou Agendamento) */}
+           <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50">
+             Agendar Nova Consulta
+           </Button>
+        </div>
       </div>
     </div>
   );
+}
+
+// Componente de botão local para manter o estilo
+function Button({ className, variant = 'default', ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'outline' }) {
+  const base = "px-4 py-2 rounded-lg font-medium transition-colors text-sm";
+  const variants = {
+    default: "bg-red-600 text-white hover:bg-red-700",
+    outline: "border border-gray-300 bg-transparent hover:bg-gray-50 dark:hover:bg-gray-800"
+  };
+  return <button className={`${base} ${variants[variant]} ${className || ''}`} {...props} />;
 }

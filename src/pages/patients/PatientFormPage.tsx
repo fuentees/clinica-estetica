@@ -16,7 +16,7 @@ const patientSchema = z.object({
   // Identificação
   first_name: z.string().min(1, "Nome é obrigatório"),
   last_name: z.string().min(1, "Sobrenome é obrigatório"),
-  cpf: z.string().min(11, "CPF inválido").max(14, "CPF inválido"),
+  cpf: z.string().min(14, "CPF incompleto"), // 14 caracteres com pontuação
   rg: z.string().optional(),
   date_of_birth: z.string().min(1, "Data de nascimento é obrigatória"),
   sexo: z.string().optional(),
@@ -27,17 +27,44 @@ const patientSchema = z.object({
   email: z.string().email("Email inválido").optional().or(z.literal("")),
   phone: z.string().min(1, "Telefone é obrigatório"),
 
-  // Endereço
+  // Endereço (Separado)
   cep: z.string().optional(),
   rua: z.string().optional(),
   numero: z.string().optional(),
   bairro: z.string().optional(),
   cidade: z.string().optional(),
   estado: z.string().optional(),
-  address: z.string().optional(), // Mantido para compatibilidade
+  
+  // Campo legado (mantido para compatibilidade se necessário)
+  address: z.string().optional(), 
 });
 
 type PatientFormData = z.infer<typeof patientSchema>;
+
+// =========================================
+// FUNÇÕES DE MÁSCARA (Helpers)
+// =========================================
+const maskCPF = (value: string) => {
+  return value
+    .replace(/\D/g, "") // Remove tudo o que não é dígito
+    .replace(/(\d{3})(\d)/, "$1.$2") // Coloca um ponto entre o terceiro e o quarto dígitos
+    .replace(/(\d{3})(\d)/, "$1.$2") // Coloca um ponto entre o terceiro e o quarto dígitos de novo
+    .replace(/(\d{3})(\d{1,2})/, "$1-$2") // Coloca um hífen entre o terceiro e o quarto dígitos
+    .replace(/(-\d{2})\d+?$/, "$1"); // Impede mais caracteres
+};
+
+// Removida a máscara forçada de RG conforme solicitado
+
+const maskPhone = (value: string) => {
+    return value
+      .replace(/\D/g, "")
+      .replace(/^(\d{2})(\d)/g, "($1) $2")
+      .replace(/(\d)(\d{4})$/, "$1-$2");
+};
+
+const maskCEP = (value: string) => {
+  return value.replace(/\D/g, "").replace(/^(\d{5})(\d)/, "$1-$2");
+};
 
 // =========================================
 // COMPONENTE PRINCIPAL
@@ -56,7 +83,7 @@ export function PatientFormPage() {
     handleSubmit,
     setValue,
     watch,
-    setFocus, // Usado para focar no input após CEP
+    setFocus,
     formState: { errors, isSubmitting },
   } = useForm<PatientFormData>({
     resolver: zodResolver(patientSchema),
@@ -94,8 +121,6 @@ export function PatientFormPage() {
         setValue("bairro", data.bairro);
         setValue("cidade", data.localidade);
         setValue("estado", data.uf);
-        
-        // Foca no número automaticamente
         setFocus("numero"); 
         toast.success("Endereço encontrado!");
       } else {
@@ -106,6 +131,19 @@ export function PatientFormPage() {
     } finally {
       setCepLoading(false);
     }
+  };
+
+  // --- HANDLERS DE MÁSCARA NOS INPUTS ---
+  const handleCPFChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValue("cpf", maskCPF(e.target.value));
+  };
+  
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValue("phone", maskPhone(e.target.value));
+  };
+
+  const handleCEPChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValue("cep", maskCEP(e.target.value));
   };
 
   // --- CARREGAR DADOS (EDIÇÃO) ---
@@ -129,9 +167,6 @@ export function PatientFormPage() {
       if (data) {
         setProfileId(data.profile_id);
 
-        // Preenche dados do Perfil (Profile)
-        // O Supabase retorna profiles como objeto único ou array dependendo da query, 
-        // aqui assumimos objeto único devido ao relacionamento 1:1
         const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
 
         if (profile) {
@@ -141,17 +176,24 @@ export function PatientFormPage() {
           setValue("phone", profile.phone || "");
         }
 
-        // Preenche dados do Paciente
         setValue("cpf", data.cpf || "");
         setValue("rg", data.rg || "");
         setValue("date_of_birth", data.date_of_birth || "");
         setValue("profissao", data.profissao || "");
         setValue("sexo", data.sexo || "");
-        setValue("address", data.address || "");
+        
+        // Carrega endereço separado (se existirem as colunas novas)
+        setValue("cep", data.cep || "");
+        setValue("rua", data.rua || "");
+        setValue("numero", data.numero || "");
+        setValue("bairro", data.bairro || "");
+        setValue("cidade", data.cidade || "");
+        setValue("estado", data.estado || "");
 
-        // Tenta extrair endereço do campo único se os campos individuais estiverem vazios
-        // (Lógica opcional, depende de como você salvava antes)
-        setValue("rua", data.address?.split(",")[0] || "");
+        // Fallback: Se não tiver rua salva separada, tenta pegar do address antigo
+        if (!data.rua && data.address) {
+            setValue("rua", data.address); 
+        }
       }
     } catch (error) {
       console.error("Erro:", error);
@@ -167,7 +209,7 @@ export function PatientFormPage() {
       const ageCalc = data.date_of_birth ? calculateAge(data.date_of_birth) : null;
       const ageInt = typeof ageCalc === "number" ? ageCalc : null;
 
-      // Junta endereço para salvar no campo único do banco (compatibilidade)
+      // Cria string completa para backup (compatibilidade)
       const fullAddress = `${data.rua || ""}, ${data.numero || ""} - ${data.bairro || ""}, ${data.cidade || ""} - ${data.estado || ""}, CEP: ${data.cep || ""}`;
 
       const patientDataToSave = {
@@ -175,14 +217,20 @@ export function PatientFormPage() {
         rg: data.rg,
         date_of_birth: data.date_of_birth,
         idade: ageInt,
-        address: fullAddress,
         profissao: data.profissao,
         sexo: data.sexo,
+        // SALVA CAMPOS SEPARADOS
+        cep: data.cep,
+        rua: data.rua,
+        numero: data.numero,
+        bairro: data.bairro,
+        cidade: data.cidade,
+        estado: data.estado,
+        address: fullAddress, 
       };
 
       // 1. MODO EDIÇÃO
       if (isEditing) {
-        // Atualiza Profile
         if (profileId) {
           await supabase.from("profiles").update({
             first_name: data.first_name,
@@ -192,18 +240,13 @@ export function PatientFormPage() {
           }).eq("id", profileId);
         }
 
-        // Atualiza Patient
-        const { error } = await supabase
-          .from("patients")
-          .update(patientDataToSave)
-          .eq("id", id);
-
+        const { error } = await supabase.from("patients").update(patientDataToSave).eq("id", id);
         if (error) throw error;
         toast.success("Cadastro atualizado!");
+
       } 
       // 2. MODO CRIAÇÃO (Novo Paciente)
       else {
-        // Cria Profile primeiro
         const { data: newProfile, error: profileError } = await supabase
           .from("profiles")
           .insert({
@@ -218,7 +261,6 @@ export function PatientFormPage() {
 
         if (profileError) throw profileError;
 
-        // Cria Patient vinculado ao Profile
         const { error: patientError } = await supabase
           .from("patients")
           .insert({
@@ -231,6 +273,7 @@ export function PatientFormPage() {
         toast.success("Paciente cadastrado!");
         navigate("/patients");
       }
+      
     } catch (error: any) {
       console.error("Erro:", error);
       toast.error(`Erro ao salvar: ${error.message || "Falha desconhecida"}`);
@@ -238,11 +281,7 @@ export function PatientFormPage() {
   };
 
   if (isLoadingData) {
-    return (
-      <div className="flex justify-center p-10">
-        <Loader2 className="animate-spin text-pink-600" />
-      </div>
-    );
+    return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600" /></div>;
   }
 
   return (
@@ -262,8 +301,28 @@ export function PatientFormPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <InputWithLabel label="Nome" {...register("first_name")} error={errors.first_name?.message} />
             <InputWithLabel label="Sobrenome" {...register("last_name")} error={errors.last_name?.message} />
-            <InputWithLabel label="CPF" {...register("cpf")} error={errors.cpf?.message} />
-            <InputWithLabel label="RG" {...register("rg")} />
+            
+            {/* CPF COM MÁSCARA */}
+            <div>
+                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPF</label>
+                 <Input 
+                    {...register("cpf")} 
+                    onChange={handleCPFChange} 
+                    maxLength={14}
+                    placeholder="000.000.000-00"
+                 />
+                 {errors.cpf && <p className="text-xs text-red-500 mt-1">{errors.cpf.message}</p>}
+            </div>
+
+            {/* RG SEM MÁSCARA */}
+            <div>
+                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RG</label>
+                 <Input 
+                    {...register("rg")} 
+                    maxLength={20} 
+                    placeholder="Digite o RG"
+                 />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-4">
@@ -294,13 +353,26 @@ export function PatientFormPage() {
         {/* 2. CONTATO E ENDEREÇO */}
         <Section title="Endereço e Contato">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
-            <InputWithLabel label="Telefone/WhatsApp" {...register("phone")} error={errors.phone?.message} />
+            {/* PHONE COM MASCARA */}
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Telefone/WhatsApp</label>
+                <Input {...register("phone")} onChange={handlePhoneChange} maxLength={15} placeholder="(00) 00000-0000" />
+                {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone.message}</p>}
+            </div>
+
             <InputWithLabel label="Email" type="email" {...register("email")} error={errors.email?.message} />
 
+            {/* CEP COM MÁSCARA E BUSCA */}
             <div className="relative">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CEP</label>
               <div className="relative">
-                <Input {...register("cep")} onBlur={checkCEP} placeholder="00000-000" />
+                <Input 
+                    {...register("cep")} 
+                    onChange={handleCEPChange} 
+                    onBlur={checkCEP} 
+                    maxLength={9} 
+                    placeholder="00000-000" 
+                />
                 {cepLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-gray-400" />}
               </div>
             </div>

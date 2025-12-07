@@ -15,7 +15,7 @@ import {
   Smile,
   CheckSquare,
   Loader2,
-  CheckCircle, 
+  CheckCircle,
   MapPin,
   Calendar,
   Camera,
@@ -25,15 +25,15 @@ import {
   Printer
 } from "lucide-react";
 
-import { supabase } from "../../lib/supabase"; 
+import { supabase } from "../../lib/supabase";
 import { BeforeAfterSlider } from "../../components/BeforeAfterSlider";
-import generateAnamnesisPdf from "../../utils/generateAnamnesisPdf"; 
+import generateAnamnesisPdf from "../../utils/generateAnamnesisPdf";
 
 // ============================================================================
-// 1. UTILS E HELPERS (Estrutura de Dados e Lógica)
+// 1. UTILS E HELPERS
 // ============================================================================
 
-const strToArray = (s: string | null | undefined) => s ? s.split("; ").map((v) => v.trim()).filter(Boolean) : [];
+const strToArray = (s: string | null | undefined) => (s ? s.split("; ").map((v) => v.trim()).filter(Boolean) : []);
 const arrayToStr = (a: any) => (Array.isArray(a) ? a.join("; ") : a);
 
 const toNumOrNull = (val: any) => {
@@ -44,7 +44,7 @@ const toNumOrNull = (val: any) => {
 };
 
 // ============================================================================
-// 2. DADOS ESTÁTICOS (Constantes Globais)
+// 2. DADOS ESTÁTICOS
 // ============================================================================
 
 const DOENCAS = ["Hipertensão", "Diabetes", "Cardiopatias", "Autoimunes", "Epilepsia", "Tireoide"];
@@ -86,102 +86,93 @@ Por fim, autorizo o uso das imagens para fins internos e assistenciais, conforme
 `;
 
 // ============================================================================
-// 3. SCHEMA ZOD (Tipagem Completa)
+// 3. SCHEMA ZOD
 // ============================================================================
 
 const stringOrNull = z.string().optional();
 const arrayOrNull = z.array(z.string()).optional();
 const boolOrNull = z.boolean().optional();
 
-// 1. Definição dos campos fixos
-const fixedSchemaFields = {
-    // --- ABA 1: QUEIXA ---
-    queixa_principal: arrayOrNull,
-    queixa_principal_detalhada: stringOrNull,
-    tempo_queixa: stringOrNull,
-    fatores_agravantes: stringOrNull,
-    fatores_melhora: stringOrNull,
-    evento_especifico: stringOrNull,
-    nivel_urgencia: stringOrNull,
-    procedimentos_previos: arrayOrNull,
-    outros_procedimentos: stringOrNull,
-    teve_intercorrencia: stringOrNull, // Radio: 'true'/'false'
-    intercorrencias_detalhes: stringOrNull, // Detalhes da intercorrência
-    
-    // --- ABA 2: SAÚDE GERAL ---
-    doencas_cronicas: arrayOrNull,
-    outros_doencas: stringOrNull,
-    alergias_medicamentosas: arrayOrNull,
-    alergia_cosmeticos: stringOrNull,
-    usa_medicacao_continua: z.boolean().optional(),
-    lista_medicacoes: stringOrNull,
-    gestante: boolOrNull,
-    lactante: boolOrNull,
-    uso_anticoncepcional: boolOrNull,
-    fumante: boolOrNull,
-    uso_anticoagulante: boolOrNull,
-    uso_retinoide: boolOrNull,
-    implantes_metalicos: boolOrNull,
-    historico_queloide: boolOrNull,
-    pratica_atividade: stringOrNull, // Radio: 'true'/'false'
-    atividade_fisica_detalhes: stringOrNull,
-    ingere_agua: stringOrNull, // Radio: 'true'/'false'
-    ingestao_agua_qtd: stringOrNull,
-    sono_horas: stringOrNull,
+// Definimos os campos conhecidos
+const anamnesisSchema = z.object({
+  queixa_principal: arrayOrNull,
+  queixa_principal_detalhada: stringOrNull,
+  tempo_queixa: stringOrNull,
+  fatores_agravantes: stringOrNull,
+  fatores_melhora: stringOrNull,
+  evento_especifico: stringOrNull,
+  nivel_urgencia: stringOrNull,
+  procedimentos_previos: arrayOrNull,
+  outros_procedimentos: stringOrNull,
+  teve_intercorrencia: stringOrNull,
+  intercorrencias_detalhes: stringOrNull,
+  
+  doencas_cronicas: arrayOrNull,
+  outros_doencas: stringOrNull,
+  alergias_medicamentosas: arrayOrNull,
+  alergia_cosmeticos: stringOrNull,
+  usa_medicacao_continua: z.boolean().optional(),
+  lista_medicacoes: stringOrNull,
+  gestante: boolOrNull,
+  lactante: boolOrNull,
+  uso_anticoncepcional: boolOrNull,
+  fumante: boolOrNull,
+  uso_anticoagulante: boolOrNull,
+  uso_retinoide: boolOrNull,
+  implantes_metalicos: boolOrNull,
+  historico_queloide: boolOrNull,
+  pratica_atividade: stringOrNull,
+  atividade_fisica_detalhes: stringOrNull,
+  ingere_agua: stringOrNull,
+  ingestao_agua_qtd: stringOrNull,
+  sono_horas: stringOrNull,
 
-    // --- ABA 3: FACIAL ---
-    biotipo_cutaneo: stringOrNull,
-    fototipo: stringOrNull,
-    facial_textura: stringOrNull,
-    facial_acne_grau: stringOrNull,
-    class_glogau: stringOrNull,
-    pele_sensivel: boolOrNull,
-    rosacea: boolOrNull,
-    facial_lesoes: arrayOrNull,
-    facial_patologias: arrayOrNull,
-    tem_telangiectasias: stringOrNull, // Radio: 'true'/'false'
-    facial_telangiectasias_local: arrayOrNull,
-    facial_discromias: arrayOrNull,
-    facial_discromias_local: arrayOrNull,
-    facial_envelhecimento: arrayOrNull,
-    facial_rugas_local: arrayOrNull,
-    facial_observacoes: stringOrNull,
+  biotipo_cutaneo: stringOrNull,
+  fototipo: stringOrNull,
+  facial_textura: stringOrNull,
+  facial_acne_grau: stringOrNull,
+  class_glogau: stringOrNull,
+  pele_sensivel: boolOrNull,
+  rosacea: boolOrNull,
+  facial_lesoes: arrayOrNull,
+  facial_patologias: arrayOrNull,
+  tem_telangiectasias: stringOrNull,
+  facial_telangiectasias_local: arrayOrNull,
+  facial_discromias: arrayOrNull,
+  facial_discromias_local: arrayOrNull,
+  facial_envelhecimento: arrayOrNull,
+  facial_rugas_local: arrayOrNull,
+  facial_observacoes: stringOrNull,
 
-    // --- ABA 4: CORPORAL ---
-    peso: stringOrNull,
-    altura: stringOrNull,
-    imc: stringOrNull,
-    pressao_arterial: stringOrNull,
-    cintura_cm: stringOrNull,
-    quadril_cm: stringOrNull,
-    corporal_postura: arrayOrNull,
-    corporal_lipodistrofia: arrayOrNull,
-    corporal_gordura_local: arrayOrNull,
-    corporal_celulite_grau: stringOrNull,
-    corporal_celulite_local: arrayOrNull,
-    corporal_estrias: arrayOrNull,
-    corporal_estrias_local: arrayOrNull,
-    corporal_flacidez_tipo: arrayOrNull,
-    corporal_flacidez_local: arrayOrNull,
-    corporal_observacoes: stringOrNull,
+  peso: stringOrNull,
+  altura: stringOrNull,
+  imc: stringOrNull,
+  pressao_arterial: stringOrNull,
+  cintura_cm: stringOrNull,
+  quadril_cm: stringOrNull,
+  corporal_postura: arrayOrNull,
+  corporal_lipodistrofia: arrayOrNull,
+  corporal_gordura_local: arrayOrNull,
+  corporal_celulite_grau: stringOrNull,
+  corporal_celulite_local: arrayOrNull,
+  corporal_estrias: arrayOrNull,
+  corporal_estrias_local: arrayOrNull,
+  corporal_flacidez_tipo: arrayOrNull,
+  corporal_flacidez_local: arrayOrNull,
+  corporal_observacoes: stringOrNull,
 
-    // --- ABA 5: PLANO ---
-    satisfacao_imagem_corporal: stringOrNull,
-    preferencia_plano: stringOrNull,
-    plano_inicial: stringOrNull,
-    numero_sessoes_estimado: stringOrNull,
-    intervalo_sessoes: stringOrNull,
-    prioridade_regioes: stringOrNull,
-    red_flags_profissional: stringOrNull,
+  satisfacao_imagem_corporal: stringOrNull,
+  preferencia_plano: stringOrNull,
+  plano_inicial: stringOrNull,
+  numero_sessoes_estimado: stringOrNull,
+  intervalo_sessoes: stringOrNull,
+  prioridade_regioes: stringOrNull,
+  red_flags_profissional: stringOrNull,
 
-    // --- ABA 6: TERMOS ---
-    termo_aceito: boolOrNull,
-    autoriza_foto: boolOrNull,
-    autoriza_midia: boolOrNull,
-};
-
-// 2. Usamos z.object(fixedFields).catchall() para aceitar os campos dinâmicos (data_proc_X)
-const anamnesisSchema = z.object(fixedSchemaFields).catchall(z.any().optional());
+  termo_aceito: boolOrNull,
+  autoriza_foto: boolOrNull,
+  autoriza_midia: boolOrNull,
+}).catchall(z.any()); // catchall resolve o problema dos campos dinâmicos e erros de sintaxe
 
 type AnamnesisFormData = z.infer<typeof anamnesisSchema>;
 
@@ -584,7 +575,7 @@ export function PatientAnamnesisPage() {
       if (error) throw error;
       if (!dbData) return;
 
-      const data = dbData as any; 
+      const data = dbData as any; // Cast para evitar erros de tipagem do Supabase
       setFullPatientData(data);
 
       const nameFromTable = data.name || data.nome || data.full_name;
@@ -669,9 +660,16 @@ export function PatientAnamnesisPage() {
   }
 
   const handlePrint = () => {
-    const currentData = watch(); 
-    const patientProfileData = fullPatientData || { name: patientName };
-    generateAnamnesisPdf(patientProfileData, currentData, savedSignature || signatureData || null);
+    const currentAnamnesisData = watch();
+    // 2. Mescla dados do cadastro (fullPatientData) com os dados da tela (currentAnamnesisData)
+    // para que o PDF tenha acesso ao Nome, CPF, RG, Endereço E às respostas da anamnese
+    const combinedData = {
+        ...(fullPatientData || {}),
+        ...currentAnamnesisData,
+        name: patientName, 
+    };
+
+    generateAnamnesisPdf(combinedData, combinedData, savedSignature || signatureData || null);
     toast.success("PDF gerado!");
   };
 
@@ -731,7 +729,7 @@ export function PatientAnamnesisPage() {
         procedimentos_detalhes_json: procedimentosDatas
       };
 
-      // CORREÇÃO CRÍTICA AQUI: Usando 'as any' para permitir delete
+      // Cast para any para permitir deleção de propriedades extras
       const payloadToSend = payload as any;
       delete payloadToSend.profiles; 
       delete payloadToSend.teve_intercorrencia;

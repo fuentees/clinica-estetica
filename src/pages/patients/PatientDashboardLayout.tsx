@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
@@ -17,7 +17,9 @@ import {
   MoreHorizontal,
   MessageCircle,
   Printer,
-  Pencil // <--- Ícone Novo
+  Pencil,
+  Send,
+  ChevronRight
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import generateAnamnesisPdf from "../../utils/generateAnamnesisPdf";
@@ -28,9 +30,12 @@ export function PatientDashboardLayout() {
   const location = useLocation();
   const [patient, setPatient] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Estados dos Menus
   const [showActions, setShowActions] = useState(false);
+  const [showWhatsappMenu, setShowWhatsappMenu] = useState(false); 
 
-  // Busca dados completos
+  // Busca dados
   useEffect(() => {
     async function fetchHeaderData() {
       if (!id || id === 'new') return;
@@ -60,8 +65,10 @@ export function PatientDashboardLayout() {
   const patientName = patient?.profiles 
     ? `${patient.profiles.first_name} ${patient.profiles.last_name}` 
     : (patient?.name || patient?.nome || "Paciente");
+  
+  const firstName = patient?.profiles?.first_name || patient?.name?.split(' ')[0] || "Paciente";
 
-  // --- ALERTAS CLÍNICOS ---
+  // --- LÓGICA DE ALERTAS ---
   const alerts = [];
   if (patient?.alergias_medicamentosas && patient.alergias_medicamentosas.length > 0) {
       alerts.push({ type: 'danger', text: 'ALÉRGICO', detail: patient.alergias_medicamentosas });
@@ -73,12 +80,24 @@ export function PatientDashboardLayout() {
       alerts.push({ type: 'info', text: 'GESTANTE', detail: 'Contraindicações aplicáveis' });
   }
 
-  // --- AÇÕES ---
-  const handleWhatsApp = () => {
+  // --- TEMPLATES DE WHATSAPP ---
+  const msgTemplates = [
+      { label: "Confirmar Agendamento", text: `Olá ${firstName}, tudo bem? Gostaríamos de confirmar seu horário conosco.` },
+      { label: "Pós-Procedimento", text: `Oi ${firstName}! Como você está se sentindo após o procedimento? Alguma dúvida?` },
+      { label: "Feliz Aniversário", text: `Parabéns ${firstName}! 🎉 A equipe deseja um dia maravilhoso para você!` },
+      { label: "Lembrete de Retorno", text: `Olá ${firstName}, já está na hora do seu retorno. Vamos agendar?` },
+      { label: "Pagamento Pendente", text: `Oi ${firstName}, identificamos uma pendência no seu cadastro. Podemos ajudar?` },
+  ];
+
+  const sendWhatsApp = (text: string) => {
       const phone = patient?.profiles?.phone || patient?.phone;
       if (!phone) return toast.error("Sem telefone cadastrado.");
-      window.open(`https://wa.me/55${phone.replace(/\D/g, "")}`, "_blank");
+      
+      const cleanPhone = phone.replace(/\D/g, "");
+      const encodedText = encodeURIComponent(text);
+      window.open(`https://wa.me/55${cleanPhone}?text=${encodedText}`, "_blank");
       setShowActions(false);
+      setShowWhatsappMenu(false);
   };
 
   const handlePrint = () => {
@@ -89,7 +108,7 @@ export function PatientDashboardLayout() {
       setShowActions(false);
   };
 
-  // SKELETON LOADING
+  // SKELETON
   if (loading) return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col animate-pulse">
         <div className="bg-white dark:bg-gray-800 h-48 border-b dark:border-gray-700">
@@ -99,21 +118,15 @@ export function PatientDashboardLayout() {
                     <div className="h-8 w-64 bg-gray-200 dark:bg-gray-700 rounded" />
                     <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded" />
                 </div>
-                <div className="flex gap-2 pt-4">
-                    {[1,2,3,4,5].map(i => <div key={i} className="h-10 w-24 bg-gray-100 dark:bg-gray-700 rounded-t-lg" />)}
-                </div>
             </div>
         </div>
-        <div className="max-w-7xl mx-auto w-full p-6 space-y-6">
-            <div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-xl" />
-        </div>
+        <div className="max-w-7xl mx-auto w-full p-6 space-y-6"><div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-xl" /></div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       
-      {/* --- CABEÇALHO FIXO --- */}
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 z-30 sticky top-0">
         
         {/* BARRA DE ALERTAS */}
@@ -137,83 +150,76 @@ export function PatientDashboardLayout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
           <div className="flex justify-between items-start mb-2">
             <div className="flex items-center gap-4">
-                <button 
-                onClick={() => navigate("/patients")} 
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 transition-colors"
-                title="Voltar"
-                >
-                <ArrowLeft size={22} />
+                <button onClick={() => navigate("/patients")} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 transition-colors">
+                    <ArrowLeft size={22} />
                 </button>
-                
                 <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight flex items-center gap-2">
-                    {patientName}
-                </h1>
-                <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                    {patient?.date_of_birth && (
-                    <span className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-700 dark:text-gray-300">
-                        <Calendar size={12} /> {getAge(patient.date_of_birth)}
-                    </span>
-                    )}
-                    <span className="uppercase tracking-wider font-semibold text-pink-600">Prontuário Digital</span>
-                </div>
+                    <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight flex items-center gap-2">{patientName}</h1>
+                    <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                        {patient?.date_of_birth && (<span className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-gray-700 dark:text-gray-300"><Calendar size={12} /> {getAge(patient.date_of_birth)}</span>)}
+                        <span className="uppercase tracking-wider font-semibold text-pink-600">Prontuário Digital</span>
+                    </div>
                 </div>
             </div>
 
             {/* --- MENU DE AÇÕES RÁPIDAS --- */}
             <div className="relative">
-                <button 
-                    onClick={() => setShowActions(!showActions)}
-                    className="flex items-center gap-2 px-3 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
-                >
+                <button onClick={() => { setShowActions(!showActions); setShowWhatsappMenu(false); }} className="flex items-center gap-2 px-3 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm">
                     Ações <MoreHorizontal size={16} />
                 </button>
 
-                {/* Dropdown */}
                 {showActions && (
                     <>
                         <div className="fixed inset-0 z-10" onClick={() => setShowActions(false)} />
-                        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                             
-                            {/* 1. Editar Perfil (Novo) */}
-                            <button 
-                                onClick={() => { navigate(`details`); setShowActions(false); }} 
-                                className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3"
-                            >
-                                <Pencil size={16} className="text-blue-500" /> 
-                                <span>Editar Cadastro</span>
-                            </button>
+                            {/* Menu Principal */}
+                            {!showWhatsappMenu ? (
+                                <>
+                                    <button onClick={() => { navigate(`details`); setShowActions(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3">
+                                        <Pencil size={16} className="text-blue-500" /> Editar Cadastro
+                                    </button>
+                                    
+                                    {/* Botão que abre o submenu do WhatsApp */}
+                                    <button onClick={(e) => { e.stopPropagation(); setShowWhatsappMenu(true); }} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between gap-3 border-t border-gray-100 dark:border-gray-700">
+                                        <div className="flex items-center gap-3"><MessageCircle size={16} className="text-green-600" /> WhatsApp Inteligente</div>
+                                        <ChevronRight size={14} className="text-gray-400" />
+                                    </button>
 
-                            {/* WhatsApp */}
-                            <button onClick={handleWhatsApp} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 border-t border-gray-100 dark:border-gray-700">
-                                <MessageCircle size={16} className="text-green-600" /> 
-                                <span>WhatsApp</span>
-                            </button>
-                            
-                            {/* Agendar */}
-                            <button onClick={() => { navigate("/appointments/new"); setShowActions(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 border-t border-gray-100 dark:border-gray-700">
-                                <Calendar size={16} className="text-purple-600" /> 
-                                <span>Agendar Retorno</span>
-                            </button>
-                            
-                            {/* Imprimir */}
-                            <button onClick={handlePrint} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 border-t border-gray-100 dark:border-gray-700">
-                                <Printer size={16} className="text-gray-500" /> 
-                                <span>Imprimir Prontuário</span>
-                            </button>
-
-                            {/* Financeiro */}
-                            <button onClick={() => { navigate(`financial`); setShowActions(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 border-t border-gray-100 dark:border-gray-700">
-                                <DollarSign size={16} className="text-blue-600" /> 
-                                <span>Novo Pagamento</span>
-                            </button>
+                                    <button onClick={() => { navigate("/appointments/new"); setShowActions(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 border-t border-gray-100 dark:border-gray-700">
+                                        <Calendar size={16} className="text-purple-600" /> Agendar Retorno
+                                    </button>
+                                    <button onClick={handlePrint} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 border-t border-gray-100 dark:border-gray-700">
+                                        <Printer size={16} className="text-gray-500" /> Imprimir Prontuário
+                                    </button>
+                                    <button onClick={() => { navigate(`financial`); setShowActions(false); }} className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-3 border-t border-gray-100 dark:border-gray-700">
+                                        <DollarSign size={16} className="text-blue-600" /> Novo Pagamento
+                                    </button>
+                                </>
+                            ) : (
+                                /* Submenu WhatsApp */
+                                <div className="bg-gray-50 dark:bg-gray-900">
+                                    <div className="flex items-center gap-2 p-3 border-b border-gray-200 dark:border-gray-700">
+                                        <button onClick={(e) => { e.stopPropagation(); setShowWhatsappMenu(false); }} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full"><ArrowLeft size={14}/></button>
+                                        <span className="text-xs font-bold uppercase text-gray-500">Escolha a Mensagem</span>
+                                    </div>
+                                    {msgTemplates.map((tpl, i) => (
+                                        <button key={i} onClick={() => sendWhatsApp(tpl.text)} className="w-full text-left px-4 py-3 text-xs text-gray-700 dark:text-gray-200 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-green-700 border-b border-gray-100 dark:border-gray-800 last:border-0 flex items-center gap-2">
+                                            <Send size={12} className="text-green-500" /> {tpl.label}
+                                        </button>
+                                    ))}
+                                    <button onClick={() => sendWhatsApp("")} className="w-full text-left px-4 py-3 text-xs font-bold text-green-600 hover:bg-green-50 flex items-center gap-2">
+                                        <MessageCircle size={12} /> Abrir Conversa Vazia
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </>
                 )}
             </div>
           </div>
 
-          {/* --- BARRA DE NAVEGAÇÃO (ABAS) --- */}
+          {/* BARRA DE ABAS */}
           <div className="flex space-x-1 overflow-x-auto no-scrollbar border-b border-gray-200 dark:border-gray-700 mt-4">
             <TabButton active={isActive("") && !isActive("details") && !isActive("anamnesis")} onClick={() => navigate(`/patients/${id}`)} icon={<LayoutDashboard size={18} />} label="Visão Geral" />
             <TabButton active={isActive('details')} onClick={() => navigate(`details`)} icon={<User size={18} />} label="Cadastro" />
@@ -239,16 +245,9 @@ function TabButton({ active, onClick, icon, label }: any) {
   return (
     <button
       onClick={onClick}
-      className={`
-        flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-all whitespace-nowrap outline-none focus:outline-none
-        ${active 
-          ? "border-pink-600 text-pink-600 dark:text-pink-400 bg-pink-50/50 dark:bg-pink-900/10 rounded-t-md" 
-          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-white"
-        }
-      `}
+      className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-all whitespace-nowrap outline-none focus:outline-none ${active ? "border-pink-600 text-pink-600 dark:text-pink-400 bg-pink-50/50 dark:bg-pink-900/10 rounded-t-md" : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-white"}`}
     >
-      {icon}
-      <span>{label}</span>
+      {icon} <span>{label}</span>
     </button>
   );
 }

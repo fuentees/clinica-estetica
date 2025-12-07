@@ -42,14 +42,13 @@ import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
 import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
 
-// Profissionais (IMPORTAÇÕES CORRIGIDAS PARA O NOVO DASHBOARD)
-import { ProfessionalsPage } from "./pages/professionals/ProfessionalsPage"; 
-// ROTAS DO NOVO DASHBOARD
-import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout"; // NOVO LAYOUT
-import { ProfessionalDetailsPage } from "./pages/professionals/ProfessionalDetailsPage";       // DETALHES (antigo Form)
-import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage"; // ABA
-import { ProfessionalCommissionPage } from "./pages/professionals/ProfessionalCommissionPage";     // ABA
-
+// Profissionais (LISTPAGE AGORA É A ROTA PRINCIPAL, DETALHES É O FORM)
+import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage"; 
+import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout";
+import { ProfessionalDetailsPage } from "./pages/professionals/ProfessionalDetailsPage"; // Renomeado do FormPage
+import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
+import { ProfessionalCommissionPage } from "./pages/professionals/ProfessionalCommissionPage";
+// REMOVIDO: ProfessionalFormPage
 
 // Financeiro
 import { InventoryPage } from "./pages/inventory/InventoryPage";
@@ -90,7 +89,7 @@ function App() {
                   <Route path="appointments/:id/edit" element={<AppointmentFormPage />} /> 
                   
                   {/* Pacientes */}
-                  <Route path="patients" element={<PatientsListPage />} />
+                  <Route path="patients" element={<PatientsListPage />} /> 
                   <Route path="patients/new" element={<PatientFormPage />} />
                   <Route path="patients/:id/edit" element={<PatientFormPage />} /> 
 
@@ -109,10 +108,10 @@ function App() {
                   </Route>
                   
                   {/* Profissionais - ROTA DO DASHBOARD */}
-                  <Route path="professionals" element={<ProfessionalsPage />} /> 
+                  <Route path="professionals" element={<ProfessionalsListPage />} /> {/* A lista é o componente principal */}
                   <Route path="professionals/new" element={<ProfessionalDetailsPage />} />
                   
-                  {/* NOVO DASHBOARD DO PROFISSIONAL (RESOLVE O 404) */}
+                  {/* Dashboard aninhado do Profissional */}
                   <Route path="professionals/:id" element={<ProfessionalDashboardLayout />}>
                       <Route index element={<ProfessionalDetailsPage />} /> 
                       <Route path="details" element={<ProfessionalDetailsPage />} />
@@ -131,8 +130,8 @@ function App() {
               </Route>
 
               {/* Portal do Paciente */}
-              <Route path="/portal" element={<ProtectedRoute allowedRoles={['paciente']} />}>
-                <Route element={<PatientLayout />}>
+              <Route element={<ProtectedRoute allowedRoles={['paciente']} />}>
+                <Route path="/portal" element={<PatientLayout />}>
                   <Route index element={<PatientHome />} />
                 </Route>
               </Route>

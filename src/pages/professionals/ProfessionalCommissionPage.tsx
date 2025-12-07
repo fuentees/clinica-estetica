@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../lib/supabase"; // CORRIGIDO: 2 NÍVEIS
 import { toast } from "react-hot-toast";
 import { 
     DollarSign, Filter, Loader2, Calendar, FileText
 } from "lucide-react";
-// CAMINHOS CORRIGIDOS PARA A ESTRUTURA GERAL (AJUSTE PARA SUA PASTA 'src' SE NECESSÁRIO)
-import { Input } from "../../../components/ui/input"; 
-import { Button } from "../../../components/ui/button"; 
+// CAMINHOS CORRIGIDOS PARA 2 NÍVEIS
+import { Input } from "../../components/ui/input"; 
+import { Button } from "../../components/ui/button"; 
 import { format, startOfMonth, endOfMonth } from "date-fns";
 
 interface CommissionEntry {

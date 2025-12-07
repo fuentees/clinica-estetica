@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { supabase } from "../../lib/supabase"; // CORRIGIDO: 2 NÍVEIS
+import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
 import { 
-    DollarSign, Filter, Loader2, Calendar, FileText
+    DollarSign, Filter, Loader2, Calendar, FileText, CheckCircle2
 } from "lucide-react";
-// CAMINHOS CORRIGIDOS PARA 2 NÍVEIS
-import { Input } from "../../components/ui/input"; 
-import { Button } from "../../components/ui/button"; 
+import { Input } from "../../components/ui/input";
+import { Button } from "../../components/ui/button";
 import { format, startOfMonth, endOfMonth } from "date-fns";
+
+interface AppointmentToPay {
+    id: string;
+    commission_value: number;
+}
 
 interface CommissionEntry {
     appointment_id: string;
@@ -19,11 +23,13 @@ interface CommissionEntry {
     commission_rate: number;
     price: number;
     commission_value: number;
+    commission_paid: boolean; // Adicionamos este campo
 }
 
 export function ProfessionalCommissionPage() {
     const { id: professionalId } = useParams();
     const [loading, setLoading] = useState(false);
+    const [isPaying, setIsPaying] = useState(false);
     const [reportData, setReportData] = useState<CommissionEntry[]>([]);
     const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -41,31 +47,27 @@ export function ProfessionalCommissionPage() {
         setReportData([]);
         setTotalPayable(0);
 
-        if (!professionalId) {
-            setLoading(false);
-            return;
-        }
-
-        if (new Date(startDate) > new Date(endDate)) {
-            toast.error("A data inicial não pode ser maior que a final.");
+        if (!professionalId || new Date(startDate) > new Date(endDate)) {
             setLoading(false);
             return;
         }
 
         try {
-            // 1. Query de Agendamentos Concluídos para ESTE profissional
+            // 1. Query de Agendamentos Concluídos para ESTE profissional (APENAS NÃO PAGOS)
             const { data: appointments, error } = await supabase
                 .from('appointments')
                 .select(`
                     id, 
                     start_time, 
                     status,
+                    commission_paid,
                     patients (name),
                     treatments (name, price),
                     profiles (commission_rate)
                 `)
                 .eq('status', 'finished') // Apenas agendamentos CONCLUÍDOS
-                .eq('professional_id', professionalId) // Filtra pelo ID da URL
+                .eq('commission_paid', false) // APENAS COMISSÕES PENDENTES
+                .eq('professional_id', professionalId)
                 .gte('start_time', startDate)
                 .lte('start_time', endDate + ' 23:59:59');
 
@@ -90,6 +92,7 @@ export function ProfessionalCommissionPage() {
                         commission_rate: commissionRate,
                         price: price,
                         commission_value: commissionValue,
+                        commission_paid: appt.commission_paid,
                     };
                 });
             
@@ -103,7 +106,60 @@ export function ProfessionalCommissionPage() {
             setLoading(false);
         }
     }
+    
+    // --- FUNÇÃO PREMIUM: REGISTRO DE PAGAMENTO (PAYOUT) ---
+    async function handlePayoutRegistration() {
+        if (totalPayable <= 0) {
+            toast.error("Não há valor a ser pago.");
+            return;
+        }
+        
+        const appointmentsToUpdate: AppointmentToPay[] = reportData.map(r => ({
+            id: r.appointment_id,
+            commission_value: r.commission_value
+        }));
+        
+        const appointmentIds = appointmentsToUpdate.map(a => a.id);
+        const totalAmount = totalPayable;
+        const professionalName = reportData[0]?.patient_name || "Profissional"; // Usando o nome do relatório
 
+        setIsPaying(true);
+
+        try {
+            // 1. Inserir a Transação de Despesa (EXPENSE) no Fluxo de Caixa
+            const { error: cashFlowError } = await supabase
+                .from('cash_flow')
+                .insert({
+                    type: 'EXPENSE',
+                    description: `Pagamento de comissão - ${professionalName}`,
+                    amount: totalAmount,
+                    related_entity_id: professionalId,
+                    transaction_date: new Date().toISOString()
+                });
+
+            if (cashFlowError) throw cashFlowError;
+
+            // 2. Marcar todos os Agendamentos da lista como commission_paid = TRUE
+            const { error: updateError } = await supabase
+                .from('appointments')
+                .update({ commission_paid: true })
+                .in('id', appointmentIds);
+
+            if (updateError) throw updateError;
+
+            toast.success(`Pagamento de ${formatCurrency(totalAmount)} registrado e concluído!`);
+            generateReport(); // Recarregar para mostrar lista vazia (já pago)
+
+        } catch (error) {
+            console.error("Erro ao registrar pagamento:", error);
+            toast.error("Erro ao processar o pagamento e atualizar o status.");
+        } finally {
+            setIsPaying(false);
+        }
+    }
+
+
+    // --- UTILS E RENDERIZAÇÃO ---
     const formatCurrency = (value: number) => {
         return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     };
@@ -111,59 +167,58 @@ export function ProfessionalCommissionPage() {
     return (
         <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
-                    <DollarSign size={20} className="text-pink-600"/> Repasse no Período
-                </h3>
-
+                
                 {/* FILTROS DE DATA */}
-                <div className="flex flex-wrap items-center gap-4 border-b pb-4 mb-4 border-gray-100 dark:border-gray-700">
-                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2"><Calendar size={16}/> De:</label>
-                    <Input 
-                        type="date" 
-                        value={startDate} 
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)} 
-                        className="w-40 bg-gray-50 dark:bg-gray-900" 
-                    />
-                    
-                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Até:</label>
-                    <Input 
-                        type="date" 
-                        value={endDate} 
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)} 
-                        className="w-40 bg-gray-50 dark:bg-gray-900" 
-                    />
-                    
-                    <Button onClick={generateReport} disabled={loading} className="bg-pink-600 hover:bg-pink-700 shadow-md">
-                        {loading ? <Loader2 className="animate-spin size-4" /> : <Filter size={16} />}
-                    </Button>
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4 mb-4 border-gray-100 dark:border-gray-700">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <Calendar size={20} className="text-pink-600"/> Período de Repasse
+                    </h3>
+                    <div className="flex gap-2">
+                        <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">De:</label>
+                        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-36 bg-gray-50 dark:bg-gray-900 text-sm" />
+                        <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Até:</label>
+                        <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-36 bg-gray-50 dark:bg-gray-900 text-sm" />
+                        <Button onClick={generateReport} disabled={loading} className="bg-gray-200 hover:bg-gray-300 text-gray-700 shadow-sm p-2">
+                            <Filter size={16} />
+                        </Button>
+                    </div>
                 </div>
 
-                {/* KPI DE RESUMO */}
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-                        <span className="text-xs font-semibold text-gray-500 uppercase block">Comissão Acumulada</span>
-                        <span className="text-3xl font-extrabold text-pink-600 mt-1">
+                {/* KPI DE RESUMO E BOTÃO PAYOUT */}
+                <div className="flex justify-between items-center gap-6">
+                    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl flex-1">
+                        <span className="text-sm font-semibold text-gray-500 uppercase block">Comissão Pendente (a pagar)</span>
+                        <span className="text-4xl font-extrabold text-pink-600 mt-1">
                             {formatCurrency(totalPayable)}
                         </span>
                     </div>
-                     <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-                        <span className="text-xs font-semibold text-gray-500 uppercase block">Sessões Concluídas</span>
-                        <span className="text-3xl font-extrabold text-green-600 mt-1">
+                     <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl">
+                        <span className="text-sm font-semibold text-gray-500 uppercase block">Sessões a Pagar</span>
+                        <span className="text-4xl font-extrabold text-green-600 mt-1">
                             {reportData.length}
                         </span>
                     </div>
+                    
+                    <Button 
+                        onClick={handlePayoutRegistration} 
+                        disabled={totalPayable <= 0 || isPaying} 
+                        className="h-full px-8 py-4 bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-300/50"
+                    >
+                        {isPaying ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 className="mr-2"/>} 
+                        {isPaying ? 'Processando...' : 'Registrar Payout'}
+                    </Button>
                 </div>
             </div>
 
             {/* DETALHES DA TABELA */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-x-auto">
-                <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><FileText size={18} className="text-blue-600"/> Detalhe por Atendimento</h2>
+                <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><FileText size={18} className="text-blue-600"/> Atendimentos Pendentes de Repasse</h2>
                 
                 {loading && <div className="text-center p-10"><Loader2 className="animate-spin text-pink-600 size-6"/></div>}
 
                 {!loading && reportData.length === 0 && (
-                    <div className="text-center p-10 text-gray-500 dark:text-gray-400">
-                        Nenhum atendimento concluído encontrado no período selecionado.
+                    <div className="p-8 text-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-500">
+                         {totalPayable === 0 ? "Nenhum repasse pendente para o período." : "Aguardando dados..."}
                     </div>
                 )}
 

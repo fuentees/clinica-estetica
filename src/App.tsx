@@ -42,13 +42,13 @@ import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
 import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
 
-// Profissionais (LISTPAGE AGORA É A ROTA PRINCIPAL, DETALHES É O FORM)
-import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage"; 
+// Profissionais (Caminhos usando o plural/minúsculo)
+import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage";
 import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout";
-import { ProfessionalDetailsPage } from "./pages/professionals/ProfessionalDetailsPage"; // Renomeado do FormPage
+import { ProfessionalDetailsPage } from "./pages/professionals/ProfessionalDetailsPage";
 import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
 import { ProfessionalCommissionPage } from "./pages/professionals/ProfessionalCommissionPage";
-// REMOVIDO: ProfessionalFormPage
+
 
 // Financeiro
 import { InventoryPage } from "./pages/inventory/InventoryPage";
@@ -108,7 +108,7 @@ function App() {
                   </Route>
                   
                   {/* Profissionais - ROTA DO DASHBOARD */}
-                  <Route path="professionals" element={<ProfessionalsListPage />} /> {/* A lista é o componente principal */}
+                  <Route path="professionals" element={<ProfessionalsListPage />} /> 
                   <Route path="professionals/new" element={<ProfessionalDetailsPage />} />
                   
                   {/* Dashboard aninhado do Profissional */}

@@ -1,100 +1,108 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { supabase } from "../../lib/supabase"; 
-import { toast } from "react-hot-toast";
-import { 
-    Calendar, Clock, Shield, Plus, X, AlertTriangle, Loader2 
-} from "lucide-react";
-import { Input } from "../../components/ui/input";
-import { Button } from "../../components/ui/button";
-import { format, parseISO, isPast } from "date-fns";
-import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { supabase } from "../../lib/supabase";
+import { toast } from "react-hot-toast";
+import {
+  Calendar, Loader2, Info, CalendarOff, Trash2, CheckCircle2, Plus, // <--- Ícone PLUS adicionado
+} from "lucide-react"; 
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 
 // --- TIPAGEM E SCHEMA ---
+const exceptionSchema = z.object({
+  start_date: z.string().min(1, "Data de início é obrigatória."),
+  end_date: z.string().min(1, "Data de fim é obrigatória."),
+  is_full_day: z.boolean().default(true),
+  start_time: z.string().optional(),
+  end_time: z.string().optional(),
+  reason: z.string().optional(),
+}).refine(data => {
+    // Validação de intervalo de tempo se não for dia inteiro
+    if (!data.is_full_day) {
+        return !!data.start_time && !!data.end_time;
+    }
+    return true;
+}, {
+    message: "O horário de início e fim são obrigatórios para exceções parciais.",
+    path: ["start_time"],
+});
+
+type ExceptionFormData = z.infer<typeof exceptionSchema>;
+
 interface Exception {
     id: string;
     start_date: string;
     end_date: string;
     start_time: string | null;
     end_time: string | null;
-    reason: string;
     is_full_day: boolean;
+    reason: string | null;
+    created_at: string;
 }
 
-const exceptionSchema = z.object({
-    start_date: z.string().min(1, "Data de início é obrigatória"),
-    end_date: z.string().min(1, "Data de fim é obrigatória"),
-    reason: z.string().min(3, "O motivo é obrigatório"),
-    is_full_day: z.boolean().default(true),
-    start_time: z.string().optional(),
-    end_time: z.string().optional(),
-}).refine(data => data.start_date <= data.end_date, {
-    message: "A data de início não pode ser após a data de fim.",
-    path: ["end_date"],
-});
-
-type ExceptionFormData = z.infer<typeof exceptionSchema>;
-
-
+// --- COMPONENTE PRINCIPAL ---
 export function ProfessionalAvailabilityPage() {
-    const { id: professionalId } = useParams();
-    const [loading, setLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
+    const { id: professionalId } = useParams<{ id: string }>();
+    const [loading, setLoading] = useState(false);
     const [exceptions, setExceptions] = useState<Exception[]>([]);
     
-    // --- LÓGICA DO FORMULÁRIO ---
-    const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<ExceptionFormData>({
+    // Configuração do formulário para adicionar nova exceção
+    const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ExceptionFormData>({
         resolver: zodResolver(exceptionSchema),
         defaultValues: {
             is_full_day: true,
-            start_date: format(new Date(), 'yyyy-MM-dd'),
-            end_date: format(new Date(), 'yyyy-MM-dd'),
+            start_date: new Date().toISOString().split('T')[0],
+            end_date: new Date().toISOString().split('T')[0],
+            start_time: '09:00',
+            end_time: '18:00',
         }
     });
-    
-    const watchIsFullDay = watch('is_full_day');
 
-    useEffect(() => {
-        if (professionalId) {
-            fetchExceptions();
-        }
-    }, [professionalId]);
+    const isFullDay = watch("is_full_day");
 
-
-    // --- 1. FUNÇÕES DE PERSISTÊNCIA ---
-    async function fetchExceptions() {
+    // --- LÓGICA DE CARREGAMENTO ---
+    const fetchExceptions = async () => {
+        if (!professionalId) return;
         setLoading(true);
         try {
             const { data, error } = await supabase
                 .from('professional_availability_exceptions')
                 .select('*')
                 .eq('professional_id', professionalId)
+                .gte('end_date', new Date().toISOString().split('T')[0]) // Filtra apenas futuras/atuais
                 .order('start_date', { ascending: true });
-            
+
             if (error) throw error;
             setExceptions(data || []);
+
         } catch (error) {
-            console.error(error);
-            toast.error("Erro ao carregar exceções.");
+            console.error("Erro ao carregar exceções:", error);
+            toast.error("Falha ao carregar agenda de exceções.");
         } finally {
             setLoading(false);
         }
-    }
+    };
 
-    async function onSubmit(data: ExceptionFormData) {
-        setIsSaving(true);
-        
-        // Ajustar dados se não for dia inteiro
-        const dataToSave = {
-            ...data,
-            professional_id: professionalId,
-            start_time: data.is_full_day ? null : data.start_time,
-            end_time: data.is_full_day ? null : data.end_time,
-        }
+    useEffect(() => {
+        fetchExceptions();
+    }, [professionalId]);
+
+    // --- LÓGICA DE SUBMISSÃO ---
+    const onSubmit = async (data: ExceptionFormData) => {
+        setLoading(true);
         
         try {
+            const dataToSave = {
+                professional_id: professionalId,
+                ...data,
+                // Limpa os campos de hora se for dia inteiro
+                start_time: data.is_full_day ? null : data.start_time,
+                end_time: data.is_full_day ? null : data.end_time,
+            };
+
             const { error } = await supabase
                 .from('professional_availability_exceptions')
                 .insert(dataToSave);
@@ -102,174 +110,176 @@ export function ProfessionalAvailabilityPage() {
             if (error) throw error;
             
             toast.success("Exceção de agenda adicionada!");
-            reset({ 
-                start_date: format(new Date(), 'yyyy-MM-dd'),
-                end_date: format(new Date(), 'yyyy-MM-dd'),
+            reset({
+                ...data, // Mantém as datas preenchidas como sugestão
+                reason: '',
                 is_full_day: true,
-                reason: ''
-            }); 
+                start_time: '09:00',
+                end_time: '18:00',
+            });
             fetchExceptions();
 
         } catch (error) {
-            console.error(error);
-            toast.error("Falha ao salvar exceção.");
+            console.error("Erro ao adicionar exceção:", error);
+            toast.error("Não foi possível salvar a exceção.");
         } finally {
-            setIsSaving(false);
+            setLoading(false);
         }
-    }
+    };
 
-    async function handleDelete(id: string) {
-        if (!confirm("Tem certeza que deseja remover este bloqueio?")) return;
+    // --- LÓGICA DE EXCLUSÃO ---
+    const handleDelete = async (exceptionId: string) => {
+        const ok = confirm("Tem certeza que deseja remover esta exceção de agenda?");
+        if (!ok) return;
 
         try {
             const { error } = await supabase
                 .from('professional_availability_exceptions')
                 .delete()
-                .eq('id', id);
+                .eq('id', exceptionId);
 
             if (error) throw error;
-            
+
             toast.success("Bloqueio removido.");
             fetchExceptions();
         } catch (error) {
-            console.error(error);
+            console.error("Erro ao excluir:", error);
             toast.error("Falha ao remover bloqueio.");
         }
-    }
-
-    // --- 2. COMPONENTES E RENDERIZAÇÃO ---
-
-    const formatRange = (ex: Exception) => {
-        const start = format(parseISO(ex.start_date), 'dd/MM/yyyy');
-        const end = format(parseISO(ex.end_date), 'dd/MM/yyyy');
-
-        let timeStr = '';
-        if (!ex.is_full_day && ex.start_time && ex.end_time) {
-            timeStr = ` (${ex.start_time.slice(0, 5)}h até ${ex.end_time.slice(0, 5)}h)`;
-        }
-
-        if (start === end) {
-            return `Dia: ${start}${timeStr}`;
-        }
-        return `Período: ${start} a ${end}${timeStr}`;
     };
 
-    if (loading) {
-        return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600 w-8 h-8" /></div>;
+    // Helper para formatar data
+    const formatDate = (dateString: string) => {
+        // Garantir que a string seja tratada como UTC ou local
+        return new Date(dateString).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
     }
 
     return (
-        <div className="space-y-6">
-            
-            {/* INSTRUÇÃO GERAL */}
-            <div className="p-4 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl text-sm flex items-start gap-3">
-                <AlertTriangle size={20} className="mt-1"/>
-                <p>
-                    Esta seção gerencia **bloqueios** na agenda. Uma exceção criada aqui anulará o horário padrão do profissional (inclusive agendamentos online) no período especificado.
+        <div className="space-y-8">
+            {/* INFORMAÇÃO BÁSICA */}
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl flex items-start gap-3">
+                <Info size={18} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                    Aqui você gerencia as **exceções** à regra de trabalho padrão. O horário padrão e dias úteis são definidos na aba **Cadastro**.
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* COLUNA ESQUERDA: FORMULÁRIO DE INSERÇÃO */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* COLUNA ESQUERDA: ADICIONAR EXCEÇÃO */}
                 <div className="lg:col-span-1">
-                    <form onSubmit={handleSubmit(onSubmit)} className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4 sticky top-6">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2"><Plus size={18} className="text-pink-600"/> Adicionar Novo Bloqueio</h3>
-
-                        {/* TIPO DE BLOQUEIO */}
-                        <div>
-                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 font-semibold mb-2">
-                                <input 
-                                    type="checkbox" 
-                                    {...register("is_full_day")} 
-                                    className="w-4 h-4 text-pink-600 rounded" 
-                                    checked={watchIsFullDay}
-                                />
-                                Bloquear Dia Inteiro
-                            </label>
-                        </div>
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-md border border-gray-200 dark:border-gray-700 sticky top-6">
+                        <h2 className="text-lg font-bold text-pink-600 flex items-center gap-2 mb-4">
+                            <Plus size={20} /> Nova Exceção
+                        </h2>
                         
-                        {/* DATAS */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Início</label>
-                                <Input type="date" {...register("start_date")} className="bg-gray-50 dark:bg-gray-900" />
-                                {errors.start_date && <span className="text-xs text-red-500">{errors.start_date.message}</span>}
-                            </div>
-                            <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Fim</label>
-                                <Input type="date" {...register("end_date")} className="bg-gray-50 dark:bg-gray-900" />
-                                {errors.end_date && <span className="text-xs text-red-500">{errors.end_date.message}</span>}
-                            </div>
-                        </div>
-
-                        {/* HORÁRIOS (SE NÃO FOR DIA INTEIRO) */}
-                        {!watchIsFullDay && (
+                        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                            {/* Datas */}
                             <div className="grid grid-cols-2 gap-4">
-                                <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Hora Início</label>
-                                    <Input type="time" {...register("start_time")} className="bg-gray-50 dark:bg-gray-900" />
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Início</label>
+                                    <Input type="date" {...register("start_date")} />
+                                    {errors.start_date && <span className="text-xs text-red-500">{errors.start_date.message}</span>}
                                 </div>
-                                <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Hora Fim</label>
-                                    <Input type="time" {...register("end_time")} className="bg-gray-50 dark:bg-gray-900" />
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Fim</label>
+                                    <Input type="date" {...register("end_date")} />
+                                    {errors.end_date && <span className="text-xs text-red-500">{errors.end_date.message}</span>}
                                 </div>
                             </div>
-                        )}
-                        
-                        {/* MOTIVO */}
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Motivo do Bloqueio</label>
-                            <Input placeholder="Ex: Férias, Atestado, Treinamento" {...register("reason")} className="bg-gray-50 dark:bg-gray-900" />
-                            {errors.reason && <span className="text-xs text-red-500">{errors.reason.message}</span>}
-                        </div>
+                            
+                            {/* Dia Inteiro Checkbox */}
+                            <div className="flex items-center space-x-2 pt-2">
+                                <input type="checkbox" {...register("is_full_day")} id="fullDay" className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" />
+                                <label htmlFor="fullDay" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Bloquear Dia Inteiro
+                                </label>
+                            </div>
 
-                        <Button type="submit" disabled={isSaving} className="w-full h-10 bg-pink-600 hover:bg-pink-700 shadow-md">
-                            {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Calendar size={18} className="mr-2"/>}
-                            Bloquear Agenda
-                        </Button>
-                    </form>
+                            {/* Horários (Apenas se não for dia inteiro) */}
+                            {!isFullDay && (
+                                <div className="grid grid-cols-2 gap-4 pt-2">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Hora Início</label>
+                                        <Input type="time" {...register("start_time")} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Hora Fim</label>
+                                        <Input type="time" {...register("end_time")} />
+                                    </div>
+                                    {errors.start_time && <span className="text-xs text-red-500 col-span-2">{errors.start_time.message}</span>}
+                                </div>
+                            )}
+
+                            {/* Motivo */}
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Motivo (Opcional)</label>
+                                <textarea {...register("reason")} rows={2} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600 resize-none text-sm"></textarea>
+                            </div>
+
+                            <Button type="submit" disabled={loading} className="w-full bg-pink-600 hover:bg-pink-700">
+                                {loading ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 className="mr-2"/>}
+                                Adicionar Exceção
+                            </Button>
+                        </form>
+                    </div>
                 </div>
-
 
                 {/* COLUNA DIREITA: LISTA DE EXCEÇÕES ATIVAS */}
                 <div className="lg:col-span-2 space-y-4">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2"><Shield size={18} className="text-red-600"/> Bloqueios Ativos / Futuros</h3>
+                    <h2 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-4">
+                        <CalendarOff size={20} className="text-red-500"/> Próximas Indisponibilidades ({exceptions.length})
+                    </h2>
+                    
+                    {loading && <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600" /></div>}
 
-                    {exceptions.length === 0 && (
-                        <div className="p-8 text-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-500">
-                            Nenhum período de exceção agendado. O profissional segue o horário padrão.
+                    {!loading && exceptions.length === 0 && (
+                        <div className="p-10 text-center bg-gray-50 dark:bg-gray-900 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 text-gray-500">
+                            <CalendarOff size={32} className="mx-auto mb-2"/>
+                            <p>Nenhuma indisponibilidade futura registrada.</p>
                         </div>
                     )}
-                    
-                    {exceptions
-                        .filter(ex => !isPast(parseISO(ex.end_date)))
-                        .map((ex) => (
-                        <div key={ex.id} className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                            <div className="flex-1 min-w-0">
-                                <p className="font-bold text-gray-800 dark:text-white truncate">{ex.reason}</p>
-                                <p className={`text-xs mt-1 ${ex.is_full_day ? 'text-red-600' : 'text-orange-600'}`}>
-                                    {ex.is_full_day ? "Dia(s) Inteiro(s) Bloqueado(s)" : "Bloqueio Parcial"}
-                                </p>
-                                <p className="text-sm text-gray-500 mt-1">{formatRange(ex)}</p>
-                            </div>
-                            
-                            <Button 
-                                onClick={() => handleDelete(ex.id)} 
-                                variant="ghost" 
-                                className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 ml-4"
-                            >
-                                <X size={16} />
-                            </Button>
-                        </div>
-                    ))}
 
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 pt-6"><Clock size={18} className="text-gray-500"/> Histórico (Bloqueios Encerrados)</h3>
-                    {exceptions
-                        .filter(ex => isPast(parseISO(ex.end_date)))
-                        .slice(0, 5) 
-                        .map((ex) => (
-                        <div key={ex.id} className="flex justify-between items-center bg-gray-50 dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-500">
-                            <span>{ex.reason}</span>
-                            <span>{formatRange(ex)}</span>
+                    {!loading && exceptions.length > 0 && (
+                        <div className="space-y-3">
+                            {exceptions.map((exc) => (
+                                <div key={exc.id} className="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-all hover:shadow-md">
+                                    <div className="flex items-center gap-4">
+                                        <Calendar size={24} className="text-pink-600" />
+                                        <div>
+                                            {/* Detalhe do período */}
+                                            <p className="font-bold text-gray-800 dark:text-white">
+                                                {formatDate(exc.start_date)} {exc.start_date !== exc.end_date && ` - ${formatDate(exc.end_date)}`}
+                                            </p>
+                                            
+                                            {/* Detalhe do horário */}
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                                {exc.is_full_day 
+                                                    ? <span className="text-red-500 font-medium">Dia Inteiro de Folga</span>
+                                                    : `Horário: ${exc.start_time?.slice(0, 5) || '00:00'} até ${exc.end_time?.slice(0, 5) || '00:00'}`
+                                                }
+                                            </p>
+                                            
+                                            {/* Motivo */}
+                                            {exc.reason && (
+                                                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 italic">
+                                                    Motivo: {exc.reason}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <Button 
+                                        variant="ghost" 
+                                        onClick={() => handleDelete(exc.id)} 
+                                        className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 ml-4 p-2 h-auto"
+                                        title="Excluir Exceção"
+                                    >
+                                        <Trash2 size={18} />
+                                    </Button>
+                                </div>
+                            ))}
                         </div>
-                    ))}
+                    )}
                 </div>
             </div>
         </div>

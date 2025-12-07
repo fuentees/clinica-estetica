@@ -4,17 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
-// Definição de cargos CORRIGIDA e COMPLETA (a fonte da solução de tipagem)
+// Definição de cargos COMPLETA
 export type UserRole = 
-    'admin' | 
-    'profissional' | 
-    'esteticista' | 
-    'esteta' |           
-    'recepcionista' | 
-    'medico' |           
-    'doutor' |           
-    'paciente' |         
-    'professional';      
+    'admin' | 'profissional' | 'esteticista' | 'esteta' | 'recepcionista' | 
+    'medico' | 'doutor' | 'paciente' | 'professional';      
 
 export interface UserProfile {
     id: string;

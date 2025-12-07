@@ -6,13 +6,14 @@ import { z } from "zod";
 import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { toast } from "react-hot-toast";
+import { toast } from "react-hot-toast"; 
 import { 
   Loader2, User, Briefcase, Mail, Phone, Percent, Award, 
   CheckCircle2, Camera, Shield, Clock, Calendar
 } from "lucide-react";
+import { v4 as uuidv4 } from 'uuid'; 
 
-// --- CONFIGURAÇÕES E CONSTANTES ---
+// --- CONSTANTES ---
 const DAYS_OF_WEEK = [
     { value: 'Mon', label: 'Seg' }, { value: 'Tue', label: 'Ter' },
     { value: 'Wed', label: 'Qua' }, { value: 'Thu', label: 'Qui' },
@@ -26,18 +27,18 @@ const SPECIALTIES = [
     "Gerente / Admin", "Outro"
 ];
 
-// Schema de Validação
+// --- SCHEMA E TIPAGEM ---
 const professionalSchema = z.object({
   first_name: z.string().min(2, "Nome obrigatório"),
   last_name: z.string().min(2, "Sobrenome obrigatório"),
   email: z.string().email("E-mail inválido").optional().or(z.literal('')),
-  phone: z.string().optional(),
+  phone: z.string().optional().nullable(),
   role: z.enum(["admin", "profissional", "esteticista", "recepcionista", "doutor"]),
   formacao: z.string().min(1, "Selecione a especialidade"),
   agenda_color: z.string().optional(),
   commission_rate: z.coerce.number().min(0).max(100).optional(),
-  registration_number: z.string().optional(),
-  avatar_url: z.string().optional(),
+  registration_number: z.string().optional().nullable(),
+  avatar_url: z.string().optional().nullable(),
   working_days: z.array(z.string()).optional(),
   start_time: z.string().optional(),
   end_time: z.string().optional(),
@@ -46,12 +47,14 @@ const professionalSchema = z.object({
 
 type ProfessionalFormData = z.infer<typeof professionalSchema>;
 
+// --- COMPONENTE PRINCIPAL ---
 export function ProfessionalDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isNew, setIsNew] = useState(false); 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ProfessionalFormData>({
     resolver: zodResolver(professionalSchema),
@@ -71,10 +74,52 @@ export function ProfessionalDetailsPage() {
   const isMedicalStaff = ["profissional", "esteticista", "doutor"].includes(watchRole);
   const watchFirstName = watch("first_name");
 
+  // Tipagem segura para a função loadProfessional
+  type SupabaseData = ProfessionalFormData & { 
+    start_time: string | null; 
+    end_time: string | null; 
+    avatar_url: string | null;
+    phone: string | null;
+    registration_number: string | null;
+    commission_rate: number | null;
+  };
+
+  // FUNÇÃO DE CARREGAMENTO DE DADOS
+  async function loadProfessional(profId: string) {
+      setLoading(true);
+      const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", profId)
+          .single<SupabaseData>(); 
+
+      if (error) {
+          toast.error("Erro ao carregar dados. ID não encontrado.");
+          navigate("/professionals");
+      } else if (data) {
+          // SANITIZAÇÃO DE DADOS
+          const cleanedData = {
+              ...data,
+              start_time: data.start_time?.slice(0, 5) || '09:00',
+              end_time: data.end_time?.slice(0, 5) || '18:00',
+              
+              // Corrige valores nulos para undefined (para RHF)
+              phone: data.phone ?? undefined,
+              registration_number: data.registration_number ?? undefined,
+              avatar_url: data.avatar_url ?? undefined,
+              commission_rate: data.commission_rate ?? 0,
+          };
+          
+          reset(cleanedData as ProfessionalFormData);
+          if (cleanedData.avatar_url) setAvatarPreview(cleanedData.avatar_url);
+      }
+      setLoading(false);
+  }
+
   useEffect(() => {
     if (id && id !== 'new') {
         setIsNew(false);
-        loadProfessional(id);
+        loadProfessional(id); 
     } else if (id === 'new') {
         setIsNew(true);
         reset();
@@ -82,46 +127,87 @@ export function ProfessionalDetailsPage() {
     return () => {
         if (avatarPreview && avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
     };
-  }, [id]);
+  }, [id, navigate, reset]); 
 
-  async function loadProfessional(profId: string) {
-      setLoading(true);
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", profId).single();
-      if (error) {
-          toast.error("Erro ao carregar dados. ID não encontrado.");
-          navigate("/professionals");
-      } else if (data) {
-          data.start_time = data.start_time?.slice(0, 5) || '09:00';
-          data.end_time = data.end_time?.slice(0, 5) || '18:00';
-          reset(data);
-          if (data.avatar_url) setAvatarPreview(data.avatar_url);
-      }
-      setLoading(false);
-  }
   
+  // --- Lógica de Upload de Arquivo ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
         if (avatarPreview && avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
         setAvatarPreview(URL.createObjectURL(file));
+        setAvatarFile(file);
+    } else {
+        setAvatarFile(null);
     }
   };
 
+  const uploadAvatar = async (profId: string) => {
+    if (!avatarFile) return null;
+
+    const fileExt = avatarFile.name.split('.').pop();
+    const fileName = `${uuidv4()}.${fileExt}`;
+    const filePath = `${profId}/${fileName}`; // Bucket 'avatars'
+
+    const { error: uploadError } = await supabase.storage
+        .from('avatars') 
+        .upload(filePath, avatarFile, {
+            cacheControl: '3600',
+            upsert: false,
+        });
+
+    if (uploadError) throw new Error('Falha ao subir a imagem: ' + uploadError.message);
+    
+    // Obter URL pública
+    const { data: publicUrlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+    
+    if (!publicUrlData) throw new Error("Falha ao obter URL pública.");
+    return publicUrlData.publicUrl;
+  }
+
+  // --- Submissão do Formulário ---
   const onSubmit = async (data: ProfessionalFormData) => {
     setLoading(true);
+    let finalAvatarUrl = data.avatar_url;
+    let userId = id; 
+
     try {
-        const dataToSave = { ...data, working_days: data.working_days || [] };
+        const dataToSave = { 
+            ...data, 
+            working_days: data.working_days || [],
+            phone: data.phone || null,
+            registration_number: data.registration_number || null,
+            avatar_url: data.avatar_url || null,
+        };
 
         if (isNew) {
-            const { error } = await supabase.from("profiles").insert(dataToSave);
-            if (error) throw error;
-            toast.success("Profissional cadastrado!");
-        } else {
-            const { error } = await supabase.from("profiles").update(dataToSave).eq("id", id);
-            if (error) throw error;
-            toast.success("Dados atualizados!");
+            const { data: newProfile, error: insertError } = await supabase
+                .from("profiles")
+                .insert(dataToSave)
+                .select('id')
+                .single();
+
+            if (insertError) throw insertError;
+            userId = newProfile.id; 
+        } 
+        
+        if (avatarFile && userId) {
+            finalAvatarUrl = await uploadAvatar(userId);
+            dataToSave.avatar_url = finalAvatarUrl;
         }
+
+        const { error: updateError } = await supabase
+            .from("profiles")
+            .update(dataToSave)
+            .eq("id", userId);
+
+        if (updateError) throw updateError;
+        
+        toast.success(`Profissional ${isNew ? 'cadastrado' : 'atualizado'}!`);
         navigate("/professionals");
+
     } catch (error: any) {
         console.error("Erro ao salvar:", error);
         toast.error("Erro ao salvar: " + error.message);
@@ -130,7 +216,7 @@ export function ProfessionalDetailsPage() {
     }
   };
   
-  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600 w-8 h-8" /></div>;
+  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin mr-2 text-pink-600 w-8 h-8" /></div>;
 
 
   return (
@@ -142,6 +228,7 @@ export function ProfessionalDetailsPage() {
                     <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2"><User size={16}/> Informações Básicas</h2>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
                         <div className="md:col-span-1 flex flex-col items-center">
+                            {/* Avatar Upload UI */}
                             <div className="relative w-28 h-28 mb-2">
                                 <div className="w-full h-full rounded-full border-4 border-pink-500/50 bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
                                     {avatarPreview ? (<img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover"/>) : (
@@ -163,6 +250,7 @@ export function ProfessionalDetailsPage() {
                         </div>
                     </div>
                 </div>
+                {/* O restante das colunas 2/3 (Atuação e Compliance) */}
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                     <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2"><Briefcase size={16}/> Atuação e Compliance</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

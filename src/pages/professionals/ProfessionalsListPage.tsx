@@ -363,12 +363,16 @@ export function ProfessionalsListPage() {
           {filtered.map((prof) => {
             const roleInfo = getRoleInfo(prof.role);
 
+            // Dados de detalhes
             const details = [
               { show: !!prof.phone, icon: Phone, label: prof.phone },
               { show: !!prof.email, icon: Mail, label: prof.email },
               { show: !!prof.formacao, icon: Award, label: prof.formacao },
               {
-                show: prof.commission_rate !== null && prof.commission_rate !== undefined && isActive(prof),
+                show:
+                  prof.commission_rate !== null &&
+                  prof.commission_rate !== undefined &&
+                  isActive(prof),
                 icon: Percent,
                 label: `${prof.commission_rate}% Comissão`,
               },
@@ -391,6 +395,7 @@ export function ProfessionalsListPage() {
                     to={`/professionals/${prof.id}`}
                     className="flex items-center gap-4 cursor-pointer hover:opacity-85 transition-opacity flex-1 min-w-0"
                   >
+                    {/* Avatar/Initials */}
                     <div
                       className="w-12 h-12 rounded-full border-2 border-gray-200 dark:border-gray-700 flex items-center justify-center text-lg font-bold text-white shadow-md overflow-hidden"
                       style={{

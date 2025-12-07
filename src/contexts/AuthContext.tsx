@@ -4,9 +4,19 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 
-// Definição de cargos (deve ser compatível com as correções que fizemos)
-export type UserRole = 'admin' | 'medico' | 'paciente' | 'professional' | 'recepcionista' | 'doutor';
-
+// Definição de cargos CORRIGIDA E PADRONIZADA
+// Incluímos todos os termos do sistema: Padronizados (profissional, esteticista), Legados (medico, doutor), e Técnicos (paciente, professional).
+export type UserRole = 
+    'admin' | 
+    'profissional' |     // ✅ Padronizado para a agenda (resolve o erro)
+    'esteticista' |      // ✅ Padronizado
+    'esteta' |           // ✅ Termo alternativo
+    'recepcionista' |    // ✅ Padronizado
+    'medico' |           // ✅ Legado
+    'doutor' |           // ✅ Legado
+    'paciente' |         // ✅ Portal
+    'professional';      // ✅ Necessário para compatibilidade com templates Supabase antigos
+    
 export interface UserProfile {
   id: string;
   email: string;
@@ -16,9 +26,9 @@ export interface UserProfile {
 }
 
 interface AuthContextType {
-  user: SupabaseUser | null;     // Usuário do Supabase (dados técnicos)
-  profile: UserProfile | null;   // Dados do Perfil (nome, role)
-  loading: boolean;              // Estado de carregamento
+  user: SupabaseUser | null; 
+  profile: UserProfile | null; 
+  loading: boolean; 
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -36,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*, first_name, last_name')
+        .select('id, email, first_name, last_name, role') // Se o Supabase não retorna email, você pode usar user.email no mapeamento abaixo
         .eq('id', userId)
         .single();
 
@@ -45,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Mapeia o perfil para a interface
       setProfile({
           id: data.id,
-          email: data.email,
+          email: data.email || '', // Usar o dado do perfil, ou ajustar se o email for buscado de user.email
           first_name: data.first_name,
           last_name: data.last_name,
           role: data.role as UserRole
@@ -110,12 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     } catch (error: any) {
       console.error('❌ Erro ao fazer login:', error);
-      // Aqui usamos o código do erro para dar um toast mais amigável
       const errorMessage = error.message || 'Erro de conexão ou credenciais.';
       if (errorMessage.includes('Invalid login credentials')) {
-           toast.error('Credenciais inválidas.');
+          // Toast mais amigável para credenciais erradas
+          toast.error('Credenciais inválidas. Verifique seu e-mail e senha.');
       } else {
-           toast.error('Erro ao entrar: ' + errorMessage);
+          toast.error('Erro ao entrar: ' + errorMessage);
       }
       throw error;
     }

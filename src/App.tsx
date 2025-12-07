@@ -39,12 +39,17 @@ import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
 
 // Tratamentos
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
-import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage";
+import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
 import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
 
-// Profissionais
+// Profissionais (IMPORTAÇÕES CORRIGIDAS PARA O NOVO DASHBOARD)
 import { ProfessionalsPage } from "./pages/professionals/ProfessionalsPage"; 
-import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage"; 
+// ROTAS DO NOVO DASHBOARD
+import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout"; // NOVO LAYOUT
+import { ProfessionalDetailsPage } from "./pages/professionals/ProfessionalDetailsPage";       // DETALHES (antigo Form)
+import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage"; // ABA
+import { ProfessionalCommissionPage } from "./pages/professionals/ProfessionalCommissionPage";     // ABA
+
 
 // Financeiro
 import { InventoryPage } from "./pages/inventory/InventoryPage";
@@ -68,25 +73,28 @@ function App() {
               {/* ROTA PÚBLICA */}
               <Route path="/login" element={<LoginPage />} />
 
-              {/* ÁREA PROTEGIDA */}
-              <Route element={<ProtectedRoute allowedRoles={['admin', 'medico', 'professional', 'recepcionista', 'doutor']} />}>
+              {/* ÁREA PROTEGIDA (ADMIN/EQUIPE) */}
+              <Route element={<ProtectedRoute allowedRoles={[
+                  'admin', 'profissional', 'esteta', 'recepcionista', 'medico', 'doutor', 'esteticista', 'professional'
+              ]} />}>
                 
                 <Route element={<Layout />}>
                   
-                  {/* CORREÇÃO AQUI: Redireciona raiz para o Dashboard, não para Pacientes */}
+                  {/* Dashboard */}
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  
                   <Route path="/dashboard" element={<DashboardPage />} />
                   
                   {/* Agendamentos */}
                   <Route path="appointments" element={<AppointmentsPage />} />
                   <Route path="appointments/new" element={<AppointmentFormPage />} />
+                  <Route path="appointments/:id/edit" element={<AppointmentFormPage />} /> 
                   
                   {/* Pacientes */}
                   <Route path="patients" element={<PatientsListPage />} />
                   <Route path="patients/new" element={<PatientFormPage />} />
+                  <Route path="patients/:id/edit" element={<PatientFormPage />} /> 
 
-                  {/* Prontuário do Paciente */}
+                  {/* Prontuário do Paciente (Rotas aninhadas) */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
                       <Route index element={<PatientOverviewPage />} />
                       <Route path="details" element={<PatientFormPage />} />
@@ -100,12 +108,22 @@ function App() {
                       <Route path="injectables" element={<InjectablesPlanningPage />} />
                   </Route>
                   
+                  {/* Profissionais - ROTA DO DASHBOARD */}
+                  <Route path="professionals" element={<ProfessionalsPage />} /> 
+                  <Route path="professionals/new" element={<ProfessionalDetailsPage />} />
+                  
+                  {/* NOVO DASHBOARD DO PROFISSIONAL (RESOLVE O 404) */}
+                  <Route path="professionals/:id" element={<ProfessionalDashboardLayout />}>
+                      <Route index element={<ProfessionalDetailsPage />} /> 
+                      <Route path="details" element={<ProfessionalDetailsPage />} />
+                      <Route path="availability" element={<ProfessionalAvailabilityPage />} />
+                      <Route path="commission" element={<ProfessionalCommissionPage />} />
+                  </Route>
+
+
                   {/* Outros Módulos */}
                   <Route path="treatments" element={<TreatmentsPage />} />
                   <Route path="treatments/new" element={<TreatmentFormPage />} />
-                  <Route path="professionals" element={<ProfessionalsPage />} />
-                  <Route path="professionals/new" element={<ProfessionalFormPage />} />
-                  <Route path="professionals/:id/edit" element={<ProfessionalFormPage />} />
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
@@ -119,6 +137,7 @@ function App() {
                 </Route>
               </Route>
 
+              {/* Rota 404 (Sempre por último) */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
 

@@ -9,7 +9,7 @@ import { Input } from '../../components/ui/input';
 import { toast } from 'react-hot-toast';
 import { 
   Loader2, ArrowLeft, Calendar as CalendarIcon, Clock, 
-  Package, CheckCircle2, User, Sparkles, CreditCard, AlertTriangle 
+  Package, CheckCircle2, User, Sparkles, CreditCard, AlertTriangle, DoorOpen 
 } from 'lucide-react'; 
 import { addMinutes, format, parseISO } from 'date-fns';
 
@@ -20,6 +20,7 @@ const appointmentSchema = z.object({
   treatment_id: z.string().min(1, "Selecione um procedimento"),
   date: z.string().min(1, "Data é obrigatória"),
   time: z.string().min(1, "Horário é obrigatório"),
+  room: z.string().optional(), // Nova coluna: Sala
   notes: z.string().optional(),
 });
 
@@ -30,7 +31,6 @@ interface Patient {
     id: string;
     name: string;
     cpf?: string;
-    // O profile pode vir como array do banco, mas tratamos como objeto na interface
     profiles?: any; 
 }
 
@@ -56,13 +56,20 @@ interface PackageType {
     used_sessions: number;
 }
 
+// Salas Disponíveis (Pode vir do banco depois, por enquanto fixo)
+const AVAILABLE_ROOMS = ["Sala 1 - Facial", "Sala 2 - Corporal", "Consultório 1", "Consultório 2", "Box 3"];
+
 export function AppointmentFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
+  // --- VÍNCULO: Captura dados da URL ---
   const preSelectedDate = searchParams.get('date'); 
+  const preSelectedProfId = searchParams.get('professionalId');
+
   const initialDate = preSelectedDate ? format(parseISO(preSelectedDate), 'yyyy-MM-dd') : new Date().toISOString().split('T')[0];
-  const initialTime = preSelectedDate ? format(parseISO(preSelectedDate), 'HH:mm') : '';
+  // Se veio da agenda visual, pode tentar inferir hora, senão 09:00
+  const initialTime = '09:00';
 
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,9 +83,13 @@ export function AppointmentFormPage() {
   const [activePackages, setActivePackages] = useState<PackageType[]>([]);
   const [usePackageId, setUsePackageId] = useState<string | null>(null);
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<AppointmentFormData>({
+  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<AppointmentFormData>({
     resolver: zodResolver(appointmentSchema),
-    defaultValues: { date: initialDate, time: initialTime }
+    defaultValues: { 
+        date: initialDate, 
+        time: initialTime,
+        professional_id: preSelectedProfId || '' // Já seleciona o médico da URL
+    }
   });
 
   const selectedPatientId = watch('patient_id');
@@ -87,13 +98,19 @@ export function AppointmentFormPage() {
   const watchDate = watch('date');
   const watchTime = watch('time');
 
+  // --- FORCE UPDATE SE URL MUDAR ---
+  useEffect(() => {
+      if (preSelectedProfId) setValue('professional_id', preSelectedProfId);
+      if (preSelectedDate) setValue('date', preSelectedDate);
+  }, [preSelectedProfId, preSelectedDate, setValue]);
+
   // --- CARREGAMENTO INICIAL ---
   useEffect(() => {
     async function loadData() {
       try {
         setLoading(true);
         
-        // 1. Pacientes (CORREÇÃO DO ERRO TS2345)
+        // 1. Pacientes
         const { data: patients, error: patError } = await supabase
             .from('patients')
             .select(`id, cpf, name, profiles (id, first_name, last_name)`)
@@ -101,7 +118,6 @@ export function AppointmentFormPage() {
         
         if (patError) throw patError;
 
-        // AQUI ESTÁ O TRUQUE: Mapeamos para garantir que 'profiles' seja um objeto, não array
         const formattedPatients = (patients || []).map((p: any) => ({
             ...p,
             profiles: Array.isArray(p.profiles) ? p.profiles[0] : p.profiles
@@ -183,6 +199,8 @@ export function AppointmentFormPage() {
           start_time: startDateTime.toISOString(),
           end_time: endDateTime.toISOString(),
           status: 'scheduled',
+          date: data.date, 
+          room: data.room, // Salva a sala
           notes: data.notes,
         });
 
@@ -197,7 +215,13 @@ export function AppointmentFormPage() {
       }
 
       toast.success('Agendamento confirmado!');
-      navigate('/appointments');
+      
+      // Lógica de retorno inteligente
+      if (preSelectedProfId) {
+          navigate(-1);
+      } else {
+          navigate('/appointments');
+      }
 
     } catch (error: any) {
       console.error(error);
@@ -213,12 +237,14 @@ export function AppointmentFormPage() {
     <div className="max-w-[1400px] mx-auto p-4 md:p-8 min-h-screen bg-gray-50 dark:bg-gray-900">
       
       <div className="flex items-center gap-4 mb-8">
-        <Button variant="ghost" onClick={() => navigate('/appointments')} className="bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
+        <Button variant="ghost" onClick={() => navigate(-1)} className="bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
           <ArrowLeft size={20} />
         </Button>
         <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Nova Sessão</h1>
-            <p className="text-sm text-gray-500">Preencha os dados para agendar um novo atendimento.</p>
+            <p className="text-sm text-gray-500">
+                {preSelectedProfId ? 'Agendando diretamente para o profissional.' : 'Preencha os dados para agendar um novo atendimento.'}
+            </p>
         </div>
       </div>
 
@@ -255,8 +281,6 @@ export function AppointmentFormPage() {
                         <div className="text-center p-6 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-900/50">
                             <AlertTriangle className="mx-auto text-orange-500 mb-2" size={24} />
                             <p className="text-sm font-bold text-orange-700 dark:text-orange-300">Nenhum profissional encontrado.</p>
-                            <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">Verifique se existem usuários com cargo 'admin', 'doutor' ou 'profissional' no menu Profissionais.</p>
-                            <Button type="button" onClick={() => navigate('/professionals')} variant="outline" className="mt-3 text-xs">Gerenciar Profissionais</Button>
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -278,7 +302,7 @@ export function AppointmentFormPage() {
                     {errors.professional_id && <span className="text-xs text-red-500 mt-2 block">{errors.professional_id.message}</span>}
                 </section>
 
-                {/* 3. PROCEDIMENTO & DATA */}
+                {/* 3. PROCEDIMENTO & DATA & SALA */}
                 <section className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                     <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-800 dark:text-white"><Clock size={18} className="text-blue-600"/> Detalhes da Sessão</h2>
                     <div className="grid md:grid-cols-2 gap-6">
@@ -312,9 +336,20 @@ export function AppointmentFormPage() {
                             </div>
                         </div>
 
+                        {/* SELEÇÃO DE SALA (NOVO) */}
+                        <div className="md:col-span-2">
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block flex items-center gap-1"><DoorOpen size={12}/> Sala / Consultório</label>
+                            <select {...register('room')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500">
+                                <option value="">Selecione a sala (Opcional)</option>
+                                {AVAILABLE_ROOMS.map(room => (
+                                    <option key={room} value={room}>{room}</option>
+                                ))}
+                            </select>
+                        </div>
+
                         <div className="md:col-span-2">
                             <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Observações (Opcional)</label>
-                            <textarea {...register('notes')} rows={3} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 resize-none" placeholder="Ex: Sala 2, preparar material X..."></textarea>
+                            <textarea {...register('notes')} rows={3} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 resize-none" placeholder="Ex: Preparar material X..."></textarea>
                         </div>
                     </div>
                 </section>

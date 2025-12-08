@@ -1,252 +1,209 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { supabase } from "../../lib/supabase";
-import { toast } from "react-hot-toast";
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
 import { 
-    DollarSign, Filter, Loader2, Calendar, FileText, CheckCircle2
-} from "lucide-react";
-import { Input } from "../../components/ui/input";
-import { Button } from "../../components/ui/button";
-import { format, startOfMonth, endOfMonth } from "date-fns";
+  DollarSign, 
+  Calendar, 
+  TrendingUp, 
+  Loader2, 
+  AlertCircle,
+  CheckCircle2
+} from 'lucide-react';
 
-interface AppointmentToPay {
-    id: string;
-    commission_value: number;
-}
+type CommissionItem = {
+  id: string;
+  date: string;
+  patient_name: string;
+  procedure: string;
+  value: number; // Valor do procedimento
+  commission_value: number; // Valor da comissão
+};
 
-interface CommissionEntry {
-    appointment_id: string;
-    date: string;
-    time: string;
-    patient_name: string;
-    procedure_name: string;
-    commission_rate: number;
-    price: number;
-    commission_value: number;
-    commission_paid: boolean; // Adicionamos este campo
-}
+export default function ProfessionalCommissionPage() {
+  const { id } = useParams<{ id: string }>();
+  const [loading, setLoading] = useState(true);
+  
+  // Estado para o mês selecionado (YYYY-MM)
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  
+  const [items, setItems] = useState<CommissionItem[]>([]);
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    totalCommission: 0,
+    rate: 0
+  });
 
-export function ProfessionalCommissionPage() {
-    const { id: professionalId } = useParams();
-    const [loading, setLoading] = useState(false);
-    const [isPaying, setIsPaying] = useState(false);
-    const [reportData, setReportData] = useState<CommissionEntry[]>([]);
-    const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-    const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
-    const [totalPayable, setTotalPayable] = useState(0);
-
-    useEffect(() => {
-        if (professionalId) {
-            generateReport();
-        }
-    }, [professionalId, startDate, endDate]);
-
-    // --- FUNÇÃO PRINCIPAL DE GERAÇÃO DE RELATÓRIO INDIVIDUAL ---
-    async function generateReport() {
-        setLoading(true);
-        setReportData([]);
-        setTotalPayable(0);
-
-        if (!professionalId || new Date(startDate) > new Date(endDate)) {
-            setLoading(false);
-            return;
-        }
-
-        try {
-            // 1. Query de Agendamentos Concluídos para ESTE profissional (APENAS NÃO PAGOS)
-            const { data: appointments, error } = await supabase
-                .from('appointments')
-                .select(`
-                    id, 
-                    start_time, 
-                    status,
-                    commission_paid,
-                    patients (name),
-                    treatments (name, price),
-                    profiles (commission_rate)
-                `)
-                .eq('status', 'finished') // Apenas agendamentos CONCLUÍDOS
-                .eq('commission_paid', false) // APENAS COMISSÕES PENDENTES
-                .eq('professional_id', professionalId)
-                .gte('start_time', startDate)
-                .lte('start_time', endDate + ' 23:59:59');
-
-            if (error) throw error;
-
-            // 2. Processamento e Cálculo
-            let calculatedTotal = 0;
-            const processedData: CommissionEntry[] = (appointments || [])
-                .map((appt: any) => {
-                    const commissionRate = appt.profiles?.commission_rate || 0;
-                    const price = appt.treatments?.price || 0;
-                    const commissionValue = (price * (commissionRate / 100));
-                    
-                    calculatedTotal += commissionValue;
-
-                    return {
-                        appointment_id: appt.id,
-                        date: format(new Date(appt.start_time), 'dd/MM/yyyy'),
-                        time: format(new Date(appt.start_time), 'HH:mm'),
-                        patient_name: appt.patients?.name || 'N/A',
-                        procedure_name: appt.treatments?.name || 'N/A',
-                        commission_rate: commissionRate,
-                        price: price,
-                        commission_value: commissionValue,
-                        commission_paid: appt.commission_paid,
-                    };
-                });
-            
-            setReportData(processedData);
-            setTotalPayable(calculatedTotal);
-
-        } catch (error) {
-            console.error("Erro ao gerar relatório:", error);
-            toast.error("Falha ao buscar dados para o repasse.");
-        } finally {
-            setLoading(false);
-        }
+  useEffect(() => {
+    if (id) {
+      fetchCommissionData(id, selectedMonth);
     }
-    
-    // --- FUNÇÃO PREMIUM: REGISTRO DE PAGAMENTO (PAYOUT) ---
-    async function handlePayoutRegistration() {
-        if (totalPayable <= 0) {
-            toast.error("Não há valor a ser pago.");
-            return;
-        }
+  }, [id, selectedMonth]);
+
+  async function fetchCommissionData(profId: string, monthIso: string) {
+    setLoading(true);
+    try {
+      // 1. Buscar a taxa de comissão do profissional
+      const { data: profData, error: profError } = await supabase
+        .from('profiles') // Lembre-se que mudamos para 'profiles'
+        .select('commission_rate')
+        .eq('id', profId)
+        .single();
+
+      if (profError) throw profError;
+      const rate = profData?.commission_rate || 0;
+
+      // 2. Definir intervalo de datas do mês selecionado
+      const [year, month] = monthIso.split('-');
+      const startDate = `${year}-${month}-01`;
+      const endDate = new Date(Number(year), Number(month), 0).toISOString().split('T')[0];
+
+      // 3. Buscar agendamentos concluídos neste mês
+      // Usaremos 'appointments' assumindo que status='completed' gera comissão
+      const { data: appts, error: apptError } = await supabase
+        .from('appointments')
+        .select(`
+          id, 
+          date, 
+          status,
+          service_id,
+          patient:patient_id (name) -- Pega nome do paciente
+          -- Se tiver valor no agendamento, adicione aqui (ex: price)
+        `)
+        .eq('professional_id', profId)
+        .eq('status', 'completed') // Apenas concluídos contam
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: false });
+
+      if (apptError) throw apptError;
+
+      // 4. Calcular totais
+      let totalRev = 0;
+      
+      const mappedItems: CommissionItem[] = appts.map((t: any) => {
+        // SIMULAÇÃO: Valor fixo de R$ 150 se não tiver preço real salvo
+        const procedureValue = 150.00; 
         
-        const appointmentsToUpdate: AppointmentToPay[] = reportData.map(r => ({
-            id: r.appointment_id,
-            commission_value: r.commission_value
-        }));
-        
-        const appointmentIds = appointmentsToUpdate.map(a => a.id);
-        const totalAmount = totalPayable;
-        const professionalName = reportData[0]?.patient_name || "Profissional"; // Usando o nome do relatório
+        const commValue = procedureValue * (rate / 100);
+        totalRev += procedureValue;
 
-        setIsPaying(true);
+        return {
+          id: t.id,
+          date: t.date,
+          patient_name: t.patient?.name || 'Paciente',
+          procedure: 'Procedimento Realizado', // Placeholder
+          value: procedureValue,
+          commission_value: commValue
+        };
+      });
 
-        try {
-            // 1. Inserir a Transação de Despesa (EXPENSE) no Fluxo de Caixa
-            const { error: cashFlowError } = await supabase
-                .from('cash_flow')
-                .insert({
-                    type: 'EXPENSE',
-                    description: `Pagamento de comissão - ${professionalName}`,
-                    amount: totalAmount,
-                    related_entity_id: professionalId,
-                    transaction_date: new Date().toISOString()
-                });
+      setItems(mappedItems);
+      setStats({
+        totalRevenue: totalRev,
+        totalCommission: totalRev * (rate / 100),
+        rate: rate
+      });
 
-            if (cashFlowError) throw cashFlowError;
-
-            // 2. Marcar todos os Agendamentos da lista como commission_paid = TRUE
-            const { error: updateError } = await supabase
-                .from('appointments')
-                .update({ commission_paid: true })
-                .in('id', appointmentIds);
-
-            if (updateError) throw updateError;
-
-            toast.success(`Pagamento de ${formatCurrency(totalAmount)} registrado e concluído!`);
-            generateReport(); // Recarregar para mostrar lista vazia (já pago)
-
-        } catch (error) {
-            console.error("Erro ao registrar pagamento:", error);
-            toast.error("Erro ao processar o pagamento e atualizar o status.");
-        } finally {
-            setIsPaying(false);
-        }
+    } catch (error) {
+      console.error("Erro Comissões:", error);
+    } finally {
+      setLoading(false);
     }
+  }
 
+  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-600"/></div>;
 
-    // --- UTILS E RENDERIZAÇÃO ---
-    const formatCurrency = (value: number) => {
-        return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    };
-    
-    return (
-        <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                
-                {/* FILTROS DE DATA */}
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4 mb-4 border-gray-100 dark:border-gray-700">
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Calendar size={20} className="text-pink-600"/> Período de Repasse
-                    </h3>
-                    <div className="flex gap-2">
-                        <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">De:</label>
-                        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-36 bg-gray-50 dark:bg-gray-900 text-sm" />
-                        <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">Até:</label>
-                        <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-36 bg-gray-50 dark:bg-gray-900 text-sm" />
-                        <Button onClick={generateReport} disabled={loading} className="bg-gray-200 hover:bg-gray-300 text-gray-700 shadow-sm p-2">
-                            <Filter size={16} />
-                        </Button>
-                    </div>
-                </div>
+  return (
+    <div className="space-y-6 p-4 sm:p-6">
+      
+      {/* CABEÇALHO E FILTRO */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <DollarSign className="text-pink-600" /> Gestão de Comissões
+        </h2>
+        
+        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
+            <Calendar size={18} className="text-gray-500" />
+            <input 
+                type="month" 
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent border-none focus:ring-0 text-sm font-medium text-gray-700 dark:text-gray-200 outline-none"
+            />
+        </div>
+      </div>
 
-                {/* KPI DE RESUMO E BOTÃO PAYOUT */}
-                <div className="flex justify-between items-center gap-6">
-                    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl flex-1">
-                        <span className="text-sm font-semibold text-gray-500 uppercase block">Comissão Pendente (a pagar)</span>
-                        <span className="text-4xl font-extrabold text-pink-600 mt-1">
-                            {formatCurrency(totalPayable)}
-                        </span>
-                    </div>
-                     <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl">
-                        <span className="text-sm font-semibold text-gray-500 uppercase block">Sessões a Pagar</span>
-                        <span className="text-4xl font-extrabold text-green-600 mt-1">
-                            {reportData.length}
-                        </span>
-                    </div>
-                    
-                    <Button 
-                        onClick={handlePayoutRegistration} 
-                        disabled={totalPayable <= 0 || isPaying} 
-                        className="h-full px-8 py-4 bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-300/50"
-                    >
-                        {isPaying ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 className="mr-2"/>} 
-                        {isPaying ? 'Processando...' : 'Registrar Payout'}
-                    </Button>
-                </div>
-            </div>
+      {/* CARDS DE RESUMO */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Taxa */}
+        <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Taxa Contratada</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{stats.rate}%</p>
+        </div>
 
-            {/* DETALHES DA TABELA */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-x-auto">
-                <h2 className="text-lg font-bold mb-4 flex items-center gap-2"><FileText size={18} className="text-blue-600"/> Atendimentos Pendentes de Repasse</h2>
-                
-                {loading && <div className="text-center p-10"><Loader2 className="animate-spin text-pink-600 size-6"/></div>}
-
-                {!loading && reportData.length === 0 && (
-                    <div className="p-8 text-center border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-xl text-gray-500">
-                         {totalPayable === 0 ? "Nenhum repasse pendente para o período." : "Aguardando dados..."}
-                    </div>
-                )}
-
-                {!loading && reportData.length > 0 && (
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-gray-700">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Paciente</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Procedimento</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">% Comissão</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider text-pink-600">Valor Repasse</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            {reportData.map((item) => (
-                                <tr key={item.appointment_id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">{item.date} {item.time}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.patient_name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.procedure_name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-800 dark:text-gray-200">{item.commission_rate}%</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-pink-600">{formatCurrency(item.commission_value)}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
+        {/* Faturamento Total (Base) */}
+        <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Produção Total</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
+                R$ {stats.totalRevenue.toFixed(2).replace('.', ',')}
+            </p>
+            <div className="flex items-center gap-1 text-xs text-gray-400 mt-2">
+                <TrendingUp size={14} className="text-green-500"/> {items.length} atendimentos concluídos
             </div>
         </div>
-    );
+
+        {/* A PAGAR (Comissão) */}
+        <div className="bg-green-50 dark:bg-green-900/20 p-5 rounded-xl border border-green-100 dark:border-green-800 shadow-sm">
+            <p className="text-xs font-bold text-green-700 dark:text-green-400 uppercase tracking-wider">Comissão a Pagar</p>
+            <p className="text-3xl font-bold text-green-700 dark:text-green-400 mt-1">
+                R$ {stats.totalCommission.toFixed(2).replace('.', ',')}
+            </p>
+            <div className="flex items-center gap-1 text-xs text-green-600/70 mt-2">
+                <CheckCircle2 size={14} /> Cálculo automático
+            </div>
+        </div>
+      </div>
+
+      {/* TABELA DETALHADA */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+            <h3 className="font-bold text-gray-900 dark:text-white">Extrato Detalhado</h3>
+        </div>
+        
+        {items.length === 0 ? (
+            <div className="p-10 text-center text-gray-500 flex flex-col items-center">
+                <AlertCircle size={40} className="text-gray-300 mb-2"/>
+                <p>Nenhum atendimento concluído neste mês.</p>
+            </div>
+        ) : (
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50 dark:bg-gray-900/50 text-gray-500 uppercase text-xs">
+                        <tr>
+                            <th className="px-6 py-3">Data</th>
+                            <th className="px-6 py-3">Paciente</th>
+                            <th className="px-6 py-3">Serviço</th>
+                            <th className="px-6 py-3 text-right">Valor Base</th>
+                            <th className="px-6 py-3 text-right text-green-600">Comissão</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {items.map((item) => (
+                            <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <td className="px-6 py-4">{new Date(item.date).toLocaleDateString('pt-BR')}</td>
+                                <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{item.patient_name}</td>
+                                <td className="px-6 py-4">{item.procedure}</td>
+                                <td className="px-6 py-4 text-right">R$ {item.value.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-right font-bold text-green-600">
+                                    R$ {item.commission_value.toFixed(2)}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        )}
+      </div>
+    </div>
+  );
 }

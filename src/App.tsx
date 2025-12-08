@@ -10,6 +10,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { Layout } from "./components/Layout"; 
 import { PatientLayout } from "./components/layouts/PatientLayout"; 
 import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"; 
+import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout"; 
 
 // --- GUARDIÃO DE ROTAS ---
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -36,19 +37,22 @@ import { PatientFinancialPage } from "./pages/patients/PatientFinancialPage";
 import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";
 import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
 import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
+import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
 
 // Tratamentos
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
-import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
 
-// Profissionais (Caminhos usando o plural/minúsculo)
+// --- PROFISSIONAIS ---
 import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage";
-import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout";
-import { ProfessionalDetailsPage } from "./pages/professionals/ProfessionalDetailsPage";
 import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
-import { ProfessionalCommissionPage } from "./pages/professionals/ProfessionalCommissionPage";
 
+// Páginas Internas do Profissional (Export Default)
+import ProfessionalDetailsPage from "./pages/professionals/ProfessionalDetailsPage"; 
+import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
+import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
+import ProfessionalOverviewPage from "./pages/professionals/ProfessionalOverviewPage";
+import ProfessionalAgendaPage from "./pages/professionals/ProfessionalAgendaPage"; // <--- NOVO IMPORT
 
 // Financeiro
 import { InventoryPage } from "./pages/inventory/InventoryPage";
@@ -79,7 +83,7 @@ function App() {
                 
                 <Route element={<Layout />}>
                   
-                  {/* Dashboard */}
+                  {/* Dashboard Principal */}
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
                   
@@ -93,7 +97,7 @@ function App() {
                   <Route path="patients/new" element={<PatientFormPage />} />
                   <Route path="patients/:id/edit" element={<PatientFormPage />} /> 
 
-                  {/* Prontuário do Paciente (Rotas aninhadas) */}
+                  {/* Prontuário do Paciente */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
                       <Route index element={<PatientOverviewPage />} />
                       <Route path="details" element={<PatientFormPage />} />
@@ -107,18 +111,19 @@ function App() {
                       <Route path="injectables" element={<InjectablesPlanningPage />} />
                   </Route>
                   
-                  {/* Profissionais - ROTA DO DASHBOARD */}
+                  {/* Profissionais - LISTAGEM */}
                   <Route path="professionals" element={<ProfessionalsListPage />} /> 
                   <Route path="professionals/new" element={<ProfessionalDetailsPage />} />
                   
-                  {/* Dashboard aninhado do Profissional */}
+                  {/* Dashboard aninhado do Profissional (ID) */}
                   <Route path="professionals/:id" element={<ProfessionalDashboardLayout />}>
-                      <Route index element={<ProfessionalDetailsPage />} /> 
-                      <Route path="details" element={<ProfessionalDetailsPage />} />
+                      <Route index element={<ProfessionalOverviewPage />} /> {/* Visão Geral */}
+                      <Route path="agenda" element={<ProfessionalAgendaPage />} /> {/* <--- NOVA ROTA DA AGENDA */}
+                      <Route path="details" element={<ProfessionalDetailsPage />} /> {/* Cadastro */}
                       <Route path="availability" element={<ProfessionalAvailabilityPage />} />
-                      <Route path="commission" element={<ProfessionalCommissionPage />} />
+                      <Route path="commission" element={<ProfessionalCommissionPage />} /> {/* Comissão */}
+                      <Route path="history" element={<ProfessionalHistoryPage />} />
                   </Route>
-
 
                   {/* Outros Módulos */}
                   <Route path="treatments" element={<TreatmentsPage />} />
@@ -136,7 +141,7 @@ function App() {
                 </Route>
               </Route>
 
-              {/* Rota 404 (Sempre por último) */}
+              {/* Rota 404 */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
 

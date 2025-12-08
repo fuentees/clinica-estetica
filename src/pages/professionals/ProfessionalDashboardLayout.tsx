@@ -1,103 +1,164 @@
-import { ArrowLeft, User, Calendar, DollarSign, Loader2 } from "lucide-react";
-import { Link, Outlet, useParams, useLocation, useNavigate } from "react-router-dom";
-import { Button } from "../../components/ui/button";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
-import { toast } from "react-hot-toast";
-
-const tabs = [
-    { name: 'Cadastro', path: 'details', icon: User },
-    { name: 'Disponibilidade', path: 'availability', icon: Calendar },
-    { name: 'Comissão', path: 'commission', icon: DollarSign },
-];
-
-interface ProfileData {
-    first_name: string;
-    last_name: string;
-}
+import { 
+  ArrowLeft, 
+  User, 
+  Activity, 
+  DollarSign, 
+  Loader2,
+  LayoutDashboard,
+  Clock,
+  CalendarDays // <--- Ícone da Agenda
+} from "lucide-react";
 
 export function ProfessionalDashboardLayout() {
-    const { id } = useParams();
-    const location = useLocation();
-    const navigate = useNavigate();
-    
-    const [profile, setProfile] = useState<ProfileData | null>(null);
-    const [loading, setLoading] = useState(true);
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [professional, setProfessional] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    async function fetchProfessionalDetails() {
+      if (!id) return;
+      try {
+        const { data } = await supabase
+          .from("profiles") 
+          .select("first_name, last_name, name, role")
+          .eq("id", id)
+          .single();
+        if (data) setProfessional(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProfessionalDetails();
+  }, [id]);
+
+  // Função para determinar qual aba está ativa
+  const isActive = (path: string) => {
+    const currentPath = location.pathname.replace(/\/$/, ''); 
     const basePath = `/professionals/${id}`;
     
-    const isActive = (path: string) => location.pathname === `${basePath}/${path}` || 
-                                     (path === 'details' && location.pathname === basePath);
-
-    useEffect(() => {
-        async function fetchProfile() {
-            if (!id) return;
-            setLoading(true);
-            try {
-                const { data, error } = await supabase
-                    .from('profiles')
-                    .select('first_name, last_name')
-                    .eq('id', id)
-                    .single();
-
-                if (error) throw error;
-                setProfile(data);
-            } catch (error) {
-                console.error("Erro ao carregar nome do profissional:", error);
-                toast.error("Falha ao carregar perfil.");
-                navigate('/professionals');
-            } finally {
-                setLoading(false);
-            }
-        }
-        fetchProfile();
-    }, [id, navigate]);
-
-    if (loading) {
-        return <div className="flex justify-center p-10 h-screen items-start mt-20"><Loader2 className="animate-spin text-pink-600 w-10 h-10" /></div>;
+    // 1. Visão Geral (INDEX)
+    if (path === 'overview') {
+        return currentPath === basePath;
     }
+    
+    // 2. Outras Rotas
+    return currentPath.endsWith(`/${path}`);
+  };
 
-    const professionalName = profile ? `${profile.first_name} ${profile.last_name || ''}` : "Profissional";
+  if (loading) return <div className="p-4 flex justify-center"><Loader2 className="animate-spin text-pink-600" /></div>;
 
-    return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
+  const displayName = professional?.first_name 
+    ? `${professional.first_name} ${professional.last_name || ''}` 
+    : (professional?.name || "Profissional");
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+      
+      {/* --- CABEÇALHO --- */}
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 z-30 sticky top-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          
+          {/* Título e Botão Voltar */}
+          <div className="flex items-center gap-4 mb-4">
+            <button 
+              onClick={() => navigate("/professionals")} 
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 transition-colors"
+              title="Voltar para a lista"
+            >
+              <ArrowLeft size={22} />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">
+                {displayName}
+              </h1>
+              <p className="text-sm text-gray-500 mt-1 uppercase">{professional?.role || "Função"}</p>
+            </div>
+          </div>
+
+          {/* --- BARRA DE NAVEGAÇÃO (ABAS) --- */}
+          <div className="flex space-x-1 overflow-x-auto no-scrollbar border-b border-gray-200 dark:border-gray-700 mt-4">
             
-            {/* CABEÇALHO */}
-            <div className="flex items-center gap-4">
-                <Button variant="ghost" onClick={() => navigate('/professionals')} className="bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
-                    <ArrowLeft size={20} />
-                </Button>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                    Perfil de: **{professionalName}**
-                </h1>
-            </div>
+            {/* 1. VISÃO GERAL */}
+            <TabButton 
+                active={isActive('overview')} 
+                onClick={() => navigate(`/professionals/${id}`)} 
+                icon={<LayoutDashboard size={18} />} 
+                label="Visão Geral" 
+            />
 
-            {/* ABAS DE NAVEGAÇÃO */}
-            <div className="border-b border-gray-200 dark:border-gray-700">
-                <nav className="-mb-px flex space-x-8">
-                    {tabs.map((tab) => (
-                        <Link
-                            key={tab.name}
-                            to={tab.path === 'details' ? basePath : `${basePath}/${tab.path}`}
-                            className={`
-                                whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2
-                                ${isActive(tab.path)
-                                    ? 'border-pink-600 text-pink-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                                }
-                            `}
-                        >
-                            <tab.icon size={16} />
-                            {tab.name}
-                        </Link>
-                    ))}
-                </nav>
-            </div>
+            {/* 2. AGENDA (NOVO) */}
+            <TabButton 
+                active={isActive('agenda')} 
+                onClick={() => navigate(`agenda`)} 
+                icon={<CalendarDays size={18} />} 
+                label="Agenda" 
+            />
 
-            {/* CONTEÚDO DA ABA (ROTAS FILHAS) */}
-            <div className="pt-4">
-                <Outlet />
-            </div>
+            {/* 3. CADASTRO */}
+            <TabButton 
+                active={isActive('details')} 
+                onClick={() => navigate(`details`)} 
+                icon={<User size={18} />} 
+                label="Cadastro" 
+            />
+
+            {/* 4. DISPONIBILIDADE */}
+            <TabButton 
+                active={isActive('availability')} 
+                onClick={() => navigate(`availability`)} 
+                icon={<Clock size={18} />} 
+                label="Disponibilidade" 
+            />
+
+            {/* 5. COMISSÃO */}
+            <TabButton 
+                active={isActive('commission')} 
+                onClick={() => navigate(`commission`)} 
+                icon={<DollarSign size={18} />} 
+                label="Comissão" 
+            />
+
+            {/* 6. HISTÓRICO */}
+            <TabButton 
+                active={isActive('history')} 
+                onClick={() => navigate(`history`)} 
+                icon={<Activity size={18} />} 
+                label="Histórico" 
+            />
+
+          </div>
         </div>
-    );
+      </header>
+
+      <main className="flex-1 max-w-7xl mx-auto w-full py-6 px-4 sm:px-6 lg:px-8">
+        <Outlet /> 
+      </main>
+    </div>
+  );
+}
+
+// Componente Auxiliar para Abas
+function TabButton({ active, onClick, icon, label }: any) {
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-all whitespace-nowrap outline-none focus:outline-none
+        ${active 
+          ? "border-pink-600 text-pink-600 dark:text-pink-400 bg-pink-50/50 dark:bg-pink-900/10 rounded-t-md" 
+          : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-white"
+        }
+      `}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
 }

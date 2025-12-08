@@ -11,7 +11,7 @@
     "worker": "node src/workers/notificationWorker.ts"
   },
   "dependencies": {
-    "@hookform/resolvers": "^3.3.4",
+    "@hookform/resolvers": "^3.10.0",
     "@reduxjs/toolkit": "^2.5.1",
     "@sendgrid/mail": "^8.1.0",
     "@shadcn/ui": "^0.0.4",
@@ -38,7 +38,7 @@
     "tailwind-merge": "^2.2.1",
     "twilio": "^4.20.0",
     "uuid": "^13.0.0",
-    "zod": "^3.22.4"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

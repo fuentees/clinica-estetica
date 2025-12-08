@@ -1,15 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { supabase } from "../../lib/supabase";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { toast } from "react-hot-toast"; 
+import { toast } from "react-hot-toast";
 import { 
   Loader2, User, Briefcase, Mail, Phone, Percent, Award, 
-  CheckCircle2, Camera, Shield, Clock, Calendar
+  Camera, Shield, Clock, Calendar, Save, ArrowLeft
 } from "lucide-react";
 import { v4 as uuidv4 } from 'uuid'; 
 
@@ -27,29 +23,26 @@ const SPECIALTIES = [
     "Gerente / Admin", "Outro"
 ];
 
-// --- SCHEMA E TIPAGEM ---
-const professionalSchema = z.object({
-  first_name: z.string().min(2, "Nome obrigatório"),
-  last_name: z.string().min(2, "Sobrenome obrigatório"),
-  email: z.string().email("E-mail inválido").optional().or(z.literal('')),
-  phone: z.string().optional().nullable(),
-  role: z.enum(["admin", "profissional", "esteticista", "recepcionista", "doutor"]),
-  formacao: z.string().min(1, "Selecione a especialidade"),
-  agenda_color: z.string().optional(),
-  commission_rate: z.coerce.number().min(0).max(100).optional(),
-  registration_number: z.string().optional().nullable(),
-  avatar_url: z.string().optional().nullable(),
-  working_days: z.array(z.string()).optional(),
-  start_time: z.string().optional(),
-  end_time: z.string().optional(),
-  is_active: z.boolean().optional(),
-});
+// Tipagem do Formulário
+interface ProfessionalFormData {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    role: string;
+    formacao: string; // Especialidade
+    agenda_color: string;
+    commission_rate: number;
+    registration_number: string;
+    avatar_url: string;
+    working_days: string[];
+    start_time: string;
+    end_time: string;
+    is_active: boolean;
+}
 
-type ProfessionalFormData = z.infer<typeof professionalSchema>;
-
-// --- COMPONENTE PRINCIPAL ---
-export function ProfessionalDetailsPage() {
-  const { id } = useParams();
+export default function ProfessionalDetailsPage() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isNew, setIsNew] = useState(false); 
@@ -57,7 +50,6 @@ export function ProfessionalDetailsPage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
 
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ProfessionalFormData>({
-    resolver: zodResolver(professionalSchema),
     defaultValues: {
         role: "profissional",
         agenda_color: "#ec4899",
@@ -71,47 +63,49 @@ export function ProfessionalDetailsPage() {
   });
 
   const watchRole = watch("role");
-  const isMedicalStaff = ["profissional", "esteticista", "doutor"].includes(watchRole);
+  const isMedicalStaff = ["profissional", "esteticista", "doutor", "medico", "biomedica"].includes(watchRole);
   const watchFirstName = watch("first_name");
 
-  // Tipagem segura para a função loadProfessional
-  type SupabaseData = ProfessionalFormData & { 
-    start_time: string | null; 
-    end_time: string | null; 
-    avatar_url: string | null;
-    phone: string | null;
-    registration_number: string | null;
-    commission_rate: number | null;
-  };
-
-  // FUNÇÃO DE CARREGAMENTO DE DADOS
+  // FUNÇÃO DE CARREGAMENTO
   async function loadProfessional(profId: string) {
       setLoading(true);
       const { data, error } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", profId)
-          .single<SupabaseData>(); 
+          .single(); 
 
       if (error) {
-          toast.error("Erro ao carregar dados. ID não encontrado.");
+          console.error(error);
+          toast.error("Erro ao carregar dados.");
           navigate("/professionals");
       } else if (data) {
-          // SANITIZAÇÃO DE DADOS
-          const cleanedData = {
-              ...data,
+          let first = data.first_name;
+          let last = data.last_name;
+          if (!first && data.name) {
+              const parts = data.name.split(' ');
+              first = parts[0];
+              last = parts.slice(1).join(' ');
+          }
+
+          reset({
+              first_name: first || '',
+              last_name: last || '',
+              email: data.email || '',
+              phone: data.phone || '',
+              role: data.role || 'profissional',
+              formacao: data.formacao || '',
+              agenda_color: data.agenda_color || '#ec4899',
+              commission_rate: data.commission_rate || 0,
+              registration_number: data.registration_number || '',
+              avatar_url: data.avatar_url || '',
+              working_days: data.working_days || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
               start_time: data.start_time?.slice(0, 5) || '09:00',
               end_time: data.end_time?.slice(0, 5) || '18:00',
-              
-              // Corrige valores nulos para undefined (para RHF)
-              phone: data.phone ?? undefined,
-              registration_number: data.registration_number ?? undefined,
-              avatar_url: data.avatar_url ?? undefined,
-              commission_rate: data.commission_rate ?? 0,
-          };
+              is_active: data.is_active ?? true
+          });
           
-          reset(cleanedData as ProfessionalFormData);
-          if (cleanedData.avatar_url) setAvatarPreview(cleanedData.avatar_url);
+          if (data.avatar_url) setAvatarPreview(data.avatar_url);
       }
       setLoading(false);
   }
@@ -129,60 +123,59 @@ export function ProfessionalDetailsPage() {
     };
   }, [id, navigate, reset]); 
 
-  
-  // --- Lógica de Upload de Arquivo ---
+  // --- Upload de Avatar ---
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
-        if (avatarPreview && avatarPreview.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
         setAvatarPreview(URL.createObjectURL(file));
         setAvatarFile(file);
-    } else {
-        setAvatarFile(null);
     }
   };
 
-  const uploadAvatar = async (profId: string) => {
+  const uploadAvatar = async (userId: string) => {
     if (!avatarFile) return null;
-
     const fileExt = avatarFile.name.split('.').pop();
-    const fileName = `${uuidv4()}.${fileExt}`;
-    const filePath = `${profId}/${fileName}`; // Bucket 'avatars'
-
-    const { error: uploadError } = await supabase.storage
+    const fileName = `${userId}/${uuidv4()}.${fileExt}`;
+    
+    const { error } = await supabase.storage
         .from('avatars') 
-        .upload(filePath, avatarFile, {
-            cacheControl: '3600',
-            upsert: false,
-        });
+        .upload(fileName, avatarFile, { upsert: true });
 
-    if (uploadError) throw new Error('Falha ao subir a imagem: ' + uploadError.message);
+    if (error) {
+        console.error("Erro upload:", error);
+        return null;
+    }
     
-    // Obter URL pública
-    const { data: publicUrlData } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-    
-    if (!publicUrlData) throw new Error("Falha ao obter URL pública.");
-    return publicUrlData.publicUrl;
+    const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+    return data.publicUrl;
   }
 
-  // --- Submissão do Formulário ---
+  // --- Salvar ---
   const onSubmit = async (data: ProfessionalFormData) => {
     setLoading(true);
-    let finalAvatarUrl = data.avatar_url;
     let userId = id; 
 
     try {
+        const fullName = `${data.first_name} ${data.last_name}`.trim();
         const dataToSave = { 
-            ...data, 
-            working_days: data.working_days || [],
-            phone: data.phone || null,
-            registration_number: data.registration_number || null,
-            avatar_url: data.avatar_url || null,
+            first_name: data.first_name,
+            last_name: data.last_name,
+            name: fullName, 
+            email: data.email,
+            phone: data.phone,
+            role: data.role,
+            formacao: data.formacao,
+            agenda_color: data.agenda_color,
+            commission_rate: data.commission_rate,
+            registration_number: data.registration_number,
+            working_days: data.working_days,
+            start_time: data.start_time,
+            end_time: data.end_time,
+            is_active: data.is_active,
+            avatar_url: data.avatar_url
         };
 
-        if (isNew) {
+        if (isNew || userId === 'new') {
             const { data: newProfile, error: insertError } = await supabase
                 .from("profiles")
                 .insert(dataToSave)
@@ -193,9 +186,11 @@ export function ProfessionalDetailsPage() {
             userId = newProfile.id; 
         } 
         
-        if (avatarFile && userId) {
-            finalAvatarUrl = await uploadAvatar(userId);
-            dataToSave.avatar_url = finalAvatarUrl;
+        if (avatarFile && userId && userId !== 'new') {
+            const uploadedUrl = await uploadAvatar(userId);
+            if (uploadedUrl) {
+                dataToSave.avatar_url = uploadedUrl;
+            }
         }
 
         const { error: updateError } = await supabase
@@ -205,8 +200,8 @@ export function ProfessionalDetailsPage() {
 
         if (updateError) throw updateError;
         
-        toast.success(`Profissional ${isNew ? 'cadastrado' : 'atualizado'}!`);
-        navigate("/professionals");
+        toast.success(`Profissional salvo com sucesso!`);
+        if (userId) navigate(`/professionals/${userId}`);
 
     } catch (error: any) {
         console.error("Erro ao salvar:", error);
@@ -218,17 +213,30 @@ export function ProfessionalDetailsPage() {
   
   if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin mr-2 text-pink-600 w-8 h-8" /></div>;
 
+  const inputClass = "w-full p-2.5 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-pink-500 transition-all text-sm";
+  const labelClass = "text-xs font-bold text-gray-500 uppercase mb-1 block";
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 max-w-6xl mx-auto p-2">
+        
+        <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                {isNew ? 'Cadastrar Profissional' : 'Editar Perfil'}
+            </h1>
+            <button type="button" onClick={() => navigate('/professionals')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
+                <ArrowLeft size={16}/> Voltar
+            </button>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* COLUNA ESQUERDA (2/3) */}
+            {/* COLUNA ESQUERDA */}
             <div className="lg:col-span-2 space-y-6">
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                     <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2"><User size={16}/> Informações Básicas</h2>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
+                        
+                        {/* Avatar */}
                         <div className="md:col-span-1 flex flex-col items-center">
-                            {/* Avatar Upload UI */}
                             <div className="relative w-28 h-28 mb-2">
                                 <div className="w-full h-full rounded-full border-4 border-pink-500/50 bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
                                     {avatarPreview ? (<img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover"/>) : (
@@ -241,57 +249,83 @@ export function ProfessionalDetailsPage() {
                                 <input id="avatar-upload" type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                             </div>
                         </div>
+
+                        {/* Campos */}
                         <div className="md:col-span-3 grid grid-cols-2 gap-4">
-                            <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Nome</label><Input {...register("first_name")} className="bg-gray-50 dark:bg-gray-900" placeholder="Ex: Ana" />{errors.first_name && <span className="text-xs text-red-500">{errors.first_name.message}</span>}</div>
-                            <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Sobrenome</label><Input {...register("last_name")} className="bg-gray-50 dark:bg-gray-900" placeholder="Ex: Souza" />{errors.last_name && <span className="text-xs text-red-500">{errors.last_name.message}</span>}</div>
-                            <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">E-mail</label><div className="relative"><Mail size={16} className="absolute left-3 top-3 text-gray-400"/><Input {...register("email")} className="pl-10 bg-gray-50 dark:bg-gray-900" placeholder="ana@clinica.com" /></div></div>
-                            <div><label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Telefone</label><div className="relative"><Phone size={16} className="absolute left-3 top-3 text-gray-400"/><Input {...register("phone")} className="pl-10 bg-gray-50 dark:bg-gray-900" placeholder="(11) 99999-9999" /></div></div>
-                            <input type="hidden" {...register("avatar_url")} />
+                            <div>
+                                <label className={labelClass}>Nome</label>
+                                <input {...register("first_name", { required: "Nome obrigatório" })} className={inputClass} placeholder="Ex: Ana" />
+                                {errors.first_name && <p className="text-xs text-red-500 mt-1">{errors.first_name.message}</p>}
+                            </div>
+                            <div>
+                                <label className={labelClass}>Sobrenome</label>
+                                <input {...register("last_name", { required: "Sobrenome obrigatório" })} className={inputClass} placeholder="Ex: Souza" />
+                                {errors.last_name && <p className="text-xs text-red-500 mt-1">{errors.last_name.message}</p>}
+                            </div>
+                            <div>
+                                <label className={labelClass}>E-mail</label>
+                                <div className="relative">
+                                    <Mail size={16} className="absolute left-3 top-3 text-gray-400"/>
+                                    <input {...register("email", { required: "Email obrigatório" })} className={`${inputClass} pl-10`} placeholder="ana@clinica.com" />
+                                </div>
+                                {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
+                            </div>
+                            <div>
+                                <label className={labelClass}>Telefone</label>
+                                <div className="relative">
+                                    <Phone size={16} className="absolute left-3 top-3 text-gray-400"/>
+                                    <input {...register("phone")} className={`${inputClass} pl-10`} placeholder="(11) 99999-9999" />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                {/* O restante das colunas 2/3 (Atuação e Compliance) */}
+
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                    <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2"><Briefcase size={16}/> Atuação e Compliance</h2>
+                    <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2"><Briefcase size={16}/> Atuação</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Cargo (Permissão)</label>
-                            <select {...register("role")} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-pink-500 transition-all text-sm">
+                            <label className={labelClass}>Cargo</label>
+                            <select {...register("role")} className={inputClass}>
                                 <option value="profissional">Profissional / Especialista</option>
+                                <option value="medico">Médico(a) / Doutor(a)</option>
+                                <option value="biomedica">Biomédica</option>
                                 <option value="esteticista">Esteticista</option>
                                 <option value="recepcionista">Recepcionista</option>
                                 <option value="admin">Administrador</option>
                             </select>
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Especialidade</label>
+                            <label className={labelClass}>Especialidade</label>
                             <div className="relative">
                                 <Award size={16} className="absolute left-3 top-3 text-gray-400 pointer-events-none"/>
-                                <select {...register("formacao")} className="w-full pl-10 p-2.5 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-pink-500 transition-all text-sm appearance-none">
+                                <select {...register("formacao")} className={`${inputClass} pl-10 appearance-none`}>
                                     <option value="">Selecione...</option>
                                     {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
-                            {errors.formacao && <span className="text-xs text-red-500">{errors.formacao.message}</span>}
                         </div>
                         {isMedicalStaff && (
                             <div className="md:col-span-2">
-                                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Número de Registro (CRM/CRO/COFEN)</label>
+                                <label className={labelClass}>Número de Registro (CRM/COFEN)</label>
                                 <div className="relative">
                                     <Shield size={16} className="absolute left-3 top-3 text-gray-400"/>
-                                    <Input {...register("registration_number")} className="pl-10 bg-gray-50 dark:bg-gray-900" placeholder="Ex: CRM/SP 123456" />
+                                    <input {...register("registration_number")} className={`${inputClass} pl-10`} placeholder="Ex: CRM/SP 123456" />
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
-            {/* COLUNA DIREITA (1/3) */}
+
+            {/* COLUNA DIREITA */}
             <div className="space-y-6">
+                
                 {isMedicalStaff && (
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                         <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2"><Calendar size={16}/> Configurações de Agenda</h2>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 block flex items-center gap-1"><Clock size={12}/> Dias de Trabalho</label>
+                        
+                        <label className={`${labelClass} flex items-center gap-1`}><Clock size={12}/> Dias de Trabalho</label>
                         <div className="grid grid-cols-7 gap-1 mb-6">
                             {DAYS_OF_WEEK.map(day => (
                                 <label key={day.value} className={`relative block text-center border rounded-lg p-2 text-xs font-bold transition-colors cursor-pointer ${
@@ -304,40 +338,45 @@ export function ProfessionalDetailsPage() {
                                 </label>
                             ))}
                         </div>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Horário Padrão</label>
+
+                        <label className={labelClass}>Horário Padrão</label>
                         <div className="flex gap-4">
-                            <Input type="time" {...register('start_time')} className="bg-gray-50 dark:bg-gray-900" />
-                            <Input type="time" {...register('end_time')} className="bg-gray-50 dark:bg-gray-900" />
+                            <input type="time" {...register('start_time')} className={inputClass} />
+                            <input type="time" {...register('end_time')} className={inputClass} />
                         </div>
-                        <div className="mt-4 flex items-center gap-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase">Cor</label>
-                            <input type="color" {...register("agenda_color")} className="h-8 w-8 p-1 bg-white border rounded cursor-pointer" />
+
+                        <div className="mt-4 flex items-center gap-3 bg-gray-50 dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <input type="color" {...register("agenda_color")} className="h-8 w-8 p-0 border-0 rounded cursor-pointer bg-transparent" />
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Cor de Exibição</span>
                         </div>
                     </div>
                 )}
+
                 {isMedicalStaff && (
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                         <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2"><Percent size={16}/> Financeiro</h2>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Comissão (%)</label>
+                        <label className={labelClass}>Comissão (%)</label>
                         <div className="relative">
-                            <Input type="number" {...register("commission_rate")} className="bg-gray-50 dark:bg-gray-900 pr-8 font-bold text-right" placeholder="0" step="0.1"/>
+                            <input type="number" {...register("commission_rate")} className={`${inputClass} pr-8 font-bold text-right text-green-600`} placeholder="0" step="0.1"/>
                             <span className="absolute right-3 top-2.5 text-gray-400 font-bold">%</span>
                         </div>
                     </div>
                 )}
+
                 {!isNew && (
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Shield size={16}/> Status</h2>
                         <label className="flex items-center gap-3">
                             <input type="checkbox" {...register("is_active")} className="w-5 h-5 text-red-600 rounded border-gray-300"/>
-                            <span className="text-sm text-gray-700">Manter como Ativo</span>
+                            <span className="text-sm text-gray-700 dark:text-gray-300">Manter perfil ativo</span>
                         </label>
                     </div>
                 )}
-                <Button type="submit" disabled={loading} className="w-full h-12 bg-pink-600 hover:bg-pink-700 text-white font-bold shadow-lg shadow-pink-200 dark:shadow-none transition-all">
-                    {loading ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 className="mr-2"/>} 
+
+                <button type="submit" disabled={loading} className="w-full h-12 bg-pink-600 hover:bg-pink-700 text-white font-bold rounded-xl shadow-lg shadow-pink-200 dark:shadow-none transition-all flex items-center justify-center gap-2">
+                    {loading ? <Loader2 className="animate-spin"/> : <Save size={20}/>} 
                     Salvar Cadastro
-                </Button>
+                </button>
             </div>
         </div>
     </form>

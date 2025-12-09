@@ -35,7 +35,7 @@ const patientSchema = z.object({
   cidade: z.string().optional(),
   estado: z.string().optional(),
   
-  // Campo legado (mantido para compatibilidade se necessário)
+  // Campo legado
   address: z.string().optional(), 
 });
 
@@ -46,14 +46,12 @@ type PatientFormData = z.infer<typeof patientSchema>;
 // =========================================
 const maskCPF = (value: string) => {
   return value
-    .replace(/\D/g, "") // Remove tudo o que não é dígito
-    .replace(/(\d{3})(\d)/, "$1.$2") // Coloca um ponto entre o terceiro e o quarto dígitos
-    .replace(/(\d{3})(\d)/, "$1.$2") // Coloca um ponto entre o terceiro e o quarto dígitos de novo
-    .replace(/(\d{3})(\d{1,2})/, "$1-$2") // Coloca um hífen entre o terceiro e o quarto dígitos
-    .replace(/(-\d{2})\d+?$/, "$1"); // Impede mais caracteres
+    .replace(/\D/g, "")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})/, "$1-$2")
+    .replace(/(-\d{2})\d+?$/, "$1");
 };
-
-// Removida a máscara forçada de RG conforme solicitado
 
 const maskPhone = (value: string) => {
     return value
@@ -169,11 +167,17 @@ export function PatientFormPage() {
 
         const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
 
+        // Tenta pegar do profile, se não, tenta quebrar o nome salvo em patients
         if (profile) {
           setValue("first_name", profile.first_name || "");
           setValue("last_name", profile.last_name || "");
           setValue("email", profile.email || "");
           setValue("phone", profile.phone || "");
+        } else if (data.name) {
+            // Fallback se não tiver profile linkado
+            const parts = data.name.split(' ');
+            setValue("first_name", parts[0] || "");
+            setValue("last_name", parts.slice(1).join(' ') || "");
         }
 
         setValue("cpf", data.cpf || "");
@@ -182,7 +186,7 @@ export function PatientFormPage() {
         setValue("profissao", data.profissao || "");
         setValue("sexo", data.sexo || "");
         
-        // Carrega endereço separado (se existirem as colunas novas)
+        // Carrega endereço
         setValue("cep", data.cep || "");
         setValue("rua", data.rua || "");
         setValue("numero", data.numero || "");
@@ -190,7 +194,6 @@ export function PatientFormPage() {
         setValue("cidade", data.cidade || "");
         setValue("estado", data.estado || "");
 
-        // Fallback: Se não tiver rua salva separada, tenta pegar do address antigo
         if (!data.rua && data.address) {
             setValue("rua", data.address); 
         }
@@ -209,17 +212,20 @@ export function PatientFormPage() {
       const ageCalc = data.date_of_birth ? calculateAge(data.date_of_birth) : null;
       const ageInt = typeof ageCalc === "number" ? ageCalc : null;
 
-      // Cria string completa para backup (compatibilidade)
+      // 1. GERA O NOME COMPLETO (CRUCIAL PARA O RECEITUÁRIO)
+      const fullName = `${data.first_name} ${data.last_name}`.trim();
+
       const fullAddress = `${data.rua || ""}, ${data.numero || ""} - ${data.bairro || ""}, ${data.cidade || ""} - ${data.estado || ""}, CEP: ${data.cep || ""}`;
 
       const patientDataToSave = {
+        name: fullName, // <--- SALVA O NOME NA TABELA PATIENTS
         cpf: data.cpf,
         rg: data.rg,
         date_of_birth: data.date_of_birth,
         idade: ageInt,
         profissao: data.profissao,
         sexo: data.sexo,
-        // SALVA CAMPOS SEPARADOS
+        // Endereço
         cep: data.cep,
         rua: data.rua,
         numero: data.numero,
@@ -235,6 +241,7 @@ export function PatientFormPage() {
           await supabase.from("profiles").update({
             first_name: data.first_name,
             last_name: data.last_name,
+            name: fullName, // Atualiza nome completo no profile também
             email: data.email,
             phone: data.phone,
           }).eq("id", profileId);
@@ -247,11 +254,13 @@ export function PatientFormPage() {
       } 
       // 2. MODO CRIAÇÃO (Novo Paciente)
       else {
+        // Cria perfil básico (sem login)
         const { data: newProfile, error: profileError } = await supabase
           .from("profiles")
           .insert({
             first_name: data.first_name,
             last_name: data.last_name,
+            name: fullName, // <--- IMPORTANTE
             email: data.email,
             phone: data.phone,
             role: "paciente",

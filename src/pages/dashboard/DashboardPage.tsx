@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { useAuth } from "../../contexts/AuthContext"; // Importado para pegar o nome
 import { 
   Users, 
   DollarSign, 
@@ -31,7 +32,9 @@ import { DailyTasksWidget } from "../../components/dashboard/DailyTasksWidget";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { profile, user } = useAuth(); // Hook de autenticação para pegar o nome
   const [loading, setLoading] = useState(true);
+  
   const [stats, setStats] = useState({
     totalPatients: 0,
     appointmentsToday: 0,
@@ -42,9 +45,14 @@ export default function DashboardPage() {
   
   const [nextAppointments, setNextAppointments] = useState<any[]>([]);
 
-  // Saudação
+  // Lógica de Saudação e Nome
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
+  
+  // Define o nome: Tenta o First Name do perfil -> Email -> ou "Doutor(a)"
+  const displayName = profile?.first_name 
+    ? profile.first_name 
+    : user?.email?.split('@')[0] || 'Doutor(a)';
 
   useEffect(() => {
     fetchRealDashboardData();
@@ -69,7 +77,6 @@ export default function DashboardPage() {
       }
 
       // 3. Próximos Agendamentos do Dia
-      // NOTA: Adicionei o 'id' dentro da seleção de patient para podermos navegar
       const { data: nextAppts } = await supabase
         .from('appointments')
         .select(`
@@ -141,7 +148,7 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            {greeting}, Doutora! <Sparkles size={24} className="text-yellow-500 animate-pulse"/>
+            {greeting}, <span className="text-pink-600">Dr(a). {displayName}</span>! <Sparkles size={24} className="text-yellow-500 animate-pulse"/>
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">
             Resumo em tempo real da performance da clínica.
@@ -252,7 +259,6 @@ export default function DashboardPage() {
                                   <div 
                                     key={appt.id} 
                                     className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 dark:bg-gray-900 border border-transparent hover:border-blue-200 transition-all cursor-pointer group" 
-                                    // AQUI ESTÁ A CORREÇÃO DO LINK
                                     onClick={() => patientInfo.id && navigate(`/patients/${patientInfo.id}`)}
                                   >
                                       <div className="text-center min-w-[60px]">

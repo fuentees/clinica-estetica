@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { Toaster } from "react-hot-toast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// --- CONTEXTOS (Caminho Corrigido!) ---
+// --- CONTEXTOS ---
 import { AuthProvider } from "./contexts/AuthContext"; 
 import { ThemeProvider } from "./contexts/ThemeContext"; 
 
@@ -20,18 +20,17 @@ import { LoginPage } from "./pages/auth/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 
 // --- PÁGINAS ADMINISTRATIVAS ---
-// Dashboard Principal (Default Export)
 import DashboardPage from "./pages/dashboard/DashboardPage"; 
 
-// Agendamentos (Named Exports e Default)
+// Agendamentos
 import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
 import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
-import AppointmentEditPage from "./pages/appointments/AppointmentEditPage"; // O de edição (Default)
+import AppointmentEditPage from "./pages/appointments/AppointmentEditPage";
 
-// --- PACIENTES ---
+// Pacientes
 import { PatientsListPage } from "./pages/patients/PatientsListPage"; 
 import { PatientFormPage } from "./pages/patients/PatientFormPage"; 
-import PatientOverviewPage from "./pages/patients/PatientOverviewPage"; // Default Export
+import PatientOverviewPage from "./pages/patients/PatientOverviewPage"; 
 
 import PatientAnamnesisPage from "./pages/patients/PatientAnamnesisPage";
 import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage";
@@ -42,11 +41,15 @@ import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
 import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
 import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
 
+// Receituário (IMPORTAÇÕES ADICIONADAS AQUI)
+import { PrescriptionsPage } from "./pages/prescriptions/PrescriptionsPage";
+import { PrescriptionFormPage } from "./pages/prescriptions/PrescriptionFormPage";
+
 // Tratamentos
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
 
-// --- PROFISSIONAIS ---
+// Profissionais
 import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage";
 import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
 
@@ -111,6 +114,10 @@ function App() {
                       <Route path="financial" element={<PatientFinancialPage />} />
                       <Route path="injectables" element={<InjectablesPlanningPage />} />
                   </Route>
+
+                  {/* Receituário */}
+                  <Route path="prescriptions" element={<PrescriptionsPage />} />
+                  <Route path="prescriptions/new" element={<PrescriptionFormPage />} />
                   
                   {/* Profissionais - LISTAGEM */}
                   <Route path="professionals" element={<ProfessionalsListPage />} /> 

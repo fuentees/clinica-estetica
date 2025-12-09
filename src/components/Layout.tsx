@@ -1,31 +1,49 @@
-import { useState } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, Users, Calendar, Activity, Package, 
-  DollarSign, LogOut, Menu, X, Stethoscope, Settings 
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { 
+  LayoutDashboard, 
+  Calendar, 
+  Users, 
+  ScrollText, 
+  Stethoscope, 
+  Activity, 
+  Package, 
+  DollarSign, 
+  LogOut, 
+  Menu, 
+  X,
+  ChevronRight,
+  Settings,
+  Sparkles,
+  Search,
+  Command,
+  Bell // Adicionei um sino de notificação para compor o header
+} from 'lucide-react';
 
-// Importa a Command Bar (Certifique-se que o arquivo existe em src/components/ui/CommandBar.tsx)
+// Importa a Command Bar
 import { CommandBar } from './ui/CommandBar'; 
 
 export function Layout() {
-  const { signOut, profile } = useAuth();
+  const { user, signOut, profile } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const isActive = (path: string) => location.pathname === path;
+  // Fecha o menu mobile ao trocar de rota
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
 
-  // Itens do Menu Principal
-  const menuItems = [
-    { path: '/dashboard', icon: LayoutDashboard, label: 'Visão Geral' }, // Ajustei para /dashboard
-    { path: '/appointments', icon: Calendar, label: 'Agenda' },
-    { path: '/patients', icon: Users, label: 'Pacientes' },
-    { path: '/professionals', icon: Stethoscope, label: 'Profissionais' }, 
-    { path: '/treatments', icon: Activity, label: 'Tratamentos' },
-    { path: '/inventory', icon: Package, label: 'Estoque' },
-    { path: '/payments', icon: DollarSign, label: 'Financeiro' }, 
+  const navItems = [
+    { label: 'Visão Geral', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'Agenda', path: '/appointments', icon: Calendar },
+    { label: 'Pacientes', path: '/patients', icon: Users },
+    { label: 'Receituário', path: '/prescriptions', icon: ScrollText },
+    { label: 'Profissionais', path: '/professionals', icon: Stethoscope },
+    { label: 'Tratamentos', path: '/treatments', icon: Activity },
+    { label: 'Estoque', path: '/inventory', icon: Package },
+    { label: 'Financeiro', path: '/payments', icon: DollarSign },
   ];
 
   const handleSignOut = async () => {
@@ -33,107 +51,178 @@ export function Layout() {
     navigate('/login');
   };
 
+  const openCommandPalette = () => {
+    const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true });
+    document.dispatchEvent(event);
+  };
+
+  // Componente de Item de Menu
+  const NavItem = ({ item }: { item: any }) => {
+    const isActive = location.pathname.startsWith(item.path);
+    return (
+      <Link
+        to={item.path}
+        className={`
+          group relative flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 font-medium text-sm mb-1
+          ${isActive 
+            ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-lg shadow-pink-500/25 translate-x-1' 
+            : 'text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-800 hover:text-pink-600 dark:hover:text-pink-400 hover:shadow-md'
+          }
+        `}
+      >
+        <item.icon size={20} className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
+        <span className="flex-1">{item.label}</span>
+        {!isActive && (
+          <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0 text-pink-300" />
+        )}
+      </Link>
+    );
+  };
+
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 font-sans text-gray-900 dark:text-gray-100 overflow-hidden">
+    <div className="flex h-screen bg-[#F8F9FC] dark:bg-gray-900 font-sans overflow-hidden">
       
-      {/* --- BARRA DE COMANDO GLOBAL (CTRL+K) --- */}
       <CommandBar />
 
-      {/* Botão Mobile (Hambúrguer) */}
-      <button 
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-md shadow-md text-gray-700 dark:text-white hover:bg-gray-50"
-        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-      >
-        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
-
-      {/* Sidebar (Menu Lateral) */}
-      <aside className={`
-        fixed lg:static inset-y-0 left-0 z-40 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out flex flex-col shadow-xl lg:shadow-none
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
+      {/* --- SIDEBAR DESKTOP (Agora sem a busca) --- */}
+      <aside className="hidden lg:flex flex-col w-72 bg-[#F8F9FC] dark:bg-gray-900 border-r border-gray-200/60 dark:border-gray-800 h-screen sticky top-0 p-6 z-40">
+        
         {/* Logo */}
-        <div className="h-20 flex items-center px-6 border-b border-gray-100 dark:border-gray-700">
-            <div className="p-2 bg-pink-50 dark:bg-pink-900/20 rounded-xl mr-3">
-                <Activity className="h-6 w-6 text-pink-600" />
-            </div>
-            <span className="text-xl font-bold text-gray-800 dark:text-white tracking-tight">Estética</span>
+        <div className="flex items-center gap-3 px-2 mb-10">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-pink-500/30">
+            <Sparkles size={20} fill="currentColor" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
+              Estética
+            </h1>
+            <span className="text-[10px] uppercase tracking-widest text-pink-500 font-bold">Premium OS</span>
+          </div>
         </div>
 
-        {/* Perfil Resumido */}
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-            <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-white font-bold text-sm shadow-md">
-                    {profile?.first_name?.[0] || 'U'}
-                </div>
-                <div className="overflow-hidden">
-                    <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
-                      {profile?.first_name || 'Usuário'}
-                    </p>
-                    <p className="text-xs text-gray-500 capitalize truncate">
-                      {profile?.role || 'Admin'}
-                    </p>
-                </div>
-            </div>
-        </div>
-
-        {/* Navegação Principal */}
-        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto custom-scrollbar">
-            {menuItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 group ${
-                  isActive(item.path)
-                    ? 'bg-pink-50 text-pink-700 dark:bg-pink-900/20 dark:text-pink-300 shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
-                }`}
-              >
-                <item.icon className={`mr-3 h-5 w-5 transition-colors ${isActive(item.path) ? 'text-pink-600' : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'}`} />
-                {item.label}
-              </Link>
-            ))}
+        {/* Menu Items */}
+        <nav className="flex-1 space-y-1 overflow-y-auto custom-scrollbar pr-2">
+          <p className="px-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-3">Principal</p>
+          {navItems.map((item) => (
+            <NavItem key={item.path} item={item} />
+          ))}
         </nav>
 
-        {/* Rodapé do Menu */}
-        <div className="p-4 border-t border-gray-100 dark:border-gray-700 space-y-2 bg-gray-50/30 dark:bg-gray-900/30">
-            {/* Dica Visual */}
-            <div className="hidden lg:flex items-center justify-between px-4 py-2 text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-800 rounded-lg mb-2 border border-gray-200 dark:border-gray-700">
-                <span>Busca Rápida</span>
-                <span className="font-bold bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">Ctrl K</span>
-            </div>
-
-            <Link
-                to="/settings"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={`flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-colors ${
-                  isActive('/settings')
-                    ? 'text-gray-900 bg-gray-100 dark:bg-gray-700 dark:text-white'
-                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 dark:text-gray-400 dark:hover:text-white'
-                }`}
+        {/* Footer da Sidebar */}
+        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-800 space-y-3">
+            <Link 
+                to="/settings" 
+                className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-200 font-medium text-sm
+                    ${location.pathname === '/settings'
+                        ? 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-white'
+                        : 'text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white'
+                    }
+                `}
             >
-                <Settings className="mr-3 h-5 w-5" />
-                Configurações
+                <Settings size={20} />
+                <span>Configurações</span>
             </Link>
-            
-            <button
-              onClick={handleSignOut}
-              className="flex items-center w-full px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
-            >
-              <LogOut className="mr-3 h-5 w-5" />
-              Sair
-            </button>
+
+            <div className="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center gap-3 relative group">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center text-white font-bold border-2 border-white dark:border-gray-600 shadow-md">
+                    {profile?.first_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                        {profile?.first_name || user?.email?.split('@')[0] || 'Usuário'}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate capitalize">
+                        {profile?.role || 'Admin'}
+                    </p>
+                </div>
+                <button onClick={handleSignOut} className="text-gray-400 hover:text-red-500 p-2" title="Sair">
+                    <LogOut size={18} />
+                </button>
+            </div>
         </div>
       </aside>
 
-      {/* Área de Conteúdo Principal */}
-      <main className="flex-1 overflow-y-auto h-full w-full bg-gray-50 dark:bg-gray-900 transition-all duration-300 relative">
-        {/* Container para centralizar em telas Ultrawide */}
-        <div className="max-w-[1920px] mx-auto w-full min-h-full">
-            <Outlet />
+      {/* --- MOBILE HEADER --- */}
+      <div className="lg:hidden fixed top-0 w-full z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 px-4 py-3 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center text-white">
+            <Sparkles size={16} fill="currentColor" />
+          </div>
+          <span className="font-bold text-lg text-gray-900 dark:text-white">Estética OS</span>
         </div>
-      </main>
+        <div className="flex items-center gap-2">
+            <button onClick={openCommandPalette} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full">
+                <Search size={20}/>
+            </button>
+            <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-600 dark:text-gray-300">
+                <Menu size={24} />
+            </button>
+        </div>
+      </div>
+
+      {/* --- MOBILE DRAWER --- */}
+      {isMobileMenuOpen && (
+        <div className="lg:hidden fixed inset-0 z-[60] flex justify-end">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)}></div>
+          <div className="relative w-[85%] max-w-sm bg-white dark:bg-gray-900 h-full shadow-2xl p-6 flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="flex justify-between items-center mb-8">
+              <span className="text-xl font-bold text-gray-900 dark:text-white">Menu</span>
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500">
+                <X size={20} />
+              </button>
+            </div>
+            <nav className="space-y-1 flex-1 overflow-y-auto">
+              {navItems.map((item) => (
+                <NavItem key={item.path} item={item} />
+              ))}
+              <div className="my-4 border-t border-gray-100 dark:border-gray-800"></div>
+              <Link to="/settings" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 font-medium text-sm">
+                  <Settings size={20} />
+                  <span>Configurações</span>
+              </Link>
+            </nav>
+            <div className="pt-6 border-t border-gray-100 dark:border-gray-800 mt-auto">
+              <button onClick={handleSignOut} className="w-full flex items-center justify-center gap-2 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 font-bold hover:bg-red-100 transition-colors">
+                <LogOut size={18} /> Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ÁREA PRINCIPAL --- */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        
+        {/* === NOVO HEADER SUPERIOR (Direita) === */}
+        <header className="hidden lg:flex items-center justify-end px-8 py-4 bg-[#F8F9FC] dark:bg-gray-900 sticky top-0 z-30">
+            
+            {/* Barra de Busca Flutuante */}
+            <button 
+                onClick={openCommandPalette}
+                className="flex items-center w-80 px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full text-sm text-gray-400 hover:border-pink-300 hover:text-pink-500 hover:shadow-lg hover:shadow-pink-500/10 transition-all group mr-4"
+            >
+                <Search size={18} className="mr-3 text-gray-400 group-hover:text-pink-500 transition-colors"/>
+                <span className="flex-1 text-left">Pesquisar...</span>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded text-[10px] font-bold border border-gray-200 dark:border-gray-600 group-hover:border-pink-200">
+                    <Command size={10} /> K
+                </div>
+            </button>
+
+            {/* Ícone de Notificação (Decorativo) */}
+            <button className="p-2.5 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 hover:text-pink-600 hover:border-pink-200 transition-colors shadow-sm">
+                <Bell size={20} />
+            </button>
+
+        </header>
+
+        {/* Conteúdo com Scroll */}
+        <main className="flex-1 overflow-y-auto w-full pt-4 lg:pt-0">
+            <div className="max-w-[1920px] mx-auto w-full min-h-full p-4 lg:px-8 lg:pb-8">
+                <Outlet />
+            </div>
+        </main>
+      </div>
+
     </div>
   );
 }

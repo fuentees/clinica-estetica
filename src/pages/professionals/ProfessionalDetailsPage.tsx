@@ -4,8 +4,8 @@ import { useForm } from "react-hook-form";
 import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
 import { 
-	Loader2, User, Briefcase, Mail, Phone, Percent, Award, 
-	Camera, Shield, Clock, Calendar, Save, ArrowLeft
+  Loader2, User, Briefcase, Mail, Phone, Percent, Award, 
+  Camera, Shield, Clock, Calendar, Save, ArrowLeft
 } from "lucide-react";
 import { v4 as uuidv4 } from 'uuid'; 
 
@@ -39,7 +39,6 @@ interface ProfessionalFormData {
     start_time: string;
     end_time: string;
     is_active: boolean;
-    // name: string; <--- A coluna 'name' não existe, então não deve ser tipada aqui
 }
 
 export default function ProfessionalDetailsPage() {
@@ -177,7 +176,7 @@ export default function ProfessionalDetailsPage() {
             if (isNew || userId === 'new') {
                 const { data: newProfile, error: insertError } = await supabase
                     .from("profiles")
-                    .insert(dataToSave) // DataToSave NÃO possui a propriedade 'name'
+                    .insert(dataToSave)
                     .select('id')
                     .single();
 
@@ -207,8 +206,9 @@ export default function ProfessionalDetailsPage() {
 
         } catch (error: any) {
             console.error("Erro ao salvar:", error);
-            // Mensagem mais amigável
-            toast.error("Erro ao salvar o perfil. Verifique os dados."); 
+            // Mensagem mais amigável com o erro real
+            const errorMessage = error.message || "Erro desconhecido.";
+            toast.error(`Erro ao salvar: ${errorMessage}`); 
         } finally {
             setLoading(false);
         }

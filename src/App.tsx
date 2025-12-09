@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { Toaster } from "react-hot-toast";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// --- CONTEXTOS ---
+// --- CONTEXTOS (Caminho Corrigido!) ---
 import { AuthProvider } from "./contexts/AuthContext"; 
 import { ThemeProvider } from "./contexts/ThemeContext"; 
 
@@ -23,17 +23,15 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 // Dashboard Principal (Default Export)
 import DashboardPage from "./pages/dashboard/DashboardPage"; 
 
-// Agendamentos (Named Exports)
+// Agendamentos (Named Exports e Default)
 import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
 import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
+import AppointmentEditPage from "./pages/appointments/AppointmentEditPage"; // O de edição (Default)
 
 // --- PACIENTES ---
 import { PatientsListPage } from "./pages/patients/PatientsListPage"; 
 import { PatientFormPage } from "./pages/patients/PatientFormPage"; 
-
-// --- IMPORTAÇÕES CORRIGIDAS (SEM CHAVES) ---
-import PatientOverviewPage from "./pages/patients/PatientOverviewPage"; 
-// ------------------------------------------
+import PatientOverviewPage from "./pages/patients/PatientOverviewPage"; // Default Export
 
 import PatientAnamnesisPage from "./pages/patients/PatientAnamnesisPage";
 import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage";
@@ -52,7 +50,6 @@ import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage";
 import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage";
 import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
 
-// Páginas Internas do Profissional (Default Export)
 import ProfessionalDetailsPage from "./pages/professionals/ProfessionalDetailsPage"; 
 import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
 import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
@@ -95,13 +92,12 @@ function App() {
                   {/* Agendamentos */}
                   <Route path="appointments" element={<AppointmentsPage />} />
                   <Route path="appointments/new" element={<AppointmentFormPage />} />
-                  <Route path="appointments/:id/edit" element={<AppointmentFormPage />} /> 
+                  <Route path="appointments/:id/edit" element={<AppointmentEditPage />} />
                   
                   {/* Pacientes */}
                   <Route path="patients" element={<PatientsListPage />} /> 
                   <Route path="patients/new" element={<PatientFormPage />} />
                   
-
                   {/* Prontuário do Paciente (Abas) */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
                       <Route index element={<PatientOverviewPage />} />

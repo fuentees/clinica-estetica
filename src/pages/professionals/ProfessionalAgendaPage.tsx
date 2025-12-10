@@ -1,272 +1,281 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
-import { toast } from 'react-hot-toast';
+import { useEffect, useState, useMemo } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { supabase } from "../../lib/supabase";
 import { 
-  ChevronLeft, ChevronRight, Calendar as CalendarIcon, 
-  Clock, Loader2, Plus, Trash2, User, Sparkles, Pencil
-} from 'lucide-react';
-import { Button } from '../../components/ui/button';
+  Calendar as CalendarIcon, 
+  ChevronLeft, 
+  ChevronRight, 
+  Plus, 
+  Loader2,
+  User,
+  MapPin,
+  Clock
+} from "lucide-react";
+import { format, addDays, subDays, isSameDay, startOfDay, endOfDay } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { toast } from "react-hot-toast";
 
-// Utilitários de Data
-const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-const MONTHS = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-];
-
-type Appointment = {
+// --- TIPAGEM ---
+interface Appointment {
   id: string;
-  date: string;
   start_time: string;
-  status: string;
-  patient_name: string;
-  treatment_name: string;
-  patient_id: string;
-};
+  end_time: string;
+  status: 'agendado' | 'concluido' | 'cancelado' | 'falta';
+  notes?: string;
+  patient: {
+    id: string;
+    name: string;
+    phone?: string;
+  };
+}
+
+// --- CONFIGURAÇÕES DA GRADE ---
+const START_HOUR = 6;  // Início da grade visual (06:00)
+const END_HOUR = 23;   // Fim da grade visual
+const HOUR_HEIGHT = 100; // Altura em pixels de cada hora
 
 export default function ProfessionalAgendaPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
   
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [monthAppointments, setMonthAppointments] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
+  // --- 1. BUSCAR DADOS (COM INTERVALO CORRETO DE FUSO) ---
   useEffect(() => {
-    if (id) {
-      fetchMonthOverview(id, currentDate);
-      fetchDayAppointments(id, selectedDate);
-    }
-  }, [id, currentDate, selectedDate]);
+    if (id) fetchAppointments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, selectedDate]);
 
-  // 1. Visão Geral do Mês (Para as bolinhas indicadoras)
-  async function fetchMonthOverview(profId: string, date: Date) {
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const start = `${year}-${String(month).padStart(2, '0')}-01`;
-    const end = `${year}-${String(month).padStart(2, '0')}-31`; 
-
-    const { data } = await supabase
-      .from('appointments')
-      .select('date')
-      .eq('professional_id', profId)
-      .gte('date', start)
-      .lte('date', end);
-
-    if (data) {
-      const dates = Array.from(new Set(data.map(a => a.date)));
-      setMonthAppointments(dates);
-    }
-  }
-
-  // 2. Detalhes do Dia (Lista lateral)
-  async function fetchDayAppointments(profId: string, date: Date) {
+  async function fetchAppointments() {
     setLoading(true);
-    const dateStr = date.toLocaleDateString('en-CA'); // Formato YYYY-MM-DD
-
     try {
-        const { data, error } = await supabase
-          .from('appointments')
-          .select(`
-            id, date, start_time, status,
-            patient:patient_id (id, name, profiles(first_name, last_name)),
-            treatment:treatment_id (name)
-          `)
-          .eq('professional_id', profId)
-          .eq('date', dateStr)
-          .order('start_time');
+      // date-fns startOfDay pega o início do dia NO FUSO LOCAL (ex: 00:00 BRT)
+      // .toISOString() converte para UTC para o banco entender (ex: 03:00 UTC)
+      // Isso garante que não "percamos" agendamentos da madrugada ou da noite.
+      const startIso = startOfDay(selectedDate).toISOString();
+      const endIso = endOfDay(selectedDate).toISOString();
 
-        if (error) throw error;
+      const { data, error } = await supabase
+        .from("appointments")
+        .select(`
+          id, start_time, end_time, status, notes,
+          patient:patients(id, name, phone)
+        `)
+        .eq("professional_id", id)
+        .gte("start_time", startIso)
+        .lte("start_time", endIso)
+        .order("start_time", { ascending: true });
 
-        if (data) {
-            const mapped = data.map((item: any) => {
-                const p = Array.isArray(item.patient) ? item.patient[0] : item.patient;
-                const t = Array.isArray(item.treatment) ? item.treatment[0] : item.treatment;
-                
-                // Lógica para pegar o nome correto
-                let pName = 'Paciente';
-                if (p) {
-                    if (p.name && p.name !== 'Paciente') pName = p.name;
-                    else if (p.profiles) {
-                        const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
-                        if (prof?.first_name) pName = `${prof.first_name} ${prof.last_name || ''}`;
-                    }
-                }
+      if (error) throw error;
 
-                return {
-                    id: item.id,
-                    date: item.date,
-                    start_time: item.start_time,
-                    status: item.status,
-                    patient_id: p?.id,
-                    patient_name: pName,
-                    treatment_name: t?.name || 'Procedimento'
-                };
-            });
-            setAppointments(mapped);
-        }
-    } catch (err) {
-        console.error("Erro ao buscar agenda:", err);
+      // Normalização
+      const formattedData: Appointment[] = (data || []).map((item: any) => ({
+        id: item.id,
+        start_time: item.start_time,
+        end_time: item.end_time,
+        status: item.status,
+        notes: item.notes,
+        patient: Array.isArray(item.patient) ? item.patient[0] : item.patient,
+      }));
+
+      setAppointments(formattedData);
+    } catch (error) {
+      console.error("Erro agenda:", error);
+      toast.error("Erro ao carregar agenda.");
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   }
 
-  // --- AÇÃO: EXCLUIR ---
-  const handleDeleteAppointment = async (apptId: string) => {
-      if (window.confirm("Tem certeza que deseja excluir este agendamento?")) {
-          try {
-              const { error } = await supabase.from('appointments').delete().eq('id', apptId);
-              if (error) throw error;
-              
-              toast.success("Agendamento excluído.");
-              // Recarrega os dados
-              if (id) {
-                  fetchDayAppointments(id, selectedDate);
-                  fetchMonthOverview(id, currentDate);
-              }
-          } catch (error) {
-              toast.error("Erro ao excluir.");
-          }
-      }
+  // --- 2. CÁLCULO VISUAL (CONVERTENDO PARA LOCAL) ---
+  const getPositionStyles = (startStr: string, endStr: string) => {
+    // Aqui está a correção: new Date() converte automaticamente UTC -> Local
+    const startDate = new Date(startStr); 
+    const endDate = new Date(endStr);
+
+    // Pegamos a hora LOCAL do navegador
+    const startHour = startDate.getHours(); 
+    const startMin = startDate.getMinutes();
+    
+    const endHour = endDate.getHours();
+    const endMin = endDate.getMinutes();
+
+    // Cálculo em minutos a partir do início da grade (START_HOUR)
+    const startMinutesTotal = (startHour * 60 + startMin) - (START_HOUR * 60);
+    const endMinutesTotal = (endHour * 60 + endMin) - (START_HOUR * 60);
+    
+    const duration = endMinutesTotal - startMinutesTotal;
+
+    const top = (startMinutesTotal / 60) * HOUR_HEIGHT;
+    const height = (duration / 60) * HOUR_HEIGHT;
+
+    return { 
+      top: `${Math.max(0, top)}px`, 
+      height: `${Math.max(height, 50)}px` // Altura mínima visual
+    };
   };
 
-  // --- AÇÃO: EDITAR ---
-  const handleEditAppointment = (apptId: string) => {
-      navigate(`/appointments/${apptId}/edit`);
+  // --- 3. FORMATADORES ---
+  const formatDisplayTime = (isoString: string) => {
+    // Formata usando o fuso local do usuário
+    return format(new Date(isoString), 'HH:mm');
   };
 
-  const handleNewAppointment = () => {
-    const dateStr = selectedDate.toLocaleDateString('en-CA');
-    navigate(`/appointments/new?professionalId=${id}&date=${dateStr}`);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'concluido': return 'bg-green-100 border-green-400 text-green-900 hover:bg-green-200';
+      case 'cancelado': return 'bg-red-100 border-red-400 text-red-900 hover:bg-red-200 opacity-70';
+      case 'falta': return 'bg-orange-100 border-orange-400 text-orange-900 hover:bg-orange-200';
+      default: return 'bg-gradient-to-l from-pink-50 to-white border-pink-300 text-pink-900 hover:shadow-md'; 
+    }
   };
 
-  // Lógica do Calendário
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const days = new Date(year, month + 1, 0).getDate();
-    const firstDay = new Date(year, month, 1).getDay();
-    return { days, firstDay };
-  };
-
-  const { days, firstDay } = getDaysInMonth(currentDate);
-  const changeMonth = (val: number) => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + val)));
-  const handleDayClick = (day: number) => setSelectedDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
-
-  const blanks = Array(firstDay).fill(null);
-  const monthDays = Array.from({ length: days }, (_, i) => i + 1);
+  const hoursList = useMemo(() => {
+    const hours = [];
+    for (let i = START_HOUR; i <= END_HOUR; i++) {
+      hours.push(i);
+    }
+    return hours;
+  }, []);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-140px)] animate-in fade-in duration-500">
+    <div className="flex flex-col h-[calc(100vh-140px)] bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden font-sans">
       
-      {/* CALENDÁRIO VISUAL */}
-      <div className="lg:w-7/12 bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 flex flex-col">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white capitalize">
-            {MONTHS[currentDate.getMonth()]} <span className="text-pink-600">{currentDate.getFullYear()}</span>
-          </h2>
-          <div className="flex gap-2">
-            <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"><ChevronLeft size={20}/></button>
-            <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"><ChevronRight size={20}/></button>
+      {/* HEADER DA DATA */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 z-20 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-xl p-1">
+            <button onClick={() => setSelectedDate(subDays(selectedDate, 1))} className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded-lg transition-all shadow-sm text-gray-600 dark:text-white">
+              <ChevronLeft size={18} />
+            </button>
+            <button onClick={() => setSelectedDate(new Date())} className="px-4 text-xs font-bold uppercase tracking-wide hover:bg-white dark:hover:bg-gray-600 rounded-lg transition-all text-gray-600 dark:text-gray-300">
+              Hoje
+            </button>
+            <button onClick={() => setSelectedDate(addDays(selectedDate, 1))} className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded-lg transition-all shadow-sm text-gray-600 dark:text-white">
+              <ChevronRight size={18} />
+            </button>
           </div>
+          
+          <h2 className="text-xl font-bold text-gray-800 dark:text-white capitalize flex items-center gap-2">
+            <CalendarIcon size={22} className="text-pink-600 mb-0.5"/>
+            {format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}
+          </h2>
         </div>
 
-        <div className="flex-1">
-          <div className="grid grid-cols-7 mb-2 text-center text-xs font-bold text-gray-400 uppercase">
-            {DAYS.map(d => <div key={d} className="py-2">{d}</div>)}
+        <button 
+          onClick={() => navigate('/appointments/new')}
+          className="flex items-center gap-2 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg shadow-pink-500/25 active:scale-95"
+        >
+          <Plus size={20} /> <span className="hidden sm:inline">Novo</span>
+        </button>
+      </div>
+
+      {/* ÁREA DO CALENDÁRIO */}
+      <div className="flex-1 overflow-y-auto relative custom-scrollbar">
+        {loading && (
+          <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm gap-2">
+            <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
+            <span className="text-sm font-bold text-gray-400">Carregando...</span>
           </div>
-          <div className="grid grid-cols-7 gap-2 h-full auto-rows-fr">
-            {blanks.map((_, i) => <div key={`b-${i}`}/>)}
-            {monthDays.map(day => {
-              const isSel = day === selectedDate.getDate() && currentDate.getMonth() === selectedDate.getMonth();
-              const isToday = day === new Date().getDate() && currentDate.getMonth() === new Date().getMonth() && currentDate.getFullYear() === new Date().getFullYear();
-              const hasAppt = monthAppointments.includes(`${currentDate.getFullYear()}-${String(currentDate.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`);
+        )}
+
+        <div className="flex min-h-full relative pb-10">
+          
+          {/* Régua de Horas */}
+          <div className="w-16 flex-shrink-0 border-r border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 pt-4">
+            {hoursList.map((hour) => (
+              <div 
+                key={hour} 
+                className="text-xs font-bold text-gray-400 text-center relative"
+                style={{ height: `${HOUR_HEIGHT}px` }}
+              >
+                <span className="-translate-y-3 block">{hour.toString().padStart(2, '0')}:00</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Grid de Agendamentos */}
+          <div 
+            className="flex-1 relative bg-white dark:bg-gray-800 pt-4"
+            style={{ 
+              backgroundImage: `linear-gradient(to bottom, #f3f4f6 1px, transparent 1px)`,
+              backgroundSize: `100% ${HOUR_HEIGHT}px`,
+              backgroundPositionY: '16px' 
+            }}
+          >
+            {/* Linha do tempo atual */}
+            {isSameDay(selectedDate, new Date()) && (
+              <div 
+                className="absolute w-full border-t-2 border-red-500 z-30 pointer-events-none opacity-80 flex items-center"
+                style={{ 
+                  top: `${((new Date().getHours() * 60 + new Date().getMinutes()) - (START_HOUR * 60)) / 60 * HOUR_HEIGHT + 16}px` 
+                }}
+              >
+                <div className="absolute -left-1.5 w-3 h-3 bg-red-500 rounded-full shadow-sm"></div>
+              </div>
+            )}
+
+            {/* Cards */}
+            {appointments.map((apt) => {
+              const pos = getPositionStyles(apt.start_time, apt.end_time);
+              const isShort = parseInt(pos.height) < 60;
 
               return (
-                <button
-                  key={day}
-                  onClick={() => handleDayClick(day)}
-                  className={`relative flex flex-col items-center justify-center rounded-2xl transition-all aspect-square sm:aspect-auto sm:h-20 
-                    ${isSel ? 'bg-pink-600 text-white shadow-md shadow-pink-200 dark:shadow-none scale-105 z-10' : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'} 
-                    ${isToday && !isSel ? 'bg-pink-50 text-pink-700 border border-pink-100' : ''}`}
+                <div
+                  key={apt.id}
+                  onClick={() => navigate(`/appointments/${apt.id}/edit`)}
+                  className={`
+                    absolute left-2 right-4 rounded-xl border-l-[6px] p-2 cursor-pointer transition-all hover:scale-[1.01] hover:z-40 shadow-sm
+                    ${getStatusColor(apt.status)}
+                  `}
+                  style={{ top: `calc(${pos.top} + 16px)`, height: pos.height }} 
                 >
-                  <span className={`text-lg ${isSel || isToday ? 'font-bold' : ''}`}>{day}</span>
-                  {hasAppt && <div className={`mt-1 w-1.5 h-1.5 rounded-full ${isSel ? 'bg-white' : 'bg-pink-500'}`} />}
-                </button>
+                  <div className="flex justify-between items-start h-full overflow-hidden">
+                    <div className="flex flex-col h-full w-full">
+                      
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs font-black bg-white/60 px-1.5 py-0.5 rounded text-gray-800 shadow-sm">
+                          {formatDisplayTime(apt.start_time)} - {formatDisplayTime(apt.end_time)}
+                        </span>
+                      </div>
+                      
+                      <h3 className="font-bold text-sm leading-tight text-gray-900 line-clamp-1 mt-1">
+                        {apt.patient?.name || "Paciente sem nome"}
+                      </h3>
+                      
+                      {!isShort && (
+                        <div className="mt-auto flex flex-col gap-1 pt-2 border-t border-black/5">
+                           {apt.notes && (
+                             <span className="flex items-center gap-1.5 text-[10px] font-medium opacity-90 line-clamp-1">
+                               <MapPin size={10} className="text-pink-600"/> {apt.notes}
+                             </span>
+                           )}
+                           {apt.patient?.phone && (
+                             <span className="flex items-center gap-1.5 text-[10px] font-medium opacity-90">
+                               <User size={10} className="text-pink-600"/> {apt.patient.phone}
+                             </span>
+                           )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               );
             })}
+
+            {/* Empty State */}
+            {!loading && appointments.length === 0 && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 pointer-events-none select-none">
+                <Clock size={64} className="mb-4 opacity-10"/>
+                <span className="text-xl font-bold opacity-30">Agenda Livre</span>
+                <span className="text-sm opacity-30 mt-1">Nenhum atendimento marcado</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
-
-      {/* LISTA DE AGENDAMENTOS */}
-      <div className="lg:w-5/12 bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 p-6 flex flex-col">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-            <CalendarIcon className="text-pink-600" size={20}/>
-            {selectedDate.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}
-        </h3>
-
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
-            {loading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-pink-600"/></div> : 
-             appointments.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 opacity-60">
-                    <CalendarIcon size={48} className="mb-2 stroke-1"/>
-                    <p>Agenda livre neste dia.</p>
-                </div>
-            ) : appointments.map(appt => (
-                <div key={appt.id} className="group flex gap-4 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 hover:bg-white dark:hover:bg-gray-700 transition-all shadow-sm">
-                    {/* Hora */}
-                    <div className="flex flex-col items-center justify-center min-w-[60px] border-r border-gray-200 dark:border-gray-600 pr-4">
-                        <span className="text-lg font-bold text-gray-900 dark:text-white">
-                            {appt.start_time.slice(0, 5)}
-                        </span>
-                        <Clock size={12} className="text-gray-400 mt-1"/>
-                    </div>
-                    
-                    {/* Info */}
-                    <div className="flex-1">
-                        <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                            <User size={14} className="text-pink-500"/>
-                            {appt.patient_name}
-                        </h4>
-                        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                            <Sparkles size={12}/> {appt.treatment_name}
-                        </p>
-                    </div>
-
-                    {/* BOTÕES DE AÇÃO: EDITAR E EXCLUIR */}
-                    <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                            onClick={() => handleEditAppointment(appt.id)}
-                            className="text-blue-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors"
-                            title="Editar"
-                        >
-                            <Pencil size={16} />
-                        </button>
-                        <button 
-                            onClick={() => handleDeleteAppointment(appt.id)}
-                            className="text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-lg transition-colors"
-                            title="Excluir"
-                        >
-                            <Trash2 size={16} />
-                        </button>
-                    </div>
-                </div>
-            ))}
-        </div>
-        
-        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-            <Button onClick={handleNewAppointment} className="w-full bg-pink-600 hover:bg-pink-700 text-white flex items-center justify-center gap-2 rounded-xl shadow-lg shadow-pink-200 dark:shadow-none">
-                <Plus size={18} /> Novo Agendamento
-            </Button>
-        </div>
-      </div>
-
     </div>
   );
 }

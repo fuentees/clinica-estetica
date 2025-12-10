@@ -44,18 +44,21 @@ import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningP
 // Receituário
 import { PrescriptionsPage } from "./pages/prescriptions/PrescriptionsPage";
 import { PrescriptionFormPage } from "./pages/prescriptions/PrescriptionFormPage";
-// NOVA IMPORTAÇÃO: A página de receitas dentro do perfil do paciente
 import { PatientPrescriptionsPage } from "./pages/patients/PatientPrescriptionsPage";
 
 // Tratamentos
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
 
-// Profissionais
+// --- PROFISSIONAIS (CORREÇÃO AQUI) ---
 import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage";
 import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
 
-import ProfessionalDetailsPage from "./pages/professionals/ProfessionalDetailsPage"; 
+// IMPORTANTE: Importando o arquivo NOVO que criamos
+import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage"; 
+
+// Páginas antigas ou de dashboard
+
 import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
 import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
 import ProfessionalOverviewPage from "./pages/professionals/ProfessionalOverviewPage"; 
@@ -108,10 +111,7 @@ function App() {
                       <Route index element={<PatientOverviewPage />} />
                       <Route path="details" element={<PatientFormPage />} /> 
                       <Route path="anamnesis" element={<PatientAnamnesisPage />} />
-                      
-                      {/* NOVA ROTA: RECEITAS DO PACIENTE */}
                       <Route path="prescriptions" element={<PatientPrescriptionsPage />} />
-                      
                       <Route path="bioimpedance" element={<PatientBioimpedancePage />} />
                       <Route path="planning" element={<PatientPlanningPage />} />
                       <Route path="terms" element={<PatientTermsPage />} />
@@ -126,15 +126,22 @@ function App() {
                   <Route path="prescriptions/new" element={<PrescriptionFormPage />} />
                   
                   
-                  {/* Profissionais - LISTAGEM */}
+                  {/* --- PROFISSIONAIS --- */}
                   <Route path="professionals" element={<ProfessionalsListPage />} /> 
-                  <Route path="professionals/new" element={<ProfessionalDetailsPage />} />
+                  
+                  {/* AQUI ESTAVA O ERRO! AGORA APONTA PARA A PÁGINA NOVA */}
+                  <Route path="professionals/new" element={<ProfessionalFormPage />} />
                   
                   {/* Dashboard aninhado do Profissional (ID) */}
                   <Route path="professionals/:id" element={<ProfessionalDashboardLayout />}>
                       <Route index element={<ProfessionalOverviewPage />} /> 
+                      
+                      {/* Se quiser editar usando o formulário novo dentro do dashboard, troque aqui também */}
+                      {/* Antes: element={<ProfessionalDetailsPage />} */}
+                      {/* Agora (opcional): element={<ProfessionalFormPage />} se quiser usar o form para editar */}
+                      <Route path="details" element={<ProfessionalFormPage />} /> 
+
                       <Route path="agenda" element={<ProfessionalAgendaPage />} /> 
-                      <Route path="details" element={<ProfessionalDetailsPage />} /> 
                       <Route path="availability" element={<ProfessionalAvailabilityPage />} />
                       <Route path="commission" element={<ProfessionalCommissionPage />} /> 
                       <Route path="history" element={<ProfessionalHistoryPage />} />

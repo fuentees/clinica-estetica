@@ -16,7 +16,7 @@ const patientSchema = z.object({
   // Identificação
   first_name: z.string().min(1, "Nome é obrigatório"),
   last_name: z.string().min(1, "Sobrenome é obrigatório"),
-  cpf: z.string().min(14, "CPF incompleto"), // 14 caracteres com pontuação
+  cpf: z.string().min(14, "CPF incompleto").optional().or(z.literal("")), // Ajustado para ser opcional se o usuário não tiver
   rg: z.string().optional(),
   date_of_birth: z.string().min(1, "Data de nascimento é obrigatória"),
   sexo: z.string().optional(),
@@ -73,7 +73,6 @@ export function PatientFormPage() {
   const isEditing = Boolean(id);
   
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [profileId, setProfileId] = useState<string | null>(null);
   const [cepLoading, setCepLoading] = useState(false);
 
   const {
@@ -154,34 +153,30 @@ export function PatientFormPage() {
   async function fetchPatientData() {
     try {
       setIsLoadingData(true);
+      
+      // ATUALIZAÇÃO: Busca direta na tabela patients sem JOIN
       const { data, error } = await supabase
         .from("patients")
-        .select(`*, profiles:profile_id (*)`)
+        .select("*") 
         .eq("id", id)
         .single();
 
       if (error) throw error;
 
       if (data) {
-        setProfileId(data.profile_id);
-
-        const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
-
-        // Tenta pegar do profile, se não, tenta quebrar o nome salvo em patients
-        if (profile) {
-          setValue("first_name", profile.first_name || "");
-          setValue("last_name", profile.last_name || "");
-          setValue("email", profile.email || "");
-          setValue("phone", profile.phone || "");
-        } else if (data.name) {
-            // Fallback se não tiver profile linkado
-            const parts = data.name.split(' ');
-            setValue("first_name", parts[0] || "");
-            setValue("last_name", parts.slice(1).join(' ') || "");
+        // Lógica para quebrar o nome único em Nome + Sobrenome para o form
+        if (data.name) {
+             const parts = data.name.split(' ');
+             setValue("first_name", parts[0] || "");
+             setValue("last_name", parts.slice(1).join(' ') || "");
         }
 
+        // Dados diretos da tabela patients
         setValue("cpf", data.cpf || "");
         setValue("rg", data.rg || "");
+        setValue("email", data.email || "");
+        setValue("phone", data.phone || data.telefone || ""); // Fallback para colunas antigas
+        
         setValue("date_of_birth", data.date_of_birth || "");
         setValue("profissao", data.profissao || "");
         setValue("sexo", data.sexo || "");
@@ -194,6 +189,7 @@ export function PatientFormPage() {
         setValue("cidade", data.cidade || "");
         setValue("estado", data.estado || "");
 
+        // Fallback antigo de endereço
         if (!data.rua && data.address) {
             setValue("rua", data.address); 
         }
@@ -217,8 +213,11 @@ export function PatientFormPage() {
 
       const fullAddress = `${data.rua || ""}, ${data.numero || ""} - ${data.bairro || ""}, ${data.cidade || ""} - ${data.estado || ""}, CEP: ${data.cep || ""}`;
 
+      // Payload Limpo - Apenas tabela patients
       const patientDataToSave = {
-        name: fullName, // <--- SALVA O NOME NA TABELA PATIENTS
+        name: fullName, 
+        email: data.email || null,
+        phone: data.phone,
         cpf: data.cpf,
         rg: data.rg,
         date_of_birth: data.date_of_birth,
@@ -237,47 +236,24 @@ export function PatientFormPage() {
 
       // 1. MODO EDIÇÃO
       if (isEditing) {
-        if (profileId) {
-          await supabase.from("profiles").update({
-            first_name: data.first_name,
-            last_name: data.last_name,
-            name: fullName, // Atualiza nome completo no profile também
-            email: data.email,
-            phone: data.phone,
-          }).eq("id", profileId);
-        }
-
-        const { error } = await supabase.from("patients").update(patientDataToSave).eq("id", id);
+        // ATUALIZAÇÃO: Removemos o update em profiles. Focamos apenas em patients.
+        const { error } = await supabase
+            .from("patients")
+            .update(patientDataToSave)
+            .eq("id", id);
+        
         if (error) throw error;
         toast.success("Cadastro atualizado!");
 
       } 
       // 2. MODO CRIAÇÃO (Novo Paciente)
       else {
-        // Cria perfil básico (sem login)
-        const { data: newProfile, error: profileError } = await supabase
-          .from("profiles")
-          .insert({
-            first_name: data.first_name,
-            last_name: data.last_name,
-            name: fullName, // <--- IMPORTANTE
-            email: data.email,
-            phone: data.phone,
-            role: "paciente",
-          })
-          .select()
-          .single();
-
-        if (profileError) throw profileError;
-
-        const { error: patientError } = await supabase
+        // ATUALIZAÇÃO: Removemos a criação de user/profile. Inserção direta.
+        const { error } = await supabase
           .from("patients")
-          .insert({
-            profile_id: newProfile.id,
-            ...patientDataToSave,
-          });
+          .insert(patientDataToSave);
 
-        if (patientError) throw patientError;
+        if (error) throw error;
         
         toast.success("Paciente cadastrado!");
         navigate("/patients");
@@ -315,10 +291,10 @@ export function PatientFormPage() {
             <div>
                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CPF</label>
                  <Input 
-                    {...register("cpf")} 
-                    onChange={handleCPFChange} 
-                    maxLength={14}
-                    placeholder="000.000.000-00"
+                   {...register("cpf")} 
+                   onChange={handleCPFChange} 
+                   maxLength={14}
+                   placeholder="000.000.000-00"
                  />
                  {errors.cpf && <p className="text-xs text-red-500 mt-1">{errors.cpf.message}</p>}
             </div>
@@ -327,9 +303,9 @@ export function PatientFormPage() {
             <div>
                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">RG</label>
                  <Input 
-                    {...register("rg")} 
-                    maxLength={20} 
-                    placeholder="Digite o RG"
+                   {...register("rg")} 
+                   maxLength={20} 
+                   placeholder="Digite o RG"
                  />
             </div>
           </div>

@@ -41,9 +41,11 @@ import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
 import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
 import { InjectablesPlanningPage } from "./pages/treatments/InjectablesPlanningPage"; 
 
-// Receituário (IMPORTAÇÕES ADICIONADAS AQUI)
+// Receituário
 import { PrescriptionsPage } from "./pages/prescriptions/PrescriptionsPage";
 import { PrescriptionFormPage } from "./pages/prescriptions/PrescriptionFormPage";
+// NOVA IMPORTAÇÃO: A página de receitas dentro do perfil do paciente
+import { PatientPrescriptionsPage } from "./pages/patients/PatientPrescriptionsPage";
 
 // Tratamentos
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
@@ -106,6 +108,10 @@ function App() {
                       <Route index element={<PatientOverviewPage />} />
                       <Route path="details" element={<PatientFormPage />} /> 
                       <Route path="anamnesis" element={<PatientAnamnesisPage />} />
+                      
+                      {/* NOVA ROTA: RECEITAS DO PACIENTE */}
+                      <Route path="prescriptions" element={<PatientPrescriptionsPage />} />
+                      
                       <Route path="bioimpedance" element={<PatientBioimpedancePage />} />
                       <Route path="planning" element={<PatientPlanningPage />} />
                       <Route path="terms" element={<PatientTermsPage />} />
@@ -115,9 +121,10 @@ function App() {
                       <Route path="injectables" element={<InjectablesPlanningPage />} />
                   </Route>
 
-                  {/* Receituário */}
+                  {/* Receituário Geral */}
                   <Route path="prescriptions" element={<PrescriptionsPage />} />
                   <Route path="prescriptions/new" element={<PrescriptionFormPage />} />
+                  
                   
                   {/* Profissionais - LISTAGEM */}
                   <Route path="professionals" element={<ProfessionalsListPage />} /> 

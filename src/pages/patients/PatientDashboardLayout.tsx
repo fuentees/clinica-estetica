@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { Outlet, useNavigate, useParams, useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
-  ArrowLeft, User, ClipboardList, Activity, DollarSign, Calendar,
+  ArrowLeft, ClipboardList, Activity, DollarSign, Calendar,
   Camera, PenTool, ScrollText, Scale, LayoutDashboard,
   AlertTriangle, MoreHorizontal, MessageCircle, Printer, Pencil,
-  Send, ChevronRight, Star, Clock, CheckCircle2
+  Send, ChevronRight, Star, Clock, CheckCircle2, FileText, User
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import generateAnamnesisPdf from "../../utils/generateAnamnesisPdf";
@@ -18,23 +18,21 @@ export function PatientDashboardLayout() {
   const [loading, setLoading] = useState(true);
   const [lastVisit, setLastVisit] = useState<string | null>(null);
   
-  // Estados dos Menus
   const [showActions, setShowActions] = useState(false);
   const [showWhatsappMenu, setShowWhatsappMenu] = useState(false); 
 
-  // Busca dados e infos extras para o "HUD"
   useEffect(() => {
     async function fetchHeaderData() {
       if (!id || id === 'new') return;
       try {
-        // Busca paciente
+        // Busca paciente e dados vinculados do profile
         const { data } = await supabase
           .from("patients")
           .select("*, profiles(first_name, last_name, phone)")
           .eq("id", id)
           .single();
         
-        // Busca última visita (para o HUD)
+        // Busca última visita para o HUD
         const { data: lastTx } = await supabase
             .from("treatments")
             .select("data_procedimento")
@@ -63,19 +61,18 @@ export function PatientDashboardLayout() {
     return `${age} anos`;
   };
 
-  const patientName = patient?.profiles 
+  // --- CORREÇÃO IMPORTANTE: PRIORIDADE DE NOME ---
+  // 1. Tenta patient.name (Editado na ficha)
+  // 2. Se vazio, tenta montar pelo profile (Vinculado)
+  const patientName = patient?.name || (patient?.profiles 
     ? `${patient.profiles.first_name} ${patient.profiles.last_name}` 
-    : (patient?.name || patient?.nome || "Paciente");
+    : "Paciente Sem Nome");
   
-  const firstName = patient?.profiles?.first_name || patient?.name?.split(' ')[0] || "Paciente";
+  const firstName = patientName.split(' ')[0];
 
-  // --- BADGES INTELIGENTES (PREMIUM) ---
+  // --- BADGES ---
   const badges = [];
   
-  // Exemplo de lógica VIP (se tiver gasto > 0 ou campo vip no banco)
-  // badges.push({ text: "VIP", color: "bg-amber-100 text-amber-700 border-amber-200", icon: <Star size={10} fill="currentColor"/> });
-  
-  // Aniversariante
   if (patient?.date_of_birth) {
       const dob = new Date(patient.date_of_birth);
       const today = new Date();
@@ -84,7 +81,6 @@ export function PatientDashboardLayout() {
       }
   }
 
-  // Novo Paciente (criado nos últimos 30 dias)
   if (patient?.created_at) {
       const created = new Date(patient.created_at);
       const diff = new Date().getTime() - created.getTime();
@@ -93,12 +89,10 @@ export function PatientDashboardLayout() {
       }
   }
 
-  // Alertas Médicos
   if (patient?.alergias_medicamentosas?.length > 0) badges.push({ text: "Alergia", color: "bg-red-100 text-red-700 border-red-200", icon: <AlertTriangle size={10} /> });
   if (patient?.gestante) badges.push({ text: "Gestante", color: "bg-pink-100 text-pink-700 border-pink-200", icon: <User size={10} /> });
 
-
-  // --- TEMPLATES WHATSAPP ---
+  // Templates WhatsApp
   const msgTemplates = [
       { label: "Confirmar Agendamento", text: `Olá ${firstName}, tudo bem? Gostaríamos de confirmar seu horário conosco.` },
       { label: "Pós-Procedimento", text: `Oi ${firstName}! Como você está se sentindo após o procedimento? Alguma dúvida?` },
@@ -107,7 +101,9 @@ export function PatientDashboardLayout() {
   ];
 
   const sendWhatsApp = (text: string) => {
-      const phone = patient?.profiles?.phone || patient?.phone;
+      // CORREÇÃO: Prioridade para o telefone da ficha do paciente
+      const phone = patient?.phone || patient?.profiles?.phone;
+      
       if (!phone) return toast.error("Sem telefone cadastrado.");
       window.open(`https://wa.me/55${phone.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`, "_blank");
       setShowActions(false);
@@ -122,7 +118,6 @@ export function PatientDashboardLayout() {
       setShowActions(false);
   };
 
-  // SKELETON
   if (loading) return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col animate-pulse">
         <div className="bg-white dark:bg-gray-800 h-48 border-b dark:border-gray-700">
@@ -138,10 +133,8 @@ export function PatientDashboardLayout() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col font-sans">
       
-      {/* --- CABEÇALHO GLASSMORPHISM --- */}
       <header className="bg-white/90 backdrop-blur-md dark:bg-gray-800/90 shadow-sm border-b dark:border-gray-700 z-40 sticky top-0 transition-all duration-300">
         
-        {/* Barra de Contexto (Opcional) - Aparece se tiver alergia crítica */}
         {patient?.alergias_medicamentosas?.length > 0 && (
             <div className="bg-red-600 text-white px-4 py-1 text-xs font-bold flex justify-center items-center tracking-wide animate-in slide-in-from-top">
                 <AlertTriangle size={12} className="mr-2" />
@@ -152,7 +145,6 @@ export function PatientDashboardLayout() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-0">
           <div className="flex flex-col md:flex-row md:justify-between md:items-start mb-6 gap-4">
             
-            {/* Bloco Esquerdo: Foto/Ícone + Nome + Badges */}
             <div className="flex items-start gap-4">
                 <button onClick={() => navigate("/patients")} className="mt-1 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-700 transition-colors" title="Voltar">
                     <ArrowLeft size={20} />
@@ -162,7 +154,6 @@ export function PatientDashboardLayout() {
                     <div className="flex items-center gap-3 flex-wrap">
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">{patientName}</h1>
                         
-                        {/* BADGES */}
                         {badges.map((b, i) => (
                             <span key={i} className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase font-bold border ${b.color}`}>
                                 {b.icon} {b.text}
@@ -170,7 +161,6 @@ export function PatientDashboardLayout() {
                         ))}
                     </div>
 
-                    {/* HUD (Heads-Up Display) - Resumo Rápido */}
                     <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 dark:text-gray-400 mt-2">
                         {patient?.date_of_birth && (
                             <span className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/50 px-2 py-1 rounded">
@@ -189,7 +179,6 @@ export function PatientDashboardLayout() {
                 </div>
             </div>
 
-            {/* --- MENU DE AÇÕES (Botão Premium) --- */}
             <div className="relative self-end md:self-auto">
                 <button 
                     onClick={() => setShowActions(!showActions)}
@@ -247,11 +236,13 @@ export function PatientDashboardLayout() {
             </div>
           </div>
 
-          {/* --- BARRA DE ABAS (SCROLLABLE & CLEAN) --- */}
+          {/* --- BARRA DE ABAS --- */}
           <div className="flex space-x-6 overflow-x-auto no-scrollbar mt-2">
-            <TabButton active={isActive("") && !isActive("details") && !isActive("anamnesis")} onClick={() => navigate(`/patients/${id}`)} icon={<LayoutDashboard size={18} />} label="Visão Geral" />
+            <TabButton active={isActive("") && !isActive("details") && !isActive("anamnesis") && !isActive("prescriptions")} onClick={() => navigate(`/patients/${id}`)} icon={<LayoutDashboard size={18} />} label="Visão Geral" />
             <TabButton active={isActive('details')} onClick={() => navigate(`details`)} icon={<User size={18} />} label="Cadastro" />
             <TabButton active={isActive('anamnesis')} onClick={() => navigate(`anamnesis`)} icon={<ClipboardList size={18} />} label="Anamnese" />
+            {/* ABA RECEITAS */}
+            <TabButton active={isActive('prescriptions')} onClick={() => navigate(`prescriptions`)} icon={<FileText size={18} />} label="Receitas" />
             <TabButton active={isActive('bioimpedance')} onClick={() => navigate(`bioimpedance`)} icon={<Scale size={18} />} label="Bioimpedância" />
             <TabButton active={isActive('planning')} onClick={() => navigate(`planning`)} icon={<PenTool size={18} />} label="Planejamento" />
             <TabButton active={isActive('terms')} onClick={() => navigate(`terms`)} icon={<ScrollText size={18} />} label="Termos" />
@@ -269,7 +260,6 @@ export function PatientDashboardLayout() {
   );
 }
 
-// Componente Visual do Botão da Aba (Refinado)
 function TabButton({ active, onClick, icon, label }: any) {
   return (
     <button

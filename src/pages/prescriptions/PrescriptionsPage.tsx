@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
   FileText, Plus, Search, Calendar, User, 
-  Stethoscope, Printer, Trash2, RefreshCw, AlertCircle, ChevronRight, Eye 
+  Stethoscope, Printer, Trash2, RefreshCw, AlertCircle, ChevronRight, FilePenLine 
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
@@ -24,8 +24,9 @@ export function PrescriptionsPage() {
       setLoading(true);
       setErrorMsg(null);
       
-      // --- QUERY CORRIGIDA E OTIMIZADA ---
-      // Agora buscamos também os IDs (patient_id, professional_id) para os links funcionarem!
+      // --- QUERY BLINDADA (Select *) ---
+      // Usamos (*) para trazer todas as colunas das tabelas relacionadas.
+      // Isso evita erros do tipo "Column 'name' does not exist".
       const { data, error } = await supabase
         .from('prescriptions')
         .select(`
@@ -34,16 +35,20 @@ export function PrescriptionsPage() {
           notes,
           patient_id,
           professional_id,
-          patient:patients(id, name),
-          professional:profiles(id, first_name, last_name)
+          patient:patients(*),
+          professional:profiles(*)
         `)
-        .order('created_at', { ascending: false }); // Ordena por data (mais recente no topo)
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
+      
+      console.log("Receitas carregadas:", data); 
       setPrescriptions(data || []);
     } catch (error: any) {
-      console.error("Erro:", error);
+      console.error("Erro detalhado:", error);
+      // Mostra a mensagem real do erro para facilitar o diagnóstico
       setErrorMsg(error.message);
+      toast.error("Erro ao carregar lista");
     } finally {
       setLoading(false);
     }
@@ -60,43 +65,47 @@ export function PrescriptionsPage() {
       fetchPrescriptions(); 
   }
 
-  // Função Simples de Impressão Rápida
-  const handleQuickPrint = (item: any, e: any) => {
-      e.stopPropagation();
-      // Em um cenário real, aqui você geraria o PDF.
-      // Como solução rápida, enviamos para a tela de edição em modo de impressão ou abrimos um popup.
-      // Por enquanto, vamos navegar para a tela de detalhes (que tem o botão de imprimir).
-      navigate(`/prescriptions/new?duplicate=${item.id}`); 
-      toast("Abrindo para impressão...", { icon: '🖨️' });
+  // Abre a receita para visualização/edição
+  const handleOpenPrescription = (id: string) => {
+      navigate(`/prescriptions/new?id=${id}`);
   };
 
   const filtered = prescriptions.filter(item => {
-      const pName = item.patient?.name || "Desconhecido";
+      // Tenta achar qualquer nome de paciente para o filtro
+      const p = item.patient;
+      const pName = p?.name || p?.full_name || p?.nome || "Desconhecido";
       return pName.toLowerCase().includes(searchTerm.toLowerCase());
   });
 
-  // Helpers
+  // --- HELPERS INTELIGENTES ---
+  // Procuram qualquer variação de nome que vier do banco
   const getProfName = (p: any) => {
+      // Supabase pode retornar array ou objeto. Tratamos os dois.
       const prof = Array.isArray(p.professional) ? p.professional[0] : p.professional;
+      
       if (!prof) return 'Não identificado';
+      
+      // Prioridade 1: First + Last name
       if (prof.first_name) return `Dr(a). ${prof.first_name} ${prof.last_name || ''}`;
-      return 'Profissional';
+      // Prioridade 2: Campo 'name'
+      if (prof.name) return prof.name;
+      // Prioridade 3: Email
+      return prof.email || 'Profissional';
   }
 
   const getPatientName = (p: any) => {
       const pat = Array.isArray(p.patient) ? p.patient[0] : p.patient;
-      return pat?.name || 'Paciente não identificado';
-  }
-
-  const getPatientId = (p: any) => {
-      const pat = Array.isArray(p.patient) ? p.patient[0] : p.patient;
-      return pat?.id;
+      
+      if (!pat) return 'Paciente não identificado';
+      
+      // Tenta todas as variações comuns de nome
+      return pat.name || pat.full_name || pat.nome || pat.first_name || 'Paciente sem nome';
   }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700 p-2 md:p-6 max-w-[1600px] mx-auto">
       
-      {/* --- CABEÇALHO --- */}
+      {/* CABEÇALHO */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -128,7 +137,7 @@ export function PrescriptionsPage() {
         </div>
       </div>
 
-      {/* --- FILTROS --- */}
+      {/* FILTROS */}
       <div className="bg-white dark:bg-gray-800 p-2 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center">
           <div className="pl-4 text-gray-400">
               <Search size={20}/>
@@ -142,18 +151,21 @@ export function PrescriptionsPage() {
           />
       </div>
 
-      {/* --- MENSAGEM DE ERRO --- */}
+      {/* MENSAGEM DE ERRO VISUAL */}
       {errorMsg && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-xl flex items-center gap-3 text-red-600">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-xl flex items-center gap-3 text-red-600 animate-in fade-in">
               <AlertCircle size={24} />
-              <p className="text-sm font-medium">{errorMsg}</p>
+              <div>
+                  <p className="font-bold text-sm">Erro Técnico:</p>
+                  <p className="text-xs">{errorMsg}</p>
+              </div>
           </div>
       )}
 
-      {/* --- LISTAGEM (TABELA PREMIUM) --- */}
+      {/* LISTAGEM (TABELA) */}
       <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         
-        {/* Cabeçalho da Tabela */}
+        {/* Cabeçalho */}
         <div className="grid grid-cols-12 gap-4 p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 text-xs font-bold text-gray-400 uppercase tracking-wider">
             <div className="col-span-4 md:col-span-3">Paciente</div>
             <div className="col-span-4 md:col-span-3">Profissional</div>
@@ -161,7 +173,7 @@ export function PrescriptionsPage() {
             <div className="col-span-4 md:col-span-4 text-right">Ações</div>
         </div>
 
-        {/* Corpo da Tabela */}
+        {/* Corpo */}
         <div className="divide-y divide-gray-100 dark:divide-gray-700">
             {loading ? (
                 <div className="p-10 text-center text-gray-400">Carregando lista...</div>
@@ -171,71 +183,59 @@ export function PrescriptionsPage() {
                     <p className="text-gray-500 font-medium">Nenhuma receita encontrada</p>
                 </div>
             ) : (
-                filtered.map((item) => {
-                    const patientId = getPatientId(item);
-                    return (
-                        <div 
-                            key={item.id} 
-                            className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
-                            // Ao clicar na linha, abre detalhes (futuro) ou nada por enquanto para não confundir
-                        >
-                            {/* Paciente (Clicável) */}
-                            <div className="col-span-4 md:col-span-3 flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
-                                    <User size={16}/>
-                                </div>
-                                <div 
-                                    className="font-bold text-gray-900 dark:text-white truncate hover:text-pink-600 hover:underline cursor-pointer"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (patientId) navigate(`/patients/${patientId}`);
-                                        else toast.error("Paciente sem ID vinculado");
-                                    }}
-                                >
-                                    {getPatientName(item)}
-                                </div>
+                filtered.map((item) => (
+                    <div 
+                        key={item.id} 
+                        className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group cursor-pointer"
+                        onClick={() => handleOpenPrescription(item.id)}
+                    >
+                        <div className="col-span-4 md:col-span-3 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center font-bold text-sm shrink-0">
+                                <User size={16}/>
                             </div>
-
-                            {/* Profissional */}
-                            <div className="col-span-4 md:col-span-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                                <div className="w-2 h-2 rounded-full bg-green-400"></div>
-                                <span className="truncate">{getProfName(item)}</span>
-                            </div>
-
-                            {/* Data */}
-                            <div className="col-span-2 hidden md:block text-sm text-gray-500 font-medium">
-                                {new Date(item.created_at).toLocaleDateString('pt-BR')}
-                            </div>
-
-                            {/* Ações */}
-                            <div className="col-span-4 md:col-span-4 flex items-center justify-end gap-2">
-                                <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    className="text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                                    onClick={(e) => handleQuickPrint(item, e)}
-                                    title="Imprimir / Ver"
-                                >
-                                    <Printer size={18}/>
-                                </Button>
-                                
-                                <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    className="text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    onClick={(e) => handleDelete(item.id, e)}
-                                    title="Excluir"
-                                >
-                                    <Trash2 size={18}/>
-                                </Button>
-
-                                <div className="text-gray-300">
-                                    <ChevronRight size={18}/>
-                                </div>
+                            <div className="font-bold text-gray-900 dark:text-white truncate">
+                                {getPatientName(item)}
                             </div>
                         </div>
-                    );
-                })
+
+                        <div className="col-span-4 md:col-span-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                            <span className="truncate">{getProfName(item)}</span>
+                        </div>
+
+                        <div className="col-span-2 hidden md:block text-sm text-gray-500 font-medium">
+                            {new Date(item.created_at).toLocaleDateString('pt-BR')}
+                        </div>
+
+                        <div className="col-span-4 md:col-span-4 flex items-center justify-end gap-2">
+                            {/* Botão Visualizar/Editar */}
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-blue-500 hover:text-blue-700 hover:bg-blue-50"
+                                onClick={(e) => {
+                                    e.stopPropagation(); 
+                                    handleOpenPrescription(item.id);
+                                }}
+                                title="Visualizar / Editar"
+                            >
+                                <FilePenLine size={18}/>
+                            </Button>
+                            
+                            {/* Botão Excluir */}
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => handleDelete(item.id, e)}
+                                title="Excluir"
+                            >
+                                <Trash2 size={18}/>
+                            </Button>
+
+                            <ChevronRight size={18} className="text-gray-300"/>
+                        </div>
+                    </div>
+                ))
             )}
         </div>
       </div>

@@ -28,12 +28,14 @@ interface PatientContext {
 interface Prescription {
   id: string;
   created_at: string;
+  notes?: string;
   professional: {
     first_name: string;
     last_name: string;
     role: string;
     registration_number?: string;
     formacao?: string;
+    signature_url?: string; // Adicionado para a assinatura
   } | null;
   medications: any[];
   observations?: string;
@@ -45,7 +47,7 @@ export function PatientPrescriptionsPage() {
   const [loading, setLoading] = useState(true);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
 
-  // --- BUSCAR RECEITAS ---
+  // 1. BUSCAR DADOS
   useEffect(() => {
     if (patient?.id) fetchPrescriptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -57,8 +59,8 @@ export function PatientPrescriptionsPage() {
       const { data, error } = await supabase
         .from("prescriptions")
         .select(`
-          id, created_at, medications, observations,
-          professional:profiles(first_name, last_name, role, registration_number, formacao)
+          id, created_at, medications, observations, notes,
+          professional:profiles(first_name, last_name, role, registration_number, formacao, signature_url)
         `)
         .eq("patient_id", patient.id)
         .order("created_at", { ascending: false });
@@ -72,128 +74,239 @@ export function PatientPrescriptionsPage() {
 
       setPrescriptions(formatted);
     } catch (error) {
-      console.error("Erro ao buscar receitas:", error);
+      console.error(error);
       toast.error("Erro ao carregar histórico.");
     } finally {
       setLoading(false);
     }
   }
 
-  // --- FUNÇÃO DE IMPRESSÃO (GERADOR DE PDF) ---
+  // ------------------------------------------------------------------
+  // 2. IMPRESSÃO COM ASSINATURA E CONSELHO
+  // ------------------------------------------------------------------
   const handlePrint = (prescriptionId: string) => {
     const prescription = prescriptions.find(p => p.id === prescriptionId);
     if (!prescription) return;
 
-    const profName = prescription.professional 
-      ? `${prescription.professional.first_name} ${prescription.professional.last_name}`
-      : "Profissional Responsável";
-    
+    // Dados do Profissional
+    const profFirstName = prescription.professional?.first_name || "Profissional";
+    const profLastName = prescription.professional?.last_name || "";
+    const profName = `${profFirstName} ${profLastName}`;
     const profReg = prescription.professional?.registration_number || "";
     const profSpec = prescription.professional?.formacao || "Especialista";
-    const dateStr = format(new Date(prescription.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
+    const profSignature = prescription.professional?.signature_url;
 
-    // Cria uma janela pop-up para impressão
-    const printWindow = window.open('', '', 'height=800,width=800');
+    // Lógica para determinar o prefixo do conselho (CRBM, CRM, etc)
+    const getCouncilPrefix = (spec: string) => {
+        const s = spec.toLowerCase();
+        if (s.includes("biomédica") || s.includes("biomedicina")) return "CRBM";
+        if (s.includes("médico") || s.includes("dermatologista") || s.includes("cirurgiã")) return "CRM";
+        if (s.includes("enfermeir")) return "COREN";
+        if (s.includes("fisioterapeuta")) return "CREFITO";
+        if (s.includes("farmacêut")) return "CRF";
+        if (s.includes("esteticista")) return "MEI/CNPJ";
+        return "Registro";
+    };
+
+    const councilPrefix = getCouncilPrefix(profSpec);
+    
+    // Data
+    const dateObj = new Date(prescription.created_at);
+    const dateStr = dateObj.toLocaleDateString('pt-BR');
+
+    const printWindow = window.open('', '_blank', 'height=800,width=900');
     
     if (printWindow) {
       printWindow.document.write(`
+        <!DOCTYPE html>
         <html>
           <head>
             <title>Receita - ${patient.name}</title>
             <style>
               @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-              body { font-family: 'Inter', sans-serif; padding: 40px; color: #333; max-width: 800px; mx-auto; }
-              .header { text-align: center; border-bottom: 2px solid #db2777; padding-bottom: 20px; margin-bottom: 30px; }
-              .logo { font-size: 24px; font-weight: 800; color: #db2777; text-transform: uppercase; letter-spacing: 2px; }
-              .sub-logo { font-size: 12px; color: #666; margin-top: 5px; }
-              
-              .patient-info { margin-bottom: 40px; background: #fdf2f8; padding: 15px; border-radius: 10px; border-left: 4px solid #db2777; }
-              .patient-name { font-size: 18px; font-weight: 700; color: #111; }
-              .date { float: right; font-size: 14px; color: #666; }
-
-              .rx-symbol { font-size: 40px; font-family: serif; color: #db2777; margin-bottom: 10px; font-style: italic; font-weight: bold; }
-              
-              .medication-list { list-style: none; padding: 0; }
-              .medication-item { margin-bottom: 25px; page-break-inside: avoid; }
-              .med-name { font-size: 16px; font-weight: 700; display: block; margin-bottom: 4px; }
-              .med-dosage { font-weight: normal; color: #555; }
-              .med-instructions { display: block; margin-top: 5px; font-size: 14px; color: #444; background: #f9fafb; padding: 8px; border-radius: 6px; }
-              
-              .observations { margin-top: 40px; border-top: 1px dashed #ccc; padding-top: 15px; font-size: 14px; color: #666; }
-              
-              .footer { margin-top: 80px; text-align: center; page-break-inside: avoid; }
-              .signature-line { width: 300px; border-top: 1px solid #333; margin: 0 auto 10px auto; }
-              .prof-name { font-weight: 700; font-size: 14px; }
-              .prof-reg { font-size: 12px; color: #666; }
-              
-              @media print {
-                body { padding: 0; }
-                .no-print { display: none; }
+              @page { margin: 0; }
+              body { 
+                font-family: 'Inter', sans-serif; 
+                background: white; 
+                margin: 0; 
+                padding: 20mm; 
+                color: #1f2937;
+                line-height: 1.5;
               }
+
+              /* Cabeçalho */
+              .header {
+                display: flex;
+                justify-content: space-between;
+                border-bottom: 2px solid #db2777; 
+                padding-bottom: 24px;
+                margin-bottom: 24px;
+              }
+              .clinic-title { font-size: 30px; font-weight: 700; font-family: serif; color: #000; margin: 0; }
+              .prof-info { font-size: 14px; color: #6b7280; margin-top: 4px; }
+              
+              .meta-info { text-align: right; }
+              .meta-label { font-size: 12px; text-transform: uppercase; color: #6b7280; letter-spacing: 1px; }
+              .meta-value { font-size: 14px; color: #000; margin-top: 2px; }
+
+              /* Box do Paciente */
+              .patient-box {
+                background-color: #f9fafb;
+                border: 1px solid #e5e7eb;
+                padding: 16px;
+                border-radius: 8px;
+                margin-bottom: 24px;
+              }
+              .patient-label { font-size: 12px; text-transform: uppercase; color: #9ca3af; font-weight: bold; }
+              .patient-name { font-size: 20px; font-family: serif; font-weight: 700; color: #000; margin-top: 4px; }
+
+              /* Título Central */
+              .doc-title {
+                text-align: center;
+                margin: 24px 0;
+                text-transform: uppercase;
+                font-weight: 700;
+                font-size: 18px;
+                letter-spacing: 2px;
+                border-bottom: 1px solid #000;
+                display: inline-block;
+                padding-bottom: 4px;
+                width: 100%;
+              }
+
+              /* Lista de Tratamentos */
+              .treatment-item {
+                position: relative;
+                padding-left: 24px;
+                border-left: 2px solid #f9a8d4; 
+                margin-bottom: 24px;
+              }
+              .treatment-bullet {
+                position: absolute;
+                left: -6px; 
+                top: 0;
+                width: 10px;
+                height: 10px;
+                background-color: #db2777; 
+                border-radius: 50%;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .treatment-name { font-weight: 700; font-size: 16px; color: #1f2937; margin-bottom: 8px; }
+
+              /* Componentes */
+              .component-list { list-style: none; padding: 0; margin: 0; }
+              .component-item { 
+                display: flex; justify-content: space-between; 
+                border-bottom: 1px solid #f3f4f6; 
+                padding: 4px 0; width: 80%; font-size: 14px; color: #374151; 
+              }
+              .comp-qty { font-family: monospace; font-size: 12px; }
+
+              .obs-text { 
+                font-size: 14px; font-style: italic; color: #4b5563; margin-top: 8px; 
+              }
+
+              /* Rodapé e Assinatura */
+              .footer {
+                position: fixed;
+                bottom: 15mm;
+                left: 20mm;
+                right: 20mm;
+                text-align: center;
+                border-top: 1px solid #e5e7eb;
+                padding-top: 10px;
+              }
+              .signature-img {
+                max-height: 80px;
+                max-width: 200px;
+                display: block;
+                margin: 0 auto -10px auto; /* Sobe um pouco para ficar sobre a linha */
+                position: relative;
+                z-index: 10;
+              }
+              .prof-name-footer { font-weight: 700; font-size: 14px; margin-top: 10px; }
+              .prof-reg-footer { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
             </style>
           </head>
           <body>
+            
             <div class="header">
-              <div class="logo">CLÍNICA ESTÉTICA</div>
-              <div class="sub-logo">Excelência e Cuidado</div>
+              <div>
+                <h1 class="clinic-title">CLÍNICA ESTÉTICA</h1>
+                <div class="prof-info">Dr(a). ${profName}</div>
+              </div>
+              <div class="meta-info">
+                <div class="meta-label">Receituário</div>
+                <div class="meta-value">${dateStr}</div>
+              </div>
             </div>
 
-            <div class="patient-info">
-              <span class="date">${dateStr}</span>
-              <div>PACIENTE</div>
+            <div class="patient-box">
+              <div class="patient-label">Para:</div>
               <div class="patient-name">${patient.name}</div>
             </div>
 
-            <div class="rx-symbol">Rx</div>
+            <div class="doc-title">${prescription.notes || "Recomendação Terapêutica"}</div>
 
-            <ol class="medication-list">
-              ${prescription.medications.map((med: any, index: number) => `
-                <li class="medication-item">
-                  <span class="med-name">
-                    ${index + 1}. ${med.name} <span class="med-dosage">${med.dosage ? `(${med.dosage})` : ''}</span>
-                  </span>
-                  ${med.frequency ? `<div><strong>Posologia:</strong> ${med.frequency}</div>` : ''}
-                  ${med.duration ? `<div><strong>Duração:</strong> ${med.duration}</div>` : ''}
-                  ${med.instructions ? `<div class="med-instructions">${med.instructions}</div>` : ''}
-                </li>
+            <div>
+              ${prescription.medications.map((item: any) => `
+                <div class="treatment-item">
+                  <div class="treatment-bullet"></div>
+                  <div class="treatment-name">${item.name}</div>
+                  
+                  ${item.components && item.components.length > 0 ? `
+                    <ul class="component-list">
+                      ${item.components.map((c: any) => c.name ? `
+                        <li class="component-item">
+                          <span>${c.name}</span>
+                          <span class="comp-qty">${c.quantity || ''}</span>
+                        </li>
+                      ` : '').join('')}
+                    </ul>
+                  ` : ''}
+
+                  ${item.dosage ? `<div class="component-item"><span>Dosagem</span><span class="comp-qty">${item.dosage}</span></div>` : ''}
+                  ${item.frequency ? `<div class="obs-text">Posologia: ${item.frequency}</div>` : ''}
+                  ${item.instructions ? `<div class="obs-text">${item.instructions}</div>` : ''}
+                  ${item.observations ? `<div class="obs-text">"${item.observations}"</div>` : ''}
+                </div>
               `).join('')}
-            </ol>
+            </div>
 
             ${prescription.observations ? `
-              <div class="observations">
-                <strong>Observações:</strong><br>
-                ${prescription.observations}
+              <div style="margin-top: 30px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                <strong style="font-size: 12px; text-transform: uppercase; color: #999;">Observações Gerais:</strong>
+                <p style="font-size: 14px; margin-top: 4px;">${prescription.observations}</p>
               </div>
             ` : ''}
 
             <div class="footer">
-              <div class="signature-line"></div>
-              <div class="prof-name">${profName}</div>
-              <div class="prof-reg">${profSpec} | ${profReg}</div>
+              ${profSignature ? `<img src="${profSignature}" class="signature-img" alt="Assinatura" />` : ''}
+              <div class="prof-name-footer">Dr(a). ${profName}</div>
+              <div class="prof-reg-footer">${councilPrefix}: ${profReg}</div>
             </div>
-            
+
             <script>
-              window.onload = function() { window.print(); }
+              window.onload = function() { 
+                setTimeout(function(){ window.print(); }, 800); /* Tempo um pouco maior para carregar a imagem da assinatura */
+              }
             </script>
           </body>
         </html>
       `);
       printWindow.document.close();
-    } else {
-      toast.error("Permita pop-ups para imprimir a receita.");
     }
   };
 
-  // --- AÇÕES GERAIS ---
+  // --- AÇÕES ---
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta receita?")) return;
-    try {
-      const { error } = await supabase.from("prescriptions").delete().eq("id", id);
-      if (error) throw error;
-      setPrescriptions(prev => prev.filter(p => p.id !== id));
-      toast.success("Receita excluída.");
-    } catch (error) {
-      toast.error("Erro ao excluir.");
+    if (!confirm("Excluir receita?")) return;
+    const { error } = await supabase.from("prescriptions").delete().eq("id", id);
+    if (!error) {
+        setPrescriptions(prev => prev.filter(p => p.id !== id));
+        toast.success("Excluído!");
     }
   };
 
@@ -201,136 +314,64 @@ export function PatientPrescriptionsPage() {
     navigate(`/prescriptions/new?patientId=${patient.id}&patientName=${encodeURIComponent(patient.name)}`);
   };
 
-  if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600 w-8 h-8" /></div>;
+  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-600 w-8 h-8"/></div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
-      {/* HEADER DA ABA */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-pink-100 dark:border-gray-700">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-pink-100 dark:border-gray-700">
         <div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <ScrollText className="text-pink-600" size={24} /> 
-            Histórico de Prescrições
+            <ScrollText className="text-pink-600" size={24} /> Histórico de Receitas
           </h2>
-          <p className="text-sm text-gray-500">
-            Visualize e gerencie todas as receitas emitidas para {patient.name.split(' ')[0]}.
-          </p>
+          <p className="text-sm text-gray-500">Histórico clínico de {patient.name.split(' ')[0]}.</p>
         </div>
-        
-        <Button 
-          onClick={handleNewPrescription}
-          className="bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white shadow-lg shadow-pink-500/20 transition-all active:scale-95 rounded-xl"
-        >
+        <Button onClick={handleNewPrescription} className="bg-pink-600 text-white rounded-xl shadow-lg shadow-pink-200 hover:bg-pink-700 transition-colors">
           <Plus size={18} className="mr-2" /> Nova Receita
         </Button>
       </div>
 
-      {/* LISTA DE RECEITAS */}
       {prescriptions.length === 0 ? (
-        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
-          <ScrollText size={48} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-500 font-medium">Nenhuma receita encontrada.</p>
-          <p className="text-xs text-gray-400">Clique em "Nova Receita" para começar.</p>
+        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-2xl border border-dashed border-gray-300">
+          <p className="text-gray-500">Nenhuma receita encontrada.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {prescriptions.map((recipe) => {
-            const date = new Date(recipe.created_at);
-            const dateStr = format(date, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
-            const timeStr = format(date, "HH:mm");
-            
-            const profName = recipe.professional 
-              ? `${recipe.professional.first_name} ${recipe.professional.last_name}` 
-              : "Profissional não identificado";
-            
-            const itemCount = Array.isArray(recipe.medications) ? recipe.medications.length : 0;
-
-            return (
-              <div key={recipe.id} className="group bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-pink-200 transition-all flex flex-col md:flex-row gap-6">
+          {prescriptions.map((recipe) => (
+            <div key={recipe.id} className="group bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 shadow-sm hover:border-pink-200 transition-all flex flex-col md:flex-row gap-6">
                 
-                {/* Data (Lateral Esquerda) */}
-                <div className="flex md:flex-col items-center justify-center gap-2 md:gap-0 bg-pink-50 dark:bg-gray-700/50 p-4 rounded-xl min-w-[100px] border border-pink-100 dark:border-gray-600">
+                <div className="flex md:flex-col items-center justify-center gap-2 bg-pink-50 p-4 rounded-xl min-w-[100px] border border-pink-100">
                   <Calendar size={20} className="text-pink-500 mb-1" />
-                  <span className="text-2xl font-black text-gray-800 dark:text-white leading-none">
-                    {format(date, 'dd')}
-                  </span>
-                  <span className="text-xs font-bold text-gray-500 uppercase">
-                    {format(date, 'MMM', { locale: ptBR })}
-                  </span>
-                  <span className="text-[10px] text-gray-400 font-mono bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded mt-1">
-                    {timeStr}
-                  </span>
+                  <span className="text-2xl font-black text-gray-800">{new Date(recipe.created_at).getDate()}</span>
+                  <span className="text-xs font-bold text-gray-500 uppercase">{format(new Date(recipe.created_at), 'MMM', { locale: ptBR })}</span>
                 </div>
 
-                {/* Conteúdo Principal */}
                 <div className="flex-1">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 gap-2">
-                    <h3 className="font-bold text-gray-900 dark:text-white text-lg flex items-center gap-2">
-                      Receituário Médico 
-                      <span className="text-xs font-normal text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600">
-                        #{recipe.id.slice(0, 8)}
-                      </span>
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-                    <Stethoscope size={14} className="text-pink-500" />
-                    <span>Prescrito por: <span className="font-semibold text-gray-700 dark:text-gray-300">{profName}</span></span>
-                  </div>
-
-                  {/* Resumo dos Itens */}
-                  <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
-                    <div className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase mb-2">
-                      <Pill size={14} /> Itens Prescritos ({itemCount})
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
-                      {itemCount > 0 
-                        ? recipe.medications.slice(0, 3).map((m: any, idx: number) => (
-                            <div key={idx} className="flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 bg-pink-400 rounded-full"></span>
-                                <span className="font-medium">{m.name}</span>
-                                {m.dosage && <span className="text-gray-400 text-xs">({m.dosage})</span>}
-                            </div>
-                          ))
-                        : <span className="italic text-gray-400">Ver observações</span>}
-                      
-                      {itemCount > 3 && <span className="text-xs text-pink-500 font-medium">+ {itemCount - 3} outros itens...</span>}
-                    </div>
+                  <h3 className="font-bold text-gray-900 text-lg mb-1">{recipe.notes || "Receita Médica"}</h3>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
+                    <Stethoscope size={12} className="text-pink-500" />
+                    <span>Dr(a). {recipe.professional?.first_name || 'Profissional'}</span>
                   </div>
                   
-                  {recipe.observations && (
-                      <div className="mt-3 flex items-start gap-2 text-xs text-gray-500 italic">
-                          <Clock size={12} className="mt-0.5" />
-                          <p>Obs: {recipe.observations}</p>
-                      </div>
-                  )}
+                  {/* Resumo visual rápido */}
+                  <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-sm text-gray-600">
+                     <div className="flex items-center gap-2 font-bold text-xs uppercase text-gray-400 mb-1"><Pill size={12}/> Resumo</div>
+                     {recipe.medications.length > 0 ? (
+                        <p className="line-clamp-2">{recipe.medications.map((m: any) => m.name).join(", ")}</p>
+                     ) : <p className="italic text-xs">Sem itens listados</p>}
+                  </div>
                 </div>
 
-                {/* Ações (Direita) */}
-                <div className="flex flex-row md:flex-col justify-center gap-2 border-t md:border-t-0 md:border-l border-gray-100 dark:border-gray-700 pt-4 md:pt-0 md:pl-6">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => handlePrint(recipe.id)}
-                    className="w-full justify-start text-gray-600 hover:text-blue-600 hover:bg-blue-50 border-gray-200"
-                  >
+                <div className="flex flex-row md:flex-col justify-center gap-2 pt-4 md:pt-0 border-t md:border-t-0 md:border-l md:pl-6 border-gray-100">
+                  <Button variant="outline" size="sm" onClick={() => handlePrint(recipe.id)} className="w-full justify-start text-gray-600 hover:text-blue-600 border-gray-200">
                     <Printer size={16} className="mr-2" /> Imprimir
                   </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => handleDelete(recipe.id)}
-                    className="w-full justify-start text-gray-600 hover:text-red-600 hover:bg-red-50 border-gray-200"
-                  >
+                  <Button variant="outline" size="sm" onClick={() => handleDelete(recipe.id)} className="w-full justify-start text-gray-600 hover:text-red-600 border-gray-200">
                     <Trash2 size={16} className="mr-2" /> Excluir
                   </Button>
                 </div>
-
-              </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>

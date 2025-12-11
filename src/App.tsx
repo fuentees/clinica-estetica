@@ -50,15 +50,15 @@ import { PatientPrescriptionsPage } from "./pages/patients/PatientPrescriptionsP
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
 
-// --- PROFISSIONAIS (CORREÇÃO AQUI) ---
-import { ProfessionalsListPage } from "./pages/professionals/ProfessionalsListPage";
-import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
+// --- PROFISSIONAIS ---
+// ProfessionalsListPage geralmente é export default (sem chaves)
+import ProfessionalsListPage from "./pages/professionals/ProfessionalsListPage";
 
-// IMPORTANTE: Importando o arquivo NOVO que criamos
+// CORREÇÃO: ProfessionalFormPage exportado como function, precisa de chaves { }
 import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage"; 
 
-// Páginas antigas ou de dashboard
-
+// Páginas secundárias de Profissionais
+import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
 import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
 import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
 import ProfessionalOverviewPage from "./pages/professionals/ProfessionalOverviewPage"; 
@@ -129,16 +129,14 @@ function App() {
                   {/* --- PROFISSIONAIS --- */}
                   <Route path="professionals" element={<ProfessionalsListPage />} /> 
                   
-                  {/* AQUI ESTAVA O ERRO! AGORA APONTA PARA A PÁGINA NOVA */}
+                  {/* Rota para criar NOVO profissional */}
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                   
                   {/* Dashboard aninhado do Profissional (ID) */}
                   <Route path="professionals/:id" element={<ProfessionalDashboardLayout />}>
                       <Route index element={<ProfessionalOverviewPage />} /> 
                       
-                      {/* Se quiser editar usando o formulário novo dentro do dashboard, troque aqui também */}
-                      {/* Antes: element={<ProfessionalDetailsPage />} */}
-                      {/* Agora (opcional): element={<ProfessionalFormPage />} se quiser usar o form para editar */}
+                      {/* Rota para EDITAR profissional existente dentro do dashboard */}
                       <Route path="details" element={<ProfessionalFormPage />} /> 
 
                       <Route path="agenda" element={<ProfessionalAgendaPage />} /> 

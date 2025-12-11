@@ -15,6 +15,7 @@ import {
   Phone,
   Filter,
   Award,
+  FileBadge, // Ícone novo para o registro
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -42,7 +43,7 @@ interface Professional {
   registration_number?: string | null;
   phone?: string | null;
   email?: string | null;
-  is_active: boolean | null; // pode vir null do banco
+  is_active: boolean | null;
   avatar_url?: string | null;
 }
 
@@ -52,7 +53,7 @@ const isActive = (p: Professional) => p.is_active !== false;
 
 // --- COMPONENTE PRINCIPAL ---
 
-export function ProfessionalsListPage() {
+export default function ProfessionalsListPage() { // Adicionei 'default' aqui para facilitar importação
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -112,7 +113,9 @@ export function ProfessionalsListPage() {
         " " +
         (p.last_name || "") +
         " " +
-        (p.formacao || "");
+        (p.formacao || "") + 
+        " " +
+        (p.registration_number || ""); // Inclui registro na busca
       const matchesSearch = texto
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
@@ -289,7 +292,7 @@ export function ProfessionalsListPage() {
         <div className="relative">
           <Search className="absolute left-4 top-3.5 text-gray-400" size={18} />
           <Input
-            placeholder="Buscar por nome ou especialidade..."
+            placeholder="Buscar por nome, registro ou especialidade..."
             className="pl-10 h-12 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-xl shadow-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -363,11 +366,12 @@ export function ProfessionalsListPage() {
           {filtered.map((prof) => {
             const roleInfo = getRoleInfo(prof.role);
 
-            // Dados de detalhes
+            // Dados de detalhes (Adicionei o Registro aqui)
             const details = [
               { show: !!prof.phone, icon: Phone, label: prof.phone },
               { show: !!prof.email, icon: Mail, label: prof.email },
               { show: !!prof.formacao, icon: Award, label: prof.formacao },
+              { show: !!prof.registration_number, icon: FileBadge, label: prof.registration_number }, // <--- NOVO
               {
                 show:
                   prof.commission_rate !== null &&

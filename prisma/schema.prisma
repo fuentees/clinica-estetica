@@ -1,0 +1,340 @@
+// ARQUIVO: prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==========================================
+// 0. MULTI-TENANCY
+// ==========================================
+
+model Clinic {
+  id            String   @id @default(uuid())
+  name          String
+  slug          String   @unique
+  isActive      Boolean  @default(true)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profiles      Profile[]
+  services      Service[]
+  patients      Patient[]
+  appointments  Appointment[]
+  auditLogs     AuditLog[]
+  settings      SystemSetting[]
+  terms         Term[]
+  anamneses     Anamnesis[]
+
+  @@map("clinics")
+}
+
+// ==========================================
+// 1. AUTH & RBAC
+// ==========================================
+
+model Profile {
+  id            String    @id @db.Uuid // PK = auth.users.id
+  
+  // ⚠️ READ-ONLY: Gerenciado via Trigger no Postgres
+  email         String    
+  
+  fullName      String
+  avatarUrl     String?
+  phone         String?
+  
+  clinicId      String
+  clinic        Clinic    @relation(fields: [clinicId], references: [id])
+  
+  roleId        String
+  role          Role      @relation(fields: [roleId], references: [id])
+  
+  isActive      Boolean   @default(true)
+  
+  auditLogs     AuditLog[]
+  appointments  Appointment[] // Profissional executor
+  services      ServiceProfessional[]
+  conductedAnamneses Anamnesis[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("profiles")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // "ADMIN", "PROFESSIONAL", "RECEPTIONIST"
+  description String?
+  
+  profiles    Profile[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  resource    String   // "financial", "patient"
+  action      String   // "read", "write"
+  description String?
+
+  roles       RolePermission[]
+
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ==========================================
+// 2. AUDITORIA
+// ==========================================
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+
+  profileId   String?  @db.Uuid
+  profile     Profile? @relation(fields: [profileId], references: [id])
+  
+  action      String   
+  entity      String   
+  entityId    String?
+  
+  severity    String   @default("INFO") // INFO, WARNING, CRITICAL
+  source      String   @default("USER") // USER, SYSTEM, INTEGRATION
+  
+  oldData     Json?
+  newData     Json?
+  
+  ipAddress   String?
+  userAgent   String?
+  
+  createdAt   DateTime @default(now())
+
+  @@index([clinicId])
+  @@map("audit_logs")
+}
+
+// ==========================================
+// 3. SETTINGS
+// ==========================================
+
+model SystemSetting {
+  key         String
+  value       String   
+  
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+
+  category    String   
+  dataType    String   
+  
+  isPublic    Boolean  @default(false)
+  isEncrypted Boolean  @default(false)
+  
+  updatedAt   DateTime @updatedAt
+
+  @@id([clinicId, key])
+  @@map("system_settings")
+}
+
+// ==========================================
+// 4. CORE: SERVIÇOS & PROFISSIONAIS
+// ==========================================
+
+model Service {
+  id          String   @id @default(uuid())
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+
+  name        String
+  description String?
+  category    String   // FACIAL, CORPORAL, INJETAVEL
+  
+  price       Decimal  @db.Decimal(10, 2)
+  duration    Int      // Duração Padrão (referência)
+  
+  isActive    Boolean  @default(true)
+  
+  professionals ServiceProfessional[]
+  appointments  Appointment[]
+
+  @@map("services")
+}
+
+model ServiceProfessional {
+  id             String    @id @default(uuid())
+  serviceId      String
+  service        Service   @relation(fields: [serviceId], references: [id])
+  profileId      String    @db.Uuid
+  profile        Profile   @relation(fields: [profileId], references: [id])
+  
+  customDuration Int?      // Opcional
+  commissionRate Decimal?  
+
+  @@unique([serviceId, profileId])
+  @@map("service_professionals")
+}
+
+// ==========================================
+// 5. PACIENTES & AGENDAMENTO
+// ==========================================
+
+model Patient {
+  id          String   @id @default(uuid())
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+
+  name        String
+  email       String?
+  cpf         String?
+  phone       String
+  birthDate   DateTime?
+  
+  consents    PatientTerm[]
+  appointments Appointment[]
+  anamneses   Anamnesis[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clinicId, cpf])
+  @@map("patients")
+}
+
+model Appointment {
+  id             String   @id @default(uuid())
+  clinicId       String
+  clinic         Clinic   @relation(fields: [clinicId], references: [id])
+  
+  startAt        DateTime
+  endAt          DateTime
+  
+  status         String   // SCHEDULED, CONFIRMED, CANCELED, COMPLETED, NO_SHOW
+  
+  patientId      String
+  patient        Patient  @relation(fields: [patientId], references: [id])
+  
+  serviceId      String
+  service        Service  @relation(fields: [serviceId], references: [id])
+  
+  professionalId String   @db.Uuid
+  professional   Profile  @relation(fields: [professionalId], references: [id])
+  
+  notes          String?
+
+  @@index([clinicId, startAt, endAt])
+  @@index([professionalId, startAt])
+  @@map("appointments")
+}
+
+// ==========================================
+// 6. LEGAL
+// ==========================================
+
+model Term {
+  id          String   @id @default(uuid())
+  clinicId    String
+  clinic      Clinic   @relation(fields: [clinicId], references: [id])
+
+  type        String   // PRIVACY_POLICY, CONSENT_FORM
+  title       String
+  content     String   @db.Text
+  version     String   // v1.0
+  isActive    Boolean  @default(true)
+  
+  acceptedBy  PatientTerm[]
+
+  createdAt   DateTime @default(now())
+
+  @@map("terms")
+}
+
+model PatientTerm {
+  id          String   @id @default(uuid())
+  patientId   String
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  termId      String
+  term        Term     @relation(fields: [termId], references: [id])
+  
+  acceptedAt  DateTime @default(now())
+  ipAddress   String?
+  userAgent   String?
+
+  @@map("patient_terms")
+}
+
+// ==========================================
+// 7. PRONTUÁRIO & ANAMNESE (NOVO!)
+// ==========================================
+
+model Anamnesis {
+  id              String   @id @default(uuid())
+  
+  clinicId        String
+  clinic          Clinic   @relation(fields: [clinicId], references: [id])
+
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  
+  professionalId  String   @db.Uuid
+  professional    Profile  @relation(fields: [professionalId], references: [id])
+
+  // 1. GERAL
+  mainComplaint   String   @db.Text 
+  complaintDetails String? @db.Text 
+
+  // 2. ALERTAS DE SAÚDE
+  hasDiabetes     Boolean  @default(false)
+  hasHypertension Boolean  @default(false)
+  isPregnant      Boolean  @default(false)
+  isLactating     Boolean  @default(false)
+  isSmoker        Boolean  @default(false)
+  usesContraceptives Boolean @default(false)
+  hasPacemaker    Boolean  @default(false)
+  hasMetalImplants Boolean @default(false)
+  
+  // Detalhes médicos
+  allergies       String?  @db.Text
+  medications     String?  @db.Text
+  surgeries       String?  @db.Text
+  illnesses       String?  @db.Text
+
+  // 3. DADOS ANTROPOMÉTRICOS
+  weight          Decimal? @db.Decimal(5, 2)
+  height          Decimal? @db.Decimal(3, 2)
+  bmi             Decimal? @db.Decimal(4, 2)
+
+  // 4. ÁREAS ESPECÍFICAS (JSON)
+  lifestyleData   Json?    
+  facialData      Json?    
+  bodyData        Json?    
+  capilarData     Json?    
+  visualMapData   Json?    
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clinicId])
+  @@index([patientId])
+  @@map("anamneses")
+}

@@ -11,6 +11,7 @@ export interface UserProfile {
   first_name: string
   last_name: string
   role: UserRole
+  clinicId?: string
 }
 
 interface AuthContextType {
@@ -19,7 +20,6 @@ interface AuthContextType {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
-  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -31,113 +31,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function fetchUserProfile(userId: string) {
     try {
+      // Busca tudo (*) da tabela profiles
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
 
-      if (error) {
-        console.error("Erro ao buscar perfil no Supabase:", error)
-        return;
-      }
+      if (error) throw error;
 
       if (data) {
-        // --- CORREÇÃO AQUI ---
-        // 1. Pega o nome completo onde quer que ele esteja (full_name ou fullName)
-        const dbName = data.full_name || data.fullName || data.name || 'Usuário';
+        // LÓGICA BLINDADA: Tenta pegar o nome de qualquer lugar possível
+        const fullName = data.full_name || data.fullName || data.name || 'Usuário';
+        const parts = fullName.split(' ');
+        const firstName = data.first_name || parts[0] || 'Usuário';
+        const lastName = data.last_name || parts.slice(1).join(' ') || '';
         
-        // 2. Separa em Primeiro e Último nome (para manter compatibilidade)
-        const nameParts = dbName.split(' ');
-        const firstName = nameParts[0] || 'Usuário';
-        const lastName = nameParts.slice(1).join(' ') || '';
-
-        // 3. Normaliza o cargo
-        let rawRole = data.role?.toLowerCase() || 'paciente'
-        if (['medico', 'doutor', 'esteta', 'esteticista', 'professional'].includes(rawRole)) {
-          rawRole = 'profissional'
-        }
+        // Garante um cargo válido
+        const role = (data.role || 'paciente') as UserRole;
 
         setProfile({
           id: data.id,
           email: data.email,
-          first_name: firstName, // Agora preenchido corretamente
-          last_name: lastName,   // Agora preenchido corretamente
-          role: rawRole as UserRole,
+          first_name: firstName,
+          last_name: lastName,
+          role: role,
+          clinicId: data.clinicId
         })
       }
     } catch (err) {
-      console.error("Erro geral ao buscar perfil:", err)
+      console.error("Erro ao carregar perfil:", err)
+      toast.error("Erro de conexão com o banco de dados.")
     }
   }
 
   useEffect(() => {
-    let mounted = true;
-
-    async function initAuth() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        
-        if (mounted) {
-          if (session?.user) {
-            console.log("Sessão encontrada. Buscando perfil...")
-            setUser(session.user)
-            await fetchUserProfile(session.user.id)
-          } else {
-            console.log("Nenhuma sessão ativa.")
-            setUser(null)
-            setProfile(null)
-          }
-        }
-      } catch (error) {
-        console.error("ERRO CRÍTICO NA AUTH:", error)
-      } finally {
-        if (mounted) {
-          console.log("Destravando tela...")
-          setLoading(false)
-        }
-      }
-    }
-
-    initAuth()
-
-    // Trava de Segurança: Se em 3 segundos não carregar, libera a força
-    const safetyTimer = setTimeout(() => {
-      if (loading) {
-        console.warn("⚠️ Auth demorou demais. Forçando abertura da tela.")
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      if (session?.user) {
+        fetchUserProfile(session.user.id).then(() => setLoading(false))
+      } else {
         setLoading(false)
       }
-    }, 3000)
+    })
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
       if (session?.user) {
-        setUser(session.user)
-        // Só busca o perfil se o usuário mudou
-        if (session.user.id !== user?.id) {
-            await fetchUserProfile(session.user.id)
-        }
+        fetchUserProfile(session.user.id)
       } else {
-        setUser(null)
         setProfile(null)
       }
       setLoading(false)
     })
 
-    return () => {
-      mounted = false
-      clearTimeout(safetyTimer)
-      listener.subscription.unsubscribe()
-    }
-  }, []) // Removido dependencia 'user' para evitar loop infinito
+    return () => subscription.unsubscribe()
+  }, [])
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error, data } = await supabase.auth.signInWithPassword({ email, password })
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      if (data.user) await fetchUserProfile(data.user.id)
+      // O onAuthStateChange vai capturar o login e carregar o perfil automaticamente
     } catch (error: any) {
       console.error(error)
-      toast.error('Erro ao entrar: ' + error.message)
       throw error
     }
   }
@@ -146,31 +103,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
-    window.location.href = '/'
-  }
-
-  const refreshProfile = async () => {
-    if (user) await fetchUserProfile(user.id)
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut, refreshProfile }}>
-      {loading ? (
-        <div className="flex h-screen w-screen items-center justify-center bg-white">
-          <div className="flex flex-col items-center gap-4">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-            <p className="text-gray-500">Carregando sistema...</p>
-            <button 
-              onClick={() => setLoading(false)} 
-              className="mt-4 text-xs text-red-500 underline hover:text-red-700"
-            >
-              Travou? Clique aqui para destravar.
-            </button>
-          </div>
-        </div>
-      ) : (
-        children
-      )}
+    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
+      {children}
     </AuthContext.Provider>
   )
 }

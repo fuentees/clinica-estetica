@@ -1,14 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase' 
 import { toast } from 'react-hot-toast'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 
-// 1. DEFINIÇÃO ESTRITA DOS PERFIS
-export type UserRole =
-  | 'admin'
-  | 'profissional'
-  | 'recepcionista'
-  | 'paciente'
+export type UserRole = 'admin' | 'profissional' | 'recepcionista' | 'paciente'
 
 export interface UserProfile {
   id: string
@@ -34,43 +29,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // 2. BUSCA DE PERFIL INTELIGENTE
-  async function fetchUserProfile(userId: string, userEmail?: string) {
+  async function fetchUserProfile(userId: string) {
     try {
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
 
-      // Auto-correção: Cria perfil se não existir
-      if (error && error.code === 'PGRST116' && userEmail) {
-        console.warn('Perfil ausente. Criando automaticamente...')
-        const { data: newProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert([{ 
-              id: userId, 
-              email: userEmail, 
-              role: 'paciente', 
-              first_name: 'Novo Usuário' 
-          }])
-          .select()
-          .single()
-
-        if (!createError) {
-          data = newProfile
-          error = null
-          toast.success('Perfil criado automaticamente!')
-        }
+      if (error) {
+        console.error("Erro ao buscar perfil no Supabase:", error)
+        return;
       }
 
-      if (error) throw error
-
       if (data) {
-        // 3. NORMALIZAÇÃO ESTRITA (O "Pulo do Gato")
-        let rawRole = data.role?.toLowerCase() || 'paciente'
+        // --- CORREÇÃO AQUI ---
+        // 1. Pega o nome completo onde quer que ele esteja (full_name ou fullName)
+        const dbName = data.full_name || data.fullName || data.name || 'Usuário';
+        
+        // 2. Separa em Primeiro e Último nome (para manter compatibilidade)
+        const nameParts = dbName.split(' ');
+        const firstName = nameParts[0] || 'Usuário';
+        const lastName = nameParts.slice(1).join(' ') || '';
 
-        // Mapeia nomes antigos para o padrão novo 'profissional'
+        // 3. Normaliza o cargo
+        let rawRole = data.role?.toLowerCase() || 'paciente'
         if (['medico', 'doutor', 'esteta', 'esteticista', 'professional'].includes(rawRole)) {
           rawRole = 'profissional'
         }
@@ -78,55 +61,83 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile({
           id: data.id,
           email: data.email,
-          first_name: data.first_name,
-          last_name: data.last_name,
-          role: rawRole as UserRole, // Agora garantimos que bate com a tipagem
+          first_name: firstName, // Agora preenchido corretamente
+          last_name: lastName,   // Agora preenchido corretamente
+          role: rawRole as UserRole,
         })
       }
-    } catch (error: any) {
-      console.error('❌ Erro no perfil:', error.message)
-      setProfile(null)
+    } catch (err) {
+      console.error("Erro geral ao buscar perfil:", err)
     }
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      const sessionUser = data.session?.user ?? null
-      setUser(sessionUser)
-      if (sessionUser) await fetchUserProfile(sessionUser.id, sessionUser.email)
+    let mounted = true;
+
+    async function initAuth() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (mounted) {
+          if (session?.user) {
+            console.log("Sessão encontrada. Buscando perfil...")
+            setUser(session.user)
+            await fetchUserProfile(session.user.id)
+          } else {
+            console.log("Nenhuma sessão ativa.")
+            setUser(null)
+            setProfile(null)
+          }
+        }
+      } catch (error) {
+        console.error("ERRO CRÍTICO NA AUTH:", error)
+      } finally {
+        if (mounted) {
+          console.log("Destravando tela...")
+          setLoading(false)
+        }
+      }
+    }
+
+    initAuth()
+
+    // Trava de Segurança: Se em 3 segundos não carregar, libera a força
+    const safetyTimer = setTimeout(() => {
+      if (loading) {
+        console.warn("⚠️ Auth demorou demais. Forçando abertura da tela.")
+        setLoading(false)
+      }
+    }, 3000)
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        setUser(session.user)
+        // Só busca o perfil se o usuário mudou
+        if (session.user.id !== user?.id) {
+            await fetchUserProfile(session.user.id)
+        }
+      } else {
+        setUser(null)
+        setProfile(null)
+      }
       setLoading(false)
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const sessionUser = session?.user ?? null
-        if (sessionUser?.id !== user?.id) {
-           setUser(sessionUser)
-           if (sessionUser) {
-             setLoading(true)
-             await fetchUserProfile(sessionUser.id, sessionUser.email)
-             setLoading(false)
-           } else {
-             setProfile(null)
-             setLoading(false)
-           }
-        }
-      }
-    )
-    return () => listener.subscription.unsubscribe()
-  }, []) 
+    return () => {
+      mounted = false
+      clearTimeout(safetyTimer)
+      listener.subscription.unsubscribe()
+    }
+  }, []) // Removido dependencia 'user' para evitar loop infinito
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { error, data } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
-      toast.success('Login realizado com sucesso')
+      if (data.user) await fetchUserProfile(data.user.id)
     } catch (error: any) {
-      if (error.message.includes('Invalid login credentials')) {
-        toast.error('Credenciais inválidas.')
-      } else {
-        toast.error('Erro ao conectar.')
-      }
+      console.error(error)
+      toast.error('Erro ao entrar: ' + error.message)
       throw error
     }
   }
@@ -135,16 +146,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
-    toast.success('Sessão encerrada.')
+    window.location.href = '/'
   }
 
   const refreshProfile = async () => {
-    if (user) await fetchUserProfile(user.id, user.email)
+    if (user) await fetchUserProfile(user.id)
   }
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, signIn, signOut, refreshProfile }}>
-      {children}
+      {loading ? (
+        <div className="flex h-screen w-screen items-center justify-center bg-white">
+          <div className="flex flex-col items-center gap-4">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+            <p className="text-gray-500">Carregando sistema...</p>
+            <button 
+              onClick={() => setLoading(false)} 
+              className="mt-4 text-xs text-red-500 underline hover:text-red-700"
+            >
+              Travou? Clique aqui para destravar.
+            </button>
+          </div>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   )
 }

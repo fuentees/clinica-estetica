@@ -4,50 +4,64 @@ import { v4 as uuidv4 } from 'uuid'
 const prisma = new PrismaClient()
 
 async function main() {
-  // DADOS REAIS DO SEU SUPABASE
+  // ==========================================
+  // 1. CONFIGURAÇÕES DE IDENTIDADE (FIXO SUPABASE)
+  // ==========================================
   const SUPABASE_USER_ID = 'dc9ad8d8-b940-4865-9fff-d921d7ab7d05'
-  const USER_EMAIL = 'fuentes_tti@hotmail.com' // Email do login
+  const USER_EMAIL = 'fuentes_tti@hotmail.com'
 
-  console.log('🌱 Iniciando seed SINCRONIZADO...')
-  console.log(`🎯 Alvo: ${USER_EMAIL} (UID: ${SUPABASE_USER_ID})`)
+  console.log('🌱 Iniciando Seed Estrutural Premium...')
 
-  // 1. LIMPEZA DE CONFLITOS (Remove perfis antigos com emails/IDs conflitantes)
-  // Remove qualquer perfil com esse email que tenha ID errado
-  await prisma.serviceProfessional.deleteMany({ where: { profile: { email: USER_EMAIL, id: { not: SUPABASE_USER_ID } } } })
-  await prisma.profile.deleteMany({ 
-    where: { 
-        email: USER_EMAIL, 
-        id: { not: SUPABASE_USER_ID } 
-    } 
-  })
-  
-  // 2. CRIAR CLÍNICA
+  // ==========================================
+  // 2. LIMPEZA DE SEGURANÇA (Previne erros de duplicidade)
+  // ==========================================
+  // Remove vínculos de profissionais antes de recriar
+  await prisma.serviceProfessional.deleteMany({})
+  // Remove configurações antigas para garantir as novas
+  await prisma.systemSetting.deleteMany({})
+
+  // ==========================================
+  // 3. CRIAR CLÍNICA (Identidade Visual Integrada)
+  // ==========================================
   const clinic = await prisma.clinic.upsert({
     where: { slug: 'vf-estetica' },
-    update: {},
+    update: {
+      primaryColor: '#B43250', // Rosa/Vinho para o PDF
+    },
     create: {
       id: uuidv4(),
       name: 'VF Estética Avançada',
       slug: 'vf-estetica',
+      primaryColor: '#B43250',
+      isActive: true,
     },
   })
   console.log(`🏥 Clínica: ${clinic.name}`)
 
-  // 3. CRIAR ROLES (Cargos)
+  // ==========================================
+  // 4. ESTRUTURA DE CARGOS (Roles)
+  // ==========================================
   const roleAdmin = await prisma.role.upsert({
     where: { name: 'ADMIN' },
     update: {},
-    create: { name: 'ADMIN', description: 'Acesso total ao sistema' }
+    create: { 
+      name: 'ADMIN', 
+      description: 'Acesso total, Auditoria e Inteligência Clínica' 
+    }
   })
 
-  // 4. CRIAR PERMISSÕES
+  // ==========================================
+  // 5. MATRIZ DE PERMISSÕES (Segurança & IA)
+  // ==========================================
   const permissionsData = [
     { resource: 'calendar', action: 'read' },
     { resource: 'calendar', action: 'write' },
     { resource: 'patient', action: 'read' },
     { resource: 'patient', action: 'write' },
+    { resource: 'clinical_ia', action: 'read' },     // ✅ Essencial para o motor de IA
+    { resource: 'legal_terms', action: 'write' },    // ✅ Essencial para Assinatura Digital
     { resource: 'financial', action: 'read' },
-    { resource: 'settings', action: 'read' },
+    { resource: 'inventory', action: 'write' },
     { resource: 'settings', action: 'write' },
   ]
 
@@ -59,77 +73,88 @@ async function main() {
     })
 
     await prisma.rolePermission.upsert({
-      where: { roleId_permissionId: { roleId: roleAdmin.id, permissionId: perm.id } },
+      where: { 
+        roleId_permissionId: { roleId: roleAdmin.id, permissionId: perm.id } 
+      },
       update: {},
       create: { roleId: roleAdmin.id, permissionId: perm.id }
     })
   }
 
-  // 5. CRIAR/ATUALIZAR SEU PERFIL COM O ID DO SUPABASE
+  // ==========================================
+  // 6. SINCRONIZAR PERFIL DO USUÁRIO (Admin)
+  // ==========================================
   const user = await prisma.profile.upsert({
-    where: { id: SUPABASE_USER_ID }, // A busca é feita pelo ID Exato
+    where: { id: SUPABASE_USER_ID },
     update: {
-        roleId: roleAdmin.id,
-        clinicId: clinic.id,
-        email: USER_EMAIL, // Garante que o email no banco bate com o login
-        isActive: true
+      email: USER_EMAIL,
+      roleId: roleAdmin.id,
+      clinicId: clinic.id,
+      isActive: true
     },
     create: {
-      id: SUPABASE_USER_ID, // Insere o ID exato do Supabase
+      id: SUPABASE_USER_ID,
       email: USER_EMAIL,
       fullName: 'Victor Fuentes',
+      firstName: 'Victor',
+      lastName: 'Fuentes',
       roleId: roleAdmin.id,
       clinicId: clinic.id,
       isActive: true,
       avatarUrl: 'https://github.com/shadcn.png',
     },
   })
-  console.log(`👤 Usuário SINCRONIZADO: ${user.fullName}`)
+  console.log(`👤 Perfil Sincronizado: ${user.fullName}`)
 
-  // 6. CRIAR SERVIÇOS
-  const serviceBotox = await prisma.service.create({
-    data: {
+  // ==========================================
+  // 7. CATÁLOGO DE SERVIÇOS TÉCNICOS
+  // ==========================================
+  const services = [
+    { name: 'Toxina Botulínica (Botox)', cat: 'INJETAVEL', price: 1200, dur: 30 },
+    { name: 'Bioestimulador Sculptra', cat: 'INJETAVEL', price: 2400, dur: 45 },
+    { name: 'Peeling Químico Renovador', cat: 'ESTETICA', price: 350, dur: 60 },
+  ]
+
+  for (const s of services) {
+    const service = await prisma.service.create({
+      data: {
         clinicId: clinic.id,
-        name: 'Aplicação de Toxina Botulínica',
-        category: 'INJETAVEL',
-        price: 1200.00,
-        duration: 30,
+        name: s.name,
+        category: s.cat,
+        price: s.price,
+        duration: s.dur,
         isActive: true
-    }
-  })
+      }
+    })
 
-  // 7. VINCULAR VOCÊ AO SERVIÇO (Agenda funcionar)
-  // Primeiro limpa vínculos antigos desse serviço/perfil para evitar duplicidade
-  await prisma.serviceProfessional.deleteMany({
-      where: { profileId: user.id }
-  })
-  
-  await prisma.serviceProfessional.create({
-    data: {
-        serviceId: serviceBotox.id,
-        profileId: user.id, // ID correto
-        commissionRate: 10.0
-    }
-  })
-  console.log(`🔗 Vínculo criado: Agenda habilitada para ${serviceBotox.name}`)
+    // Vincula o profissional ao serviço para habilitar a agenda
+    await prisma.serviceProfessional.create({
+      data: {
+        serviceId: service.id,
+        profileId: user.id,
+        commissionRate: 15.0
+      }
+    })
+  }
 
-  // 8. SETTINGS DO SISTEMA
+  // ==========================================
+  // 8. CONFIGURAÇÕES GLOBAIS DO SAAS (Novos Módulos)
+  // ==========================================
   await prisma.systemSetting.createMany({
-    skipDuplicates: true,
     data: [
-        { clinicId: clinic.id, key: 'theme', value: 'light', category: 'appearance', dataType: 'string' },
-        { clinicId: clinic.id, key: 'calendar_start', value: '08:00', category: 'calendar', dataType: 'time' },
-        { clinicId: clinic.id, key: 'calendar_end', value: '18:00', category: 'calendar', dataType: 'time' },
+      { clinicId: clinic.id, key: 'ai_engine', value: 'enabled', category: 'ai', dataType: 'string' },
+      { clinicId: clinic.id, key: 'digital_signature', value: 'required', category: 'legal', dataType: 'string' },
+      { clinicId: clinic.id, key: 'whatsapp_reminders', value: 'active', category: 'notifications', dataType: 'string' },
+      { clinicId: clinic.id, key: 'calendar_start', value: '08:00', category: 'calendar', dataType: 'time' },
+      { clinicId: clinic.id, key: 'calendar_end', value: '20:00', category: 'calendar', dataType: 'time' },
     ]
   })
-  
-  console.log('🚀 SEED FINALIZADO! Pode logar agora.')
+
+  console.log('🚀 SEED COMPLETO: Sistema pronto para operação clínica de alto nível.')
 }
 
 main()
-  .then(async () => {
-    await prisma.$disconnect()
-  })
+  .then(async () => { await prisma.$disconnect() })
   .catch(async (e) => {
     console.error(e)
     await prisma.$disconnect()

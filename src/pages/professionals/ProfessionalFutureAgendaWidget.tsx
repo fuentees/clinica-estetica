@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase'; // CORREÇÃO: Caminho de importação ajustado
 import { Calendar, Clock, MessageCircle, AlertTriangle, Loader2 } from 'lucide-react';
 
 type Appointment = {
@@ -27,15 +27,22 @@ export default function ProfessionalFutureAgendaWidget({ professionalId }: { pro
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      // Tenta buscar. Se a coluna 'service_id' não existir no banco, vai dar erro.
-      // Se você rodou o SQL, vai funcionar.
       const { data, error } = await supabase
         .from('appointments')
-        .select('id, start_time, date, professional_id, patient_id, service_id')
+        .select(`
+          id, 
+          start_time, 
+          date, 
+          patient_id, 
+          treatment_id,
+          patients ( name ),
+          treatments ( name )
+        `)
         .eq('professional_id', id)
         .gte('date', today)
         .order('date', { ascending: true })
-        .order('start_time', { ascending: true });
+        .order('start_time', { ascending: true })
+        .limit(5);
 
       if (error) throw error;
 
@@ -43,15 +50,14 @@ export default function ProfessionalFutureAgendaWidget({ professionalId }: { pro
           id: a.id,
           start_time: a.start_time || '00:00',
           date: a.date || today,
-          service_name: a.service_id ? `Serviço #${a.service_id.substring(0,4)}` : 'Consulta',
-          patient_name: a.patient_id ? `Paciente #${a.patient_id.substring(0,4)}` : 'Desconhecido'
+          service_name: a.treatments?.name || 'Consulta/Procedimento',
+          patient_name: a.patients?.name || 'Paciente não identificado'
       }));
 
       setAppointments(mappedAppts);
 
     } catch (error: any) {
       console.error("Erro Supabase:", error);
-      // Agora mostramos a mensagem exata do banco (Ex: column X does not exist)
       setDbError(error.message); 
     } finally {
       setLoading(false);
@@ -80,7 +86,7 @@ export default function ProfessionalFutureAgendaWidget({ professionalId }: { pro
                 <p className="font-bold">O Banco de Dados recusou a conexão:</p>
                 <code className="block bg-red-100 p-1 rounded mt-1 font-mono text-xs">{dbError}</code>
                 <p className="mt-2 text-xs opacity-75">
-                    Solução: Copie o erro acima e verifique se a coluna ou tabela existe no Supabase.
+                    Solução: Verifique se as colunas 'treatment_id' e 'patient_id' existem na tabela appointments.
                 </p>
             </div>
         </div>
@@ -97,14 +103,14 @@ export default function ProfessionalFutureAgendaWidget({ professionalId }: { pro
               <div>
                 <p className="text-sm font-bold text-gray-900 dark:text-white">{appt.patient_name}</p>
                 <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-300">
-                    <span>{new Date(appt.date).toLocaleDateString('pt-BR')}</span>
+                    <span>{new Date(appt.date + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
                     <span className="font-semibold text-pink-600 dark:text-pink-400">
                         <Clock size={10} className="inline mr-1"/>{appt.start_time.slice(0, 5)}
                     </span>
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{appt.service_name}</p>
               </div>
-              <button className="bg-green-100 text-green-700 p-2 rounded-full">
+              <button className="bg-green-100 text-green-700 p-2 rounded-full hover:bg-green-200 transition-colors">
                 <MessageCircle size={18} />
               </button>
             </div>

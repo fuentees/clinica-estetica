@@ -15,7 +15,7 @@ import {
   Phone,
   Filter,
   Award,
-  FileBadge, // Ícone novo para o registro
+  FileBadge,
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -53,7 +53,7 @@ const isActive = (p: Professional) => p.is_active !== false;
 
 // --- COMPONENTE PRINCIPAL ---
 
-export default function ProfessionalsListPage() { // Adicionei 'default' aqui para facilitar importação
+export default function ProfessionalsListPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -115,7 +115,7 @@ export default function ProfessionalsListPage() { // Adicionei 'default' aqui pa
         " " +
         (p.formacao || "") + 
         " " +
-        (p.registration_number || ""); // Inclui registro na busca
+        (p.registration_number || "");
       const matchesSearch = texto
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
@@ -366,12 +366,11 @@ export default function ProfessionalsListPage() { // Adicionei 'default' aqui pa
           {filtered.map((prof) => {
             const roleInfo = getRoleInfo(prof.role);
 
-            // Dados de detalhes (Adicionei o Registro aqui)
             const details = [
               { show: !!prof.phone, icon: Phone, label: prof.phone },
               { show: !!prof.email, icon: Mail, label: prof.email },
               { show: !!prof.formacao, icon: Award, label: prof.formacao },
-              { show: !!prof.registration_number, icon: FileBadge, label: prof.registration_number }, // <--- NOVO
+              { show: !!prof.registration_number, icon: FileBadge, label: prof.registration_number },
               {
                 show:
                   prof.commission_rate !== null &&

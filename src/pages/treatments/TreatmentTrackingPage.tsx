@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Camera, Upload, FileText, Calendar, AlertCircle } from 'lucide-react';
+import { Camera, FileText, Calendar, AlertCircle, Loader2, Image as ImageIcon } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { usePatientTreatments } from '../../hooks/usePatientTreatments';
 import { format } from 'date-fns';
@@ -18,7 +18,8 @@ export function TreatmentTrackingPage() {
   const handlePhotoUpload = async (treatmentId: string, file: File) => {
     try {
       setUploading(true);
-      const fileName = `${treatmentId}/${Date.now()}-${file.name}`;
+      const timestamp = Date.now();
+      const fileName = `${treatmentId}/${timestamp}-${file.name}`;
       
       const { error: uploadError } = await supabase.storage
         .from('treatment-photos')
@@ -26,132 +27,162 @@ export function TreatmentTrackingPage() {
 
       if (uploadError) throw uploadError;
 
+      // Busca as fotos atuais para atualizar o array
+      const currentTreatment = treatments?.find(t => t.id === treatmentId);
+      const currentPhotos = Array.isArray(currentTreatment?.photos) ? currentTreatment.photos : [];
+
       const { error: updateError } = await supabase
         .from('patient_treatments')
-        .update({
-          photos: supabase.sql`array_append(photos, ${fileName})`
-        })
+        .update({ photos: [...currentPhotos, fileName] })
         .eq('id', treatmentId);
 
       if (updateError) throw updateError;
 
-      toast.success('Foto adicionada com sucesso!');
+      toast.success('Registro visual adicionado!');
       refetch();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading photo:', error);
-      toast.error('Erro ao fazer upload da foto');
+      toast.error('Erro no upload: ' + error.message);
     } finally {
       setUploading(false);
     }
   };
 
-  if (isLoading) {
-    return <div>Carregando...</div>;
-  }
+  if (isLoading) return (
+    <div className="h-screen flex flex-col items-center justify-center gap-4">
+      <Loader2 className="animate-spin text-pink-600 w-12 h-12" />
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Sincronizando Histórico Clínico...</p>
+    </div>
+  );
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-6">Acompanhamento de Tratamentos</h1>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-10 animate-in fade-in duration-700">
+      <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
+        <div>
+          <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic">Monitoramento de <span className="text-pink-600">Tratamentos</span></h1>
+          <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Evolução clínica e registros fotográficos do paciente</p>
+        </div>
+      </div>
 
-      <div className="space-y-6">
-        {treatments?.map((treatment) => (
-          <div key={treatment.id} className="bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h2 className="text-xl font-semibold">{treatment.treatments.name}</h2>
-                <p className="text-gray-600">{treatment.treatments.description}</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedTreatment(treatment.id);
-                    setShowProgressForm(true);
-                  }}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Registrar Evolução
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => document.getElementById(`photo-${treatment.id}`)?.click()}
-                  disabled={uploading}
-                >
-                  <Camera className="w-4 h-4 mr-2" />
-                  {uploading ? 'Enviando...' : 'Adicionar Foto'}
-                </Button>
-                <input
-                  type="file"
-                  id={`photo-${treatment.id}`}
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      handlePhotoUpload(treatment.id, file);
-                    }
-                  }}
-                />
-              </div>
-            </div>
+      <div className="space-y-8">
+        {treatments?.map((treatment) => {
+          // Garante que appointments e photos sejam tratados como arrays para evitar erros de renderização
+          const appointmentsList = Array.isArray(treatment.appointments) 
+            ? treatment.appointments 
+            : treatment.appointments ? [treatment.appointments] : [];
+          
+          const photosList = Array.isArray(treatment.photos) ? treatment.photos : [];
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="font-medium mb-2 flex items-center">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Histórico de Sessões
-                </h3>
-                <div className="space-y-2">
-                  {treatment.appointments?.map((appointment, index) => (
-                    <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                      <span>{format(new Date(appointment.start_time), 'dd/MM/yyyy HH:mm')}</span>
-                      <span className={`px-2 py-1 rounded text-sm
-                        ${appointment.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          appointment.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                          'bg-gray-100 text-gray-800'}`}>
-                        {appointment.status}
-                      </span>
-                    </div>
-                  ))}
+          return (
+            <div key={treatment.id} className="bg-white dark:bg-gray-800 rounded-[3rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden group">
+              
+              <div className="p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-gray-50 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/50">
+                <div>
+                  <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">{treatment.treatments.name}</h2>
+                  <p className="text-sm text-gray-500 font-medium italic mt-1">{treatment.treatments.description}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest border-gray-200"
+                    onClick={() => {
+                      setSelectedTreatment(treatment.id);
+                      setShowProgressForm(true);
+                    }}
+                  >
+                    <FileText className="w-4 h-4 mr-2 text-pink-500" /> Registrar Evolução
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest bg-gray-900 text-white border-0 hover:bg-black"
+                    onClick={() => document.getElementById(`photo-${treatment.id}`)?.click()}
+                    disabled={uploading}
+                  >
+                    {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Camera className="w-4 h-4 mr-2 text-pink-400" />}
+                    {uploading ? 'Enviando...' : 'Adicionar Foto'}
+                  </Button>
+                  <input
+                    type="file"
+                    id={`photo-${treatment.id}`}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handlePhotoUpload(treatment.id, file);
+                    }}
+                  />
                 </div>
               </div>
 
-              <div>
-                <h3 className="font-medium mb-2 flex items-center">
-                  <AlertCircle className="w-4 h-4 mr-2" />
-                  Observações e Recomendações
-                </h3>
-                <div className="bg-yellow-50 p-4 rounded">
-                  <p className="text-sm text-yellow-800">{treatment.notes || 'Nenhuma observação registrada'}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <h3 className="font-medium mb-2">Fotos do Progresso</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {treatment.photos?.map((photo, index) => (
-                  <div key={index} className="relative group">
-                    <img
-                      src={`${supabase.storage.from('treatment-photos').getPublicUrl(photo).data.publicUrl}`}
-                      alt={`Progresso ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg"
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-opacity rounded-lg">
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                        <span className="text-white text-sm">
-                          {format(new Date(photo.split('/')[1].split('-')[0]), 'dd/MM/yyyy')}
-                        </span>
-                      </div>
+              <div className="p-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div className="space-y-4">
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-blue-500" /> Histórico de Sessões
+                    </h3>
+                    <div className="space-y-3">
+                      {appointmentsList.length > 0 ? appointmentsList.map((appointment: any, index: number) => (
+                        <div key={index} className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 group/item hover:border-pink-200 transition-all">
+                          <span className="font-bold text-sm italic">{format(new Date(appointment.start_time), 'dd/MM/yyyy HH:mm')}</span>
+                          <span className={`px-4 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border-2
+                            ${appointment.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                              appointment.status === 'scheduled' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                              'bg-gray-100 text-gray-800'}`}>
+                            {appointment.status === 'completed' ? 'Realizada' : appointment.status}
+                          </span>
+                        </div>
+                      )) : (
+                          <p className="text-xs text-gray-400 font-medium italic p-4">Nenhuma sessão vinculada a este tratamento.</p>
+                      )}
                     </div>
                   </div>
-                ))}
+
+                  <div className="space-y-4">
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-500" /> Planejamento & Notas
+                    </h3>
+                    <div className="bg-amber-50 dark:bg-amber-900/10 p-6 rounded-[2rem] border-2 border-dashed border-amber-100 dark:border-amber-900/30">
+                      <p className="text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed italic">
+                          "{treatment.notes || 'Nenhuma recomendação específica registrada para este protocolo.'}"
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-12 space-y-6">
+                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-purple-500" /> Galeria de Evolução Facial/Corporal
+                  </h3>
+                  {photosList.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                          {photosList.map((photo: string, index: number) => (
+                          <div key={index} className="relative group aspect-square rounded-[1.5rem] overflow-hidden border-2 border-gray-100 dark:border-gray-700 hover:border-pink-500 transition-all shadow-sm">
+                              <img
+                              src={`${supabase.storage.from('treatment-photos').getPublicUrl(photo).data.publicUrl}`}
+                              alt={`Evolução ${index + 1}`}
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                                  <span className="text-white text-[10px] font-black uppercase tracking-widest">
+                                      {photo.includes('-') ? format(new Date(parseInt(photo.split('/')[1].split('-')[0])), 'dd MMM yyyy') : 'Registro'}
+                                  </span>
+                              </div>
+                          </div>
+                          ))}
+                      </div>
+                  ) : (
+                      <div className="py-12 text-center border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-[2rem]">
+                          <Camera className="mx-auto text-gray-200 mb-3" size={32} />
+                          <p className="text-xs font-black text-gray-300 uppercase tracking-widest">Nenhuma foto anexada</p>
+                      </div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {showProgressForm && selectedTreatment && (
@@ -161,9 +192,7 @@ export function TreatmentTrackingPage() {
             setShowProgressForm(false);
             setSelectedTreatment(null);
           }}
-          onSuccess={() => {
-            refetch();
-          }}
+          onSuccess={() => refetch()}
         />
       )}
     </div>

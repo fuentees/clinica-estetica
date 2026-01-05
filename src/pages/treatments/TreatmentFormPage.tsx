@@ -7,9 +7,9 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-hot-toast';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft, Sparkles, Clock, DollarSign, FileText } from 'lucide-react';
 
-// Schema de Validação
+// --- SCHEMA DE VALIDAÇÃO ---
 const treatmentSchema = z.object({
   name: z.string().min(3, "O nome deve ter pelo menos 3 letras"),
   description: z.string().optional(),
@@ -34,7 +34,7 @@ export function TreatmentFormPage() {
   const onSubmit = async (data: TreatmentFormData) => {
     setIsSubmitting(true);
     try {
-      // Converte minutos para formato que o banco entende (interval)
+      // Converte minutos para formato interval do Postgres (ex: "45 minutes")
       const durationInterval = `${data.duration_minutes} minutes`;
 
       const { error } = await supabase
@@ -48,78 +48,107 @@ export function TreatmentFormPage() {
 
       if (error) throw error;
 
-      toast.success('Serviço cadastrado com sucesso!');
+      toast.success('Procedimento catalogado com sucesso!');
       navigate('/treatments');
 
     } catch (error: any) {
-      console.error('Erro ao salvar:', error);
-      toast.error('Erro ao salvar: ' + (error.message || 'Erro desconhecido'));
+      console.error('Erro ao salvar serviço:', error);
+      toast.error('Erro ao salvar: ' + (error.message || 'Falha na conexão com o banco'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
-        <Button variant="ghost" onClick={() => navigate('/treatments')}>
-          <ArrowLeft size={20} />
+    <div className="p-8 max-w-2xl mx-auto animate-in fade-in duration-700">
+      {/* HEADER */}
+      <div className="flex items-center gap-4 mb-8">
+        <Button 
+          variant="ghost" 
+          onClick={() => navigate('/treatments')}
+          className="h-12 w-12 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 p-0 hover:bg-gray-50"
+        >
+          <ArrowLeft size={22} className="text-gray-600 dark:text-gray-300" />
         </Button>
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Novo Serviço</h1>
+        <div>
+          <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic flex items-center gap-3">
+            Novo <span className="text-pink-600">Serviço</span>
+            <Sparkles size={20} className="text-pink-400 animate-pulse" />
+          </h1>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Configuração de Protocolo e Precificação</p>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-600 to-purple-600"></div>
         
-        {/* Nome */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome do Procedimento</label>
+        {/* Nome do Procedimento */}
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+            <Sparkles size={14} className="text-pink-500" /> Nome do Procedimento
+          </label>
           <Input 
             {...register('name')} 
-            placeholder="Ex: Limpeza de Pele Profunda" 
-            error={errors.name?.message}
+            className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold"
+            placeholder="Ex: Botox Full Face ou Limpeza Profunda" 
           />
+          {errors.name && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.name.message}</p>}
         </div>
 
         {/* Descrição */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descrição (Opcional)</label>
+        <div className="space-y-2">
+          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+            <FileText size={14} /> Detalhamento do Serviço (Opcional)
+          </label>
           <textarea 
             {...register('description')}
-            className="w-full rounded-md border border-gray-300 p-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            rows={3}
-            placeholder="Detalhes sobre o procedimento..."
+            className="w-full rounded-2xl border-0 bg-gray-50 dark:bg-gray-900 p-4 text-sm font-medium focus:ring-2 focus:ring-pink-500 outline-none min-h-[100px] resize-none shadow-inner"
+            placeholder="Descreva o que está incluso, técnica utilizada ou benefícios..."
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Preço */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Preço (R$)</label>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+              <DollarSign size={14} className="text-emerald-500" /> Valor de Venda (R$)
+            </label>
             <Input 
               type="number" 
               step="0.01"
               {...register('price')} 
-              error={errors.price?.message}
+              className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-emerald-600"
             />
+            {errors.price && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.price.message}</p>}
           </div>
 
           {/* Duração */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Duração (Minutos)</label>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+              <Clock size={14} className="text-blue-500" /> Tempo em Cabine (Min)
+            </label>
             <Input 
               type="number" 
               {...register('duration_minutes')} 
-              error={errors.duration_minutes?.message}
+              className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-blue-600"
             />
-            <p className="text-xs text-gray-500 mt-1">Ex: 60 para 1 hora</p>
+            {errors.duration_minutes && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.duration_minutes.message}</p>}
           </div>
         </div>
 
-        {/* Botões */}
-        <div className="flex justify-end pt-4">
-          <Button type="submit" disabled={isSubmitting} className="bg-pink-600 hover:bg-pink-700 text-white w-full md:w-auto">
-            {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : null}
-            Salvar Serviço
+        {/* Botão de Ação */}
+        <div className="pt-6 border-t border-gray-50 dark:border-gray-700">
+          <Button 
+            type="submit" 
+            disabled={isSubmitting} 
+            className="h-14 bg-gray-900 hover:bg-black text-white w-full rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
+          >
+            {isSubmitting ? (
+              <Loader2 className="animate-spin text-pink-500" size={20} />
+            ) : (
+              <Sparkles size={18} className="text-pink-500" />
+            )}
+            {isSubmitting ? 'Registrando...' : 'Concluir Cadastro'}
           </Button>
         </div>
 

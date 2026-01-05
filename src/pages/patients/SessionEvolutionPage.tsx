@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { Loader2, ArrowLeft, Save, Activity, Scale, FileText, UploadCloud } from 'lucide-react';
+import { Loader2, ArrowLeft, Save, Activity, Scale, FileText, UploadCloud, Camera } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -29,27 +29,31 @@ export function SessionEvolutionPage() {
     const [bioData, setBioData] = useState({
         peso: '',
         altura: '',
-        imc: '', // Calculado
+        imc: '', 
         gordura: '',
         massa_magra: '',
         agua: '',
         tmb: '',
         musculo_esqueletico: '',
         retencao: '',
-        rcq: '', // Razão Cintura/Quadril
+        rcq: '', 
         idade_metabolica: '',
-        arquivo: '' // URL do upload
+        arquivo: '' 
     });
 
     useEffect(() => {
         if (patientId) loadData();
     }, [patientId]);
 
-    // Cálculo Automático de IMC na Bioimpedância
+    // Cálculo Automático de IMC
     useEffect(() => {
         if (bioData.peso && bioData.altura) {
-            const imc = Number(bioData.peso) / (Number(bioData.altura) * Number(bioData.altura));
-            if (!isNaN(imc) && isFinite(imc)) {
+            const p = parseFloat(String(bioData.peso).replace(',', '.'));
+            const a = parseFloat(String(bioData.altura).replace(',', '.'));
+            
+            if (p > 0 && a > 0) {
+                const heightInMeters = a > 3 ? a / 100 : a;
+                const imc = p / (heightInMeters * heightInMeters);
                 setBioData(prev => ({ ...prev, imc: imc.toFixed(2) }));
             }
         }
@@ -60,12 +64,11 @@ export function SessionEvolutionPage() {
             setLoading(true);
             const { data: pat } = await supabase
                 .from('patients')
-                .select(`id, altura, peso, profiles (first_name, last_name)`)
+                .select(`id, altura, peso, name, profiles:profile_id (first_name, last_name)`)
                 .eq('id', patientId)
                 .single();
             setPatient(pat);
             
-            // Pré-preenche peso/altura se já tiver no cadastro
             if (pat) {
                 setBioData(prev => ({
                     ...prev,
@@ -77,7 +80,7 @@ export function SessionEvolutionPage() {
             const { data: treats } = await supabase.from('treatments').select('*').order('name');
             setTreatmentsList(treats || []);
         } catch (error) {
-            toast.error("Erro ao carregar dados.");
+            toast.error("Erro ao carregar dados do paciente.");
         } finally {
             setLoading(false);
         }
@@ -89,20 +92,20 @@ export function SessionEvolutionPage() {
         const treatment = treatmentsList.find(t => t.id === id);
         if (treatment && treatment.name.toLowerCase().includes('bioimped')) {
             setIsBio(true);
-            toast('Modo Bioimpedância Ativado', { icon: '⚖️' });
+            toast('Interface de Bioimpedância Ativada', { icon: '⚖️' });
         } else {
             setIsBio(false);
         }
     };
 
     const handleSaveEvolution = async () => {
-        if (!selectedTreatmentId) return toast.error("Selecione o procedimento.");
+        if (!selectedTreatmentId) return toast.error("Selecione o procedimento realizado.");
 
         setIsSubmitting(true);
         try {
             const treatmentName = treatmentsList.find(t => t.id === selectedTreatmentId)?.name;
 
-            // 1. Salva no Histórico Geral
+            // 1. Registro no Prontuário Geral
             const { error: sessionError } = await supabase
                 .from('patient_treatments')
                 .insert({
@@ -110,11 +113,12 @@ export function SessionEvolutionPage() {
                     treatment_id: selectedTreatmentId,
                     notes: `Sessão ${sessionNumber} - ${treatmentName}: ${notes}`,
                     photos: photos,
+                    signature_url: signatureDataURL || null
                 });
 
             if (sessionError) throw sessionError;
 
-            // 2. Salva na Tabela de Bioimpedância
+            // 2. Registro de Bioimpedância se aplicável
             if (isBio) {
                 const { error: bioError } = await supabase
                     .from('patient_bioimpedance')
@@ -125,7 +129,7 @@ export function SessionEvolutionPage() {
                         altura: Number(bioData.altura),
                         imc: Number(bioData.imc),
                         gordura_percentual: Number(bioData.gordura),
-                        massa_magra_percentual: Number(bioData.massa_magra), // Salvando como % ou kg, dependendo da sua regra
+                        massa_magra_kg: Number(bioData.massa_magra),
                         agua_percentual: Number(bioData.agua),
                         massa_muscular_esqueletica_kg: Number(bioData.musculo_esqueletico),
                         nivel_retencao_hidrica: bioData.retencao,
@@ -136,108 +140,100 @@ export function SessionEvolutionPage() {
                         observacoes: notes
                     });
                 
-                // Atualiza o peso/altura no cadastro principal também
-                await supabase.from('patients').update({ peso: Number(bioData.peso), altura: Number(bioData.altura) }).eq('id', patientId);
+                // Sincroniza dados corporais no cadastro principal
+                await supabase.from('patients').update({ 
+                    peso: Number(bioData.peso), 
+                    altura: Number(bioData.altura) 
+                }).eq('id', patientId);
 
                 if (bioError) throw bioError;
             }
             
-            toast.success("Salvo com sucesso!");
-            if (isBio) navigate(`/patients/${patientId}/bioimpedance`);
-            else navigate(`/patients/${patientId}/history`);
+            toast.success("Evolução registrada com sucesso!");
+            navigate(isBio ? `/patients/${patientId}/bioimpedance` : `/patients/${patientId}/history`);
             
         } catch (error) {
-            toast.error("Erro ao salvar.");
+            toast.error("Falha ao salvar registro clínico.");
             console.error(error);
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    if (loading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pink-600" /></div>;
+    if (loading) return (
+        <div className="h-screen flex flex-col items-center justify-center gap-4">
+            <Loader2 className="animate-spin text-pink-600" size={40} />
+            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">Sincronizando Prontuário...</p>
+        </div>
+    );
 
     return (
-        <div className="p-6 max-w-5xl mx-auto space-y-8 pb-20">
-            <div className="flex items-center gap-4 mb-6 border-b pb-4">
-                <Button variant="ghost" onClick={() => navigate(`/patients/${patientId}/history`)}>
-                    <ArrowLeft size={20} />
-                </Button>
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Registrar Procedimento</h1>
-                    <p className="text-sm text-gray-500">{patient?.profiles?.first_name} {patient?.profiles?.last_name}</p>
+        <div className="max-w-6xl mx-auto p-6 space-y-8 animate-in fade-in duration-700">
+            {/* HEADER */}
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-6">
+                <div className="flex items-center gap-6">
+                    <Button variant="ghost" onClick={() => navigate(-1)} className="rounded-2xl h-12 w-12 p-0 bg-gray-50 hover:bg-gray-100">
+                        <ArrowLeft size={24} />
+                    </Button>
+                    <div>
+                        <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic">Evolução de Sessão</h1>
+                        <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Paciente: {patient?.name || '---'}</p>
+                    </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-                        <h2 className="font-semibold text-lg mb-4 dark:text-white flex items-center gap-2">
-                            <Activity size={20} className="text-pink-600" /> Dados da Sessão
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* COLUNA ESQUERDA: FORMULÁRIO */}
+                <div className="lg:col-span-2 space-y-8">
+                    <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
+                        <h2 className="text-sm font-black text-gray-900 dark:text-white mb-8 flex items-center gap-3 uppercase tracking-[0.2em]">
+                            <Activity size={20} className="text-pink-600" /> Parâmetros Técnicos
                         </h2>
                         
-                        <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-gray-300">Procedimento</label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Procedimento</label>
                                 <select 
-                                    className="w-full p-2 border rounded-md dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                                    className="w-full h-12 px-4 bg-gray-50 dark:bg-gray-900 border-0 rounded-xl font-bold focus:ring-2 focus:ring-pink-500 outline-none"
                                     value={selectedTreatmentId}
                                     onChange={handleTreatmentChange}
                                 >
-                                    <option value="">Selecione...</option>
+                                    <option value="">Selecione o protocolo...</option>
                                     {treatmentsList.map(t => (
                                         <option key={t.id} value={t.id}>{t.name}</option>
                                     ))}
                                 </select>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1 dark:text-gray-300">Sessão Nº</label>
-                                <Input type="number" value={sessionNumber} onChange={e => setSessionNumber(Number(e.target.value))} />
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Sessão do Plano</label>
+                                <Input type="number" value={sessionNumber} onChange={e => setSessionNumber(Number(e.target.value))} className="h-12 font-bold" />
                             </div>
                         </div>
                         
-                        {/* --- BLOCO DE BIOIMPEDÂNCIA --- */}
                         {isBio && (
-                            <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-xl border border-blue-100 dark:border-blue-800 mb-6 animate-in fade-in slide-in-from-top-2">
-                                <h3 className="text-md font-bold text-blue-800 dark:text-blue-300 mb-4 flex items-center gap-2">
-                                    <Scale size={18} /> Parâmetros da Balança
+                            <div className="bg-blue-50/50 dark:bg-blue-900/10 p-8 rounded-[2rem] border-2 border-blue-100 dark:border-blue-900/30 mb-8 animate-in zoom-in-95">
+                                <h3 className="text-xs font-black text-blue-700 dark:text-blue-400 mb-6 flex items-center gap-2 uppercase tracking-widest">
+                                    <Scale size={18} /> Balança e Composição
                                 </h3>
                                 
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Peso (kg)</label>
-                                        <Input type="number" step="0.1" value={bioData.peso} onChange={e => setBioData({...bioData, peso: e.target.value})} />
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+                                    <InputItem label="Peso (kg)" value={bioData.peso} onChange={v => setBioData({...bioData, peso: v})} />
+                                    <InputItem label="Altura (m)" value={bioData.altura} onChange={v => setBioData({...bioData, altura: v})} />
+                                    <div className="space-y-2">
+                                        <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest">IMC</label>
+                                        <Input readOnly value={bioData.imc} className="h-11 bg-blue-100 dark:bg-blue-900/50 font-black italic border-0" />
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Altura (m)</label>
-                                        <Input type="number" step="0.01" value={bioData.altura} onChange={e => setBioData({...bioData, altura: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">IMC</label>
-                                        <Input readOnly value={bioData.imc} className="bg-blue-100 dark:bg-blue-900 font-bold" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Gordura %</label>
-                                        <Input type="number" step="0.1" value={bioData.gordura} onChange={e => setBioData({...bioData, gordura: e.target.value})} />
-                                    </div>
+                                    <InputItem label="Gordura %" value={bioData.gordura} onChange={v => setBioData({...bioData, gordura: v})} />
                                 </div>
 
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Massa Magra (kg)</label>
-                                        <Input type="number" step="0.1" value={bioData.massa_magra} onChange={e => setBioData({...bioData, massa_magra: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Músculo Esq. (kg)</label>
-                                        <Input type="number" step="0.1" value={bioData.musculo_esqueletico} onChange={e => setBioData({...bioData, musculo_esqueletico: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Água %</label>
-                                        <Input type="number" step="0.1" value={bioData.agua} onChange={e => setBioData({...bioData, agua: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Retenção</label>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
+                                    <InputItem label="Massa Magra (kg)" value={bioData.massa_magra} onChange={v => setBioData({...bioData, massa_magra: v})} />
+                                    <InputItem label="Músculo Esq. (kg)" value={bioData.musculo_esqueletico} onChange={v => setBioData({...bioData, musculo_esqueletico: v})} />
+                                    <InputItem label="Água %" value={bioData.agua} onChange={v => setBioData({...bioData, agua: v})} />
+                                    <div className="space-y-2">
+                                        <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Retenção</label>
                                         <select 
-                                            className="w-full p-2 border rounded-md text-sm h-10 dark:bg-gray-900 dark:border-gray-600"
+                                            className="w-full h-11 px-3 bg-white dark:bg-gray-800 border-0 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500"
                                             value={bioData.retencao}
                                             onChange={e => setBioData({...bioData, retencao: e.target.value})}
                                         >
@@ -249,73 +245,84 @@ export function SessionEvolutionPage() {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">TMB (Kcal)</label>
-                                        <Input type="number" value={bioData.tmb} onChange={e => setBioData({...bioData, tmb: e.target.value})} />
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    <InputItem label="TMB (Kcal)" value={bioData.tmb} onChange={v => setBioData({...bioData, tmb: v})} />
+                                    <InputItem label="Idade Metab." value={bioData.idade_metabolica} onChange={v => setBioData({...bioData, idade_metabolica: v})} />
+                                    <div className="col-span-2 space-y-2">
+                                        <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Relatório Balança</label>
+                                        <ImageUpload label="Upload do Ticket" folder={`bioimpedancia/${patientId}`} onUpload={url => setBioData({...bioData, arquivo: url})} />
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Idade Metab.</label>
-                                        <Input type="number" value={bioData.idade_metabolica} onChange={e => setBioData({...bioData, idade_metabolica: e.target.value})} />
-                                    </div>
-                                    <div className="col-span-2">
-                                        <label className="text-xs font-bold text-gray-500 uppercase">RCQ (Cintura/Quadril)</label>
-                                        <Input type="number" step="0.01" value={bioData.rcq} onChange={e => setBioData({...bioData, rcq: e.target.value})} placeholder="Ex: 0.85" />
-                                    </div>
-                                </div>
-
-                                <div className="mt-6 border-t border-blue-200 pt-4">
-                                    <label className="text-xs font-bold text-blue-700 uppercase mb-2 block flex items-center gap-2">
-                                        <UploadCloud size={14} /> Upload Folha da Balança
-                                    </label>
-                                    <ImageUpload 
-                                        label="Foto do Relatório" 
-                                        folder={`bioimpedancia/${patientId}`} 
-                                        onUpload={(url) => setBioData({...bioData, arquivo: url})} 
-                                    />
                                 </div>
                             </div>
                         )}
 
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium dark:text-gray-300">
-                                {isBio ? "Observações / Interpretação" : "Anotações do Procedimento"}
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                                {isBio ? "Observações da Análise" : "Anotações Clínicas"}
                             </label>
                             <textarea 
                                 value={notes}
                                 onChange={e => setNotes(e.target.value)}
-                                className="w-full p-4 border rounded-lg h-32 resize-none focus:ring-2 focus:ring-pink-500 focus:border-transparent dark:bg-gray-900 dark:border-gray-600 dark:text-white"
-                                placeholder="Detalhes adicionais..."
+                                className="w-full p-6 bg-gray-50 dark:bg-gray-900 border-0 rounded-[2rem] h-40 font-medium text-sm focus:ring-2 focus:ring-pink-500 outline-none resize-none shadow-inner"
+                                placeholder="Descreva os detalhes desta sessão..."
                             />
                         </div>
                     </div>
                     
                     {!isBio && (
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-                            <SignaturePad onEnd={setSignatureDataURL} isLoading={isSubmitting} />
+                        <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-sm">
+                            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                                <FileText size={14} className="text-pink-600" /> Assinatura do Paciente
+                            </h3>
+                            <div className="p-2 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-3xl">
+                                <SignaturePad onEnd={setSignatureDataURL} isLoading={isSubmitting} />
+                            </div>
                         </div>
                     )}
                 </div>
 
+                {/* COLUNA DIREITA: IMAGENS */}
                 <div className="lg:col-span-1">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 sticky top-6">
-                        <h2 className="font-semibold text-lg mb-4 dark:text-white flex items-center gap-2">
-                            📸 Fotos da Sessão
+                    <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 sticky top-24">
+                        <h2 className="text-sm font-black text-gray-900 dark:text-white mb-8 flex items-center gap-3 uppercase tracking-widest">
+                            <Camera size={20} className="text-pink-600" /> Registro Visual
                         </h2>
-                        <div className="space-y-6">
-                            <ImageUpload label="Antes" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, before: url}))} />
-                            <ImageUpload label="Depois" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, after: url}))} />
+                        <div className="space-y-8">
+                            <ImageUpload label="Antes (Frontal/Lateral)" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, before: url}))} />
+                            <div className="h-px bg-gray-50 dark:bg-gray-700 w-full" />
+                            <ImageUpload label="Depois (Imediato)" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, after: url}))} />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="flex justify-end pt-6 border-t dark:border-gray-700">
-                <Button onClick={handleSaveEvolution} disabled={isSubmitting} className="bg-green-600 hover:bg-green-700 text-white px-8 py-6 text-lg shadow-lg">
-                    {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : <Save size={20} className="mr-2" />}
-                    {isBio ? "Salvar Bioimpedância" : "Finalizar Sessão"}
+            <div className="flex justify-end pt-8 border-t border-gray-100 dark:border-gray-800">
+                <Button 
+                    onClick={handleSaveEvolution} 
+                    disabled={isSubmitting} 
+                    className="h-16 px-12 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase text-sm tracking-[0.2em] shadow-2xl transition-all hover:scale-[1.02] active:scale-95"
+                >
+                    {isSubmitting ? <Loader2 className="animate-spin mr-3" /> : <Save size={20} className="mr-3 text-pink-500" />}
+                    {isBio ? "Finalizar Bioimpedância" : "Concluir Atendimento"}
                 </Button>
             </div>
+        </div>
+    );
+}
+
+// Sub-componente de Input Auxiliar
+function InputItem({ label, value, onChange }: { label: string, value: string, onChange: (v: string) => void }) {
+    return (
+        <div className="space-y-2">
+            <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest ml-1">{label}</label>
+            <Input 
+                type="number" 
+                step="0.1" 
+                value={value} 
+                onChange={e => onChange(e.target.value)} 
+                className="h-11 font-bold italic border-0 bg-white dark:bg-gray-800" 
+                placeholder="0.0"
+            />
         </div>
     );
 }

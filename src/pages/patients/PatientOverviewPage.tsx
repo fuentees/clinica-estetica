@@ -12,7 +12,9 @@ import {
   Pencil,
   Ban,
   DollarSign,
-  User
+  User,
+  ShieldCheck,
+  Plus
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { PatientPackagesWidget } from "../../components/patients/PatientPackagesWidget";
@@ -35,8 +37,8 @@ interface Appointment {
     first_name: string;
     last_name: string;
     role: string;
-    formacao?: string; // Adicionado especialidade
-    avatar_url?: string; // Adicionado foto
+    formacao?: string; 
+    avatar_url?: string; 
   } | null;
 }
 
@@ -57,12 +59,11 @@ export default function PatientOverviewPage() {
     totalSessions: 0
   });
 
-  // --- CARREGAR DADOS ---
+  // --- CARREGAR DADOS INTEGRAL ---
   async function loadOverview() {
     if (!patient?.id) return;
     try {
-      // 1. Busca TUDO (Passado e Futuro)
-      // Adicionei formacao e avatar_url na query
+      // 1. Query Relacional (Appointments + Profiles)
       const { data: appts, error } = await supabase
         .from("appointments")
         .select(`
@@ -70,7 +71,7 @@ export default function PatientOverviewPage() {
           professional:profiles(first_name, last_name, role, formacao, avatar_url)
         `)
         .eq("patient_id", patient.id)
-        .order("start_time", { ascending: false }); // Do mais novo para o mais velho
+        .order("start_time", { ascending: false });
 
       if (error) throw error;
 
@@ -82,12 +83,12 @@ export default function PatientOverviewPage() {
         professional: Array.isArray(item.professional) ? item.professional[0] : item.professional
       }));
 
-      // 2. Busca Bioimpedância
+      // 2. Busca Bioimpedância (Último Registro)
       const { data: bio } = await supabase
-        .from("bioimpedance")
+        .from("bioimpedance_records") // Ajustado para bater com seu componente de bio
         .select("*")
         .eq("patient_id", patient.id)
-        .order("created_at", { ascending: false })
+        .order("date", { ascending: false })
         .limit(1);
 
       const completedCount = appointments.filter(a => a.status === 'concluido').length;
@@ -106,185 +107,166 @@ export default function PatientOverviewPage() {
   useEffect(() => {
     setLoading(true);
     loadOverview().then(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patient?.id]);
 
   const handleCancelAppointment = async (apptId: string) => {
-      if (!window.confirm("Cancelar este agendamento?")) return;
+      if (!window.confirm("Deseja realmente cancelar este agendamento?")) return;
       await supabase.from('appointments').update({ status: 'cancelado' }).eq('id', apptId);
-      toast.success("Cancelado!");
+      toast.success("Agendamento cancelado.");
       loadOverview();
   };
 
   const formatDateCard = (dateString: string) => {
-    const date = new Date(dateString); // O navegador converte UTC -> Local aqui
+    const date = new Date(dateString);
     return {
       day: format(date, 'dd'),
       month: format(date, 'MMM', { locale: ptBR }).toUpperCase(),
       weekday: format(date, 'EEEE', { locale: ptBR }),
-      time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) // Sem timeZone: UTC para usar o local
+      time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     };
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'concluido': return 'text-green-700 bg-green-50 border-green-200';
-      case 'cancelado': return 'text-red-700 bg-red-50 border-red-200';
-      case 'falta': return 'text-orange-700 bg-orange-50 border-orange-200';
-      default: return 'text-pink-700 bg-pink-50 border-pink-200';
+      case 'concluido': return 'text-emerald-700 bg-emerald-50 border-emerald-100';
+      case 'cancelado': return 'text-rose-700 bg-rose-50 border-rose-100';
+      case 'falta': return 'text-amber-700 bg-amber-50 border-amber-100';
+      default: return 'text-pink-700 bg-pink-50 border-pink-100';
     }
   };
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-600 w-8 h-8"/></div>;
+  if (loading) return (
+    <div className="h-96 flex flex-col items-center justify-center gap-4">
+      <Loader2 className="animate-spin text-pink-600" size={40} />
+      <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Compilando Resumo Clínico...</p>
+    </div>
+  );
   
   const bio = data.lastBio?.[0];
   const now = new Date();
 
-  // --- FILTROS DE TEMPO CORRIGIDOS ---
-  // Agenda: Apenas datas MAIORES ou IGUAIS a agora (ordenado do mais próximo para o mais longe)
+  // Agenda Futura
   const nextAppointments = data.appointments
     .filter((a) => new Date(a.start_time) >= now && a.status !== 'cancelado')
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
-  // Histórico: Apenas datas MENORES que agora (ordenado do mais recente para o mais antigo)
+  // Histórico Passado
   const pastAppointments = data.appointments
     .filter((a) => new Date(a.start_time) < now);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-500">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-700">
       
-      {/* COLUNA PRINCIPAL */}
+      {/* COLUNA PRINCIPAL (LIVRO DE VISITAS E MÉTRICAS) */}
       <div className="lg:col-span-2 space-y-8">
           
-          {/* 1. SEÇÃO DE BOAS-VINDAS / RESUMO */}
+          {/* 1. KPIs DE PERFORMANCE CORPORAL */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Card Resumo Sessões */}
-            <div className="relative overflow-hidden p-6 rounded-3xl border border-pink-100 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
-                <div className="absolute -right-6 -top-6 w-24 h-24 bg-pink-500/10 rounded-full blur-2xl"></div>
-                <div className="relative z-10">
-                    <div className="flex justify-between mb-4">
-                        <div className="p-3 bg-pink-50 dark:bg-pink-900/20 rounded-2xl text-pink-600">
-                            <Activity size={20}/>
-                        </div>
-                        <span className="text-xs font-bold uppercase text-gray-400">Total</span>
+            <div className="relative overflow-hidden p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 group">
+                <div className="absolute -right-4 -top-4 p-8 opacity-5 group-hover:scale-110 transition-transform italic font-black text-8xl text-pink-500">#</div>
+                <div className="flex justify-between items-start mb-6">
+                    <div className="p-4 bg-pink-50 dark:bg-pink-900/20 rounded-2xl text-pink-600">
+                        <Activity size={24}/>
                     </div>
-                    <h3 className="text-4xl font-black text-gray-900 dark:text-white mb-1">
-                        {data.totalSessions}
-                    </h3>
-                    <p className="text-sm text-gray-500">Sessões realizadas</p>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Frequência</span>
                 </div>
+                <h3 className="text-5xl font-black text-gray-900 dark:text-white italic tracking-tighter mb-1">
+                    {data.totalSessions}
+                </h3>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sessões Concluídas</p>
             </div>
 
-            {/* Card Bioimpedância */}
-            <div className="relative overflow-hidden p-6 rounded-3xl border border-blue-100 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
-                <div className="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl"></div>
-                <div className="relative z-10">
-                    <div className="flex justify-between mb-4">
-                        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-2xl text-blue-600">
-                            <Scale size={20}/>
-                        </div>
-                        <span className="text-xs font-bold uppercase text-gray-400">Peso Atual</span>
+            <div className="relative overflow-hidden p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 group">
+                <div className="absolute -right-4 -top-4 p-8 opacity-5 group-hover:scale-110 transition-transform italic font-black text-8xl text-blue-500">kg</div>
+                <div className="flex justify-between items-start mb-6">
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl text-blue-600">
+                        <Scale size={24}/>
                     </div>
-                    {bio ? (
-                        <>
-                            <h3 className="text-4xl font-black text-gray-900 dark:text-white">
-                                {bio.peso} <span className="text-lg text-gray-400 font-medium">kg</span>
-                            </h3>
-                            <p className="text-xs text-gray-400 mt-1">
-                                em {new Date(bio.created_at).toLocaleDateString('pt-BR')}
-                            </p>
-                        </>
-                    ) : (
-                        <p className="text-gray-400 py-2 text-sm">Sem dados recentes</p>
-                    )}
-                    
-                    <button onClick={() => navigate("../bioimpedance")} className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors">
-                        Ver Evolução <ArrowRight size={12}/>
-                    </button>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Métrica Corporal</span>
                 </div>
+                {bio ? (
+                    <>
+                        <h3 className="text-5xl font-black text-gray-900 dark:text-white italic tracking-tighter">
+                            {bio.weight} <span className="text-xl text-gray-300">kg</span>
+                        </h3>
+                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-2 flex items-center gap-1">
+                           <ShieldCheck size={12}/> Última pesagem: {new Date(bio.date).toLocaleDateString('pt-BR')}
+                        </p>
+                    </>
+                ) : (
+                    <p className="text-gray-300 py-4 font-bold uppercase text-xs italic tracking-widest">Nenhuma bioimpedância registrada</p>
+                )}
+                <button onClick={() => navigate("../bioimpedance")} className="mt-6 flex items-center gap-2 text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] hover:gap-4 transition-all">
+                    Acessar Evolução <ArrowRight size={14}/>
+                </button>
             </div>
           </div>
 
-          {/* 2. AGENDA FUTURA (PRÓXIMOS) */}
-          <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                    <Calendar className="text-pink-500" size={20} /> Próximos Agendamentos
+          {/* 2. PRÓXIMOS PASSOS (AGENDA) */}
+          <div className="space-y-6">
+              <div className="flex items-center justify-between px-2">
+                  <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-[0.3em] flex items-center gap-3">
+                    <Calendar className="text-pink-600" size={18} /> Próximos Agendamentos
                   </h3>
-                  <Button size="sm" onClick={() => navigate('/appointments/new')} className="bg-pink-600 hover:bg-pink-700 text-white rounded-xl text-xs h-8">
-                    + Agendar
+                  <Button size="sm" onClick={() => navigate('/appointments/new')} className="h-9 px-4 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
+                    <Plus size={14} className="mr-1"/> Reservar Horário
                   </Button>
               </div>
 
               {nextAppointments.length === 0 ? (
-                  <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl border border-gray-100 dark:border-gray-700 text-center">
-                    <Calendar size={40} className="text-gray-200 mx-auto mb-3" />
-                    <p className="text-gray-500 text-sm">Nenhum agendamento futuro.</p>
+                  <div className="bg-gray-50/50 dark:bg-gray-900/50 p-12 rounded-[2.5rem] border-2 border-dashed border-gray-100 dark:border-gray-800 text-center">
+                    <Calendar size={40} className="text-gray-200 mx-auto mb-4" />
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Não há sessões futuras reservadas.</p>
                   </div>
               ) : (
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-4">
                       {nextAppointments.map((apt) => {
                           const { day, month, weekday, time } = formatDateCard(apt.start_time);
-                          const profName = apt.professional 
-                            ? `${apt.professional.first_name} ${apt.professional.last_name}` 
-                            : "Profissional";
-                          const profSpecialty = apt.professional?.formacao || "Especialista";
-                          const profAvatar = apt.professional?.avatar_url;
-
+                          const profName = apt.professional ? `${apt.professional.first_name} ${apt.professional.last_name}` : "Especialista";
+                          
                           return (
-                              <div key={apt.id} className="group bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-pink-200 transition-all flex items-center gap-4">
+                              <div key={apt.id} className="group bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-xl hover:border-pink-100 transition-all flex items-center gap-6">
                                   
-                                  {/* Data Box */}
-                                  <div className="flex-shrink-0 flex flex-col items-center justify-center bg-pink-50 dark:bg-gray-700 w-16 h-16 rounded-2xl border border-pink-100 dark:border-gray-600">
-                                      <span className="text-[10px] font-bold text-pink-400 uppercase">{month}</span>
-                                      <span className="text-2xl font-black text-pink-600 dark:text-pink-300 leading-none">{day}</span>
+                                  {/* Calendar Widget */}
+                                  <div className="flex-shrink-0 flex flex-col items-center justify-center bg-gray-900 w-20 h-20 rounded-3xl shadow-lg group-hover:rotate-3 transition-transform">
+                                      <span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">{month}</span>
+                                      <span className="text-3xl font-black text-white italic tracking-tighter leading-none">{day}</span>
                                   </div>
 
-                                  {/* Info Principal */}
                                   <div className="flex-1 min-w-0">
-                                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
-                                          <span className="text-base font-bold text-gray-900 dark:text-white capitalize">
+                                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
+                                          <span className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">
                                               {weekday}, {time}
                                           </span>
-                                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase w-fit border ${getStatusColor(apt.status)}`}>
+                                          <span className={`text-[9px] px-3 py-1 rounded-lg font-black uppercase tracking-widest border-2 w-fit ${getStatusColor(apt.status)}`}>
                                               {apt.status}
                                           </span>
                                       </div>
                                       
-                                      {/* Detalhes do Profissional (Melhorado) */}
-                                      <div className="flex items-center gap-3 mt-2 bg-gray-50 dark:bg-gray-900/50 p-2 rounded-xl w-fit pr-4">
-                                          <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden flex-shrink-0 border border-white shadow-sm">
-                                              {profAvatar ? (
-                                                  <img src={profAvatar} alt={profName} className="w-full h-full object-cover"/>
+                                      {/* Professional Context */}
+                                      <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900/50 p-2.5 rounded-2xl w-fit pr-6 border border-gray-100 dark:border-gray-800">
+                                          <div className="w-10 h-10 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0 border-2 border-white">
+                                              {apt.professional?.avatar_url ? (
+                                                  <img src={apt.professional.avatar_url} alt={profName} className="w-full h-full object-cover"/>
                                               ) : (
-                                                  <div className="w-full h-full flex items-center justify-center bg-pink-100 text-pink-600 font-bold text-xs">
+                                                  <div className="w-full h-full flex items-center justify-center bg-pink-100 text-pink-600 font-black text-xs uppercase italic">
                                                       {profName[0]}
                                                   </div>
                                               )}
                                           </div>
-                                          <div className="flex flex-col">
-                                              <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{profName}</span>
-                                              <span className="text-[10px] text-gray-400">{profSpecialty}</span>
+                                          <div>
+                                              <p className="text-[10px] font-black text-gray-900 dark:text-white uppercase">{profName}</p>
+                                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{apt.professional?.formacao || "Aesthetics Expert"}</p>
                                           </div>
                                       </div>
                                   </div>
 
-                                  {/* Ações */}
-                                  <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button 
-                                        onClick={() => navigate(`/appointments/${apt.id}/edit`)}
-                                        className="p-2 rounded-lg bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                                        title="Editar"
-                                      >
-                                          <Pencil size={16} />
+                                  <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                                      <button onClick={() => navigate(`/appointments/${apt.id}/edit`)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shadow-inner" title="Editar Registro">
+                                          <Pencil size={18} />
                                       </button>
-                                      <button 
-                                        onClick={() => handleCancelAppointment(apt.id)}
-                                        className="p-2 rounded-lg bg-gray-50 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                                        title="Cancelar"
-                                      >
-                                          <Ban size={16} />
+                                      <button onClick={() => handleCancelAppointment(apt.id)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shadow-inner" title="Cancelar Sessão">
+                                          <Ban size={18} />
                                       </button>
                                   </div>
                               </div>
@@ -294,65 +276,87 @@ export default function PatientOverviewPage() {
               )}
           </div>
 
-          {/* 3. HISTÓRICO RECENTE (Passado) */}
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800">
-                  <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider flex gap-2 items-center">
-                      <History size={16}/> Histórico (Passado)
+          {/* 3. HISTÓRICO COMPACTO */}
+          <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+              <div className="px-8 py-6 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                  <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] flex gap-3 items-center">
+                      <History size={18} className="text-gray-400"/> Memória Clínica
                   </h3>
+                  <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest italic">{pastAppointments.length} Visitas</span>
               </div>
               
-              <div className="max-h-[300px] overflow-y-auto p-2">
+              <div className="p-4 space-y-2">
                   {pastAppointments.length === 0 ? (
-                      <p className="text-center text-gray-400 py-8 text-sm">Nenhum histórico disponível.</p>
+                      <p className="text-center text-gray-300 py-10 font-bold uppercase text-[10px] tracking-widest italic">Nenhum histórico arquivado.</p>
                   ) : (
-                      <div className="space-y-1">
-                          {pastAppointments.map((apt) => {
-                              const date = new Date(apt.start_time);
-                              const dateStr = date.toLocaleDateString('pt-BR');
-                              const profName = apt.professional ? apt.professional.first_name : "Profissional";
-                              
-                              return (
-                                  <div key={apt.id} className="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl transition-colors text-sm">
-                                      <div className="flex items-center gap-3">
-                                          <div className={`w-2 h-2 rounded-full ${apt.status === 'concluido' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                                          <div>
-                                              <p className="font-bold text-gray-800 dark:text-gray-200">{dateStr}</p>
-                                              <p className="text-xs text-gray-400 flex items-center gap-1">
-                                                  <User size={10}/> {profName}
-                                              </p>
-                                          </div>
-                                      </div>
-                                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-lg border ${getStatusColor(apt.status)}`}>
-                                          {apt.status}
-                                      </span>
+                      pastAppointments.map((apt) => (
+                          <div key={apt.id} className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-2xl transition-all group">
+                              <div className="flex items-center gap-4">
+                                  <div className={`w-2 h-2 rounded-full ${apt.status === 'concluido' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-300'}`}></div>
+                                  <div>
+                                      <p className="font-black text-gray-900 dark:text-gray-200 italic tracking-tighter uppercase text-sm">
+                                          {new Date(apt.start_time).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                                      </p>
+                                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Especialista: {apt.professional?.first_name || "Clínica"}</p>
                                   </div>
-                              );
-                          })}
-                      </div>
+                              </div>
+                              <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full border-2 ${getStatusColor(apt.status)}`}>
+                                  {apt.status}
+                              </span>
+                          </div>
+                      ))
                   )}
               </div>
           </div>
       </div>
 
-      {/* COLUNA LATERAL */}
-      <div className="lg:col-span-1 space-y-6">
+      {/* COLUNA LATERAL (WIDGETS DE CONTROLE) */}
+      <div className="lg:col-span-1 space-y-8">
           <PatientPackagesWidget patientId={patient.id} />
           
-          {/* Card Financeiro */}
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-              <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                 <DollarSign size={16} /> Financeiro
-              </h3>
-              <div className="flex items-center justify-between">
-                 <span className="text-gray-500">Em aberto</span>
-                 <span className="font-bold text-rose-600">R$ 0,00</span>
+          {/* STATUS FINANCEIRO */}
+          <div className="bg-gray-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-120 transition-transform duration-1000">
+                <DollarSign size={140} />
               </div>
-              <button className="w-full mt-4 py-2 text-xs font-bold text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 transition-colors">
-                 Ver Extrato
-              </button>
-           </div>
+              <h3 className="text-[10px] font-black text-pink-500 uppercase tracking-[0.3em] mb-8 flex items-center gap-3 italic">
+                 Conta Corrente
+              </h3>
+              <div className="space-y-6 relative z-10">
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">Aberto</span>
+                   <span className="text-2xl font-black italic tracking-tighter">R$ 0,00</span>
+                </div>
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                   <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">LTV</span>
+                   <span className="text-2xl font-black italic tracking-tighter text-emerald-400">R$ 12.450</span>
+                </div>
+                <button 
+                  onClick={() => navigate("../financial")}
+                  className="w-full mt-4 h-12 bg-white text-gray-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-pink-500 hover:text-white transition-all shadow-xl shadow-black/40"
+                >
+                  Gestão de Ativos
+                </button>
+              </div>
+          </div>
+
+          {/* AUDITORIA IA SHORTCUT */}
+          <div className="bg-gradient-to-br from-indigo-600 to-purple-800 rounded-[3rem] p-10 text-white shadow-xl">
+             <div className="flex items-center gap-3 mb-6">
+                <ShieldCheck className="text-indigo-200" size={24}/>
+                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] italic">IA Safety Auditor</h3>
+             </div>
+             <p className="text-xs font-medium text-indigo-100 leading-relaxed mb-8 italic">
+               Analise os riscos procedimentais deste paciente cruzando dados de anamnese e medicamentos em uso.
+             </p>
+             <button 
+              onClick={() => navigate("../ai-analysis")}
+              className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:gap-4 transition-all"
+             >
+               Iniciar Auditoria <ArrowRight size={14}/>
+             </button>
+          </div>
       </div>
     </div>
   );
-}
+} 

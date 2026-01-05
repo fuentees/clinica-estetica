@@ -1,31 +1,38 @@
-// Tipos de entrada (Baseados na Anamnese)
+/**
+ * TIPAGENS DE ENTRADA (Anamnese)
+ */
+export type Fototipo = 'I' | 'II' | 'III' | 'IV' | 'V' | 'VI';
+export type Biotipo = 'Seca' | 'Oleosa' | 'Mista' | 'Normal';
+export type Flacidez = 'Leve' | 'Moderada' | 'Grave';
+export type Sexo = 'Feminino' | 'Masculino';
+
 export interface PatientAnamnesis {
   age: number;
-  sex: string;
-  complaints: string[]; // Queixas
-  chronicConditions: string[]; // Doenças
+  sex: Sexo;
+  complaints: string[]; // Ex: ["Rugas", "Manchas", "Flacidez"]
+  chronicConditions: string[];
   medications: string[]; 
   lifestyle: {
     pregnant: boolean;
     lactating: boolean;
     keloidHistory: boolean;
-    isotretinoin: boolean; // Roacutan
+    isotretinoin: boolean; // Uso de Roacutan
     smoker: boolean;
-    sunExposure: string;
+    sunExposure: 'Baixa' | 'Moderada' | 'Alta';
   };
   skin: {
-    fototipo: string; // I-VI
-    glogau: string; // I-IV
-    biotipo: string; // Seca, Oleosa, Mista
-    flacidez: string; // Leve/Mod/Grave
+    fototipo: Fototipo;
+    biotipo: Biotipo;
+    flacidez: Flacidez;
     acne: boolean;
     melasma: boolean;
   };
 }
 
-// JSON de Retorno Expandido
+/**
+ * ESTRUTURA DE RETORNO (Resultado da IA)
+ */
 export interface AIPlanResult {
-  // Injetáveis (O que já tínhamos)
   botox: Record<string, number>;
   preenchimento: Record<string, string>;
   bioestimuladores: {
@@ -33,120 +40,138 @@ export interface AIPlanResult {
     sessoes: number;
     intervalo: string;
   };
-  
-  // NOVO: Gerenciamento de Pele
   pele: {
-    limpeza: string; // Frequência sugerida
-    peeling: string; // Tipo de ácido sugerido
-    microagulhamento: string; // Indicação
+    limpeza: string;
+    peeling: string;
+    microagulhamento: string;
+    mesoterapia: string;
   };
-
-  // NOVO: Tecnologias
   tecnologias: {
     laser: string;
     radiofrequencia: string;
     outros: string;
   };
-
   alertas: string[];
   contraindicacoes: string[];
   justificativa: string;
 }
 
+/**
+ * MOTOR DE INTELIGÊNCIA CLÍNICA
+ */
 export function generateInjectablePlan(patient: PatientAnamnesis): AIPlanResult {
   const result: AIPlanResult = {
     botox: {},
     preenchimento: {},
     bioestimuladores: { produto: "A avaliar", sessoes: 0, intervalo: "-" },
-    pele: { limpeza: "Mensal", peeling: "Não indicado", microagulhamento: "Não" },
+    pele: { limpeza: "Mensal", peeling: "Não indicado", microagulhamento: "Não", mesoterapia: "Não indicada" },
     tecnologias: { laser: "Não", radiofrequencia: "Não", outros: "-" },
     alertas: [],
     contraindicacoes: [],
-    justificativa: "Protocolo global gerado com base na avaliação clínica."
+    justificativa: "Protocolo global gerado com base na análise clínica multivariada."
   };
 
-  // --- 1. SEGURANÇA (CRÍTICA) ---
-  if (patient.lifestyle.pregnant) {
-    result.contraindicacoes.push("Gestante: Apenas limpeza de pele básica e hidratação permitidas.");
-    result.justificativa = "Protocolo restrito devido à gestação.";
+  // Helper interno para busca de queixas (case-insensitive)
+  const hasComplaint = (term: string) => 
+    patient.complaints.some(c => c.toLowerCase().includes(term.toLowerCase()));
+
+  // --- 1. SEGURANÇA E CONTRAINDICAÇÕES (CRÍTICO) ---
+  if (patient.lifestyle.pregnant || patient.lifestyle.lactating) {
+    result.contraindicacoes.push("GESTANTE/LACTANTE: Contraindicação absoluta para injetáveis e tecnologias ablativas.");
+    result.pele.limpeza = "Limpeza de pele suave/orgânica sem ácidos";
+    result.justificativa = "Protocolo limitado exclusivamente a suporte de barreira cutânea devido ao período gestacional.";
     return result; 
   }
+
   if (patient.lifestyle.isotretinoin) {
-    result.alertas.push("Uso de Roacutan: Pele extremamente sensível. Proibido laser ablativo e peelings médios/profundos.");
-  }
-  if (patient.skin.melasma && patient.lifestyle.sunExposure.includes('Alta')) {
-    result.alertas.push("Melasma + Sol: Risco altíssimo de efeito rebote. Focar em gerenciamento térmico.");
+    result.alertas.push("Uso de Isotretinoína (Roacutan): Risco de má cicatrização. Evitar peelings e lasers.");
+    result.pele.peeling = "Contraindicado";
+    result.pele.microagulhamento = "Contraindicado";
   }
 
-  // --- 2. GERENCIAMENTO DE PELE (NOVO) ---
+  // --- 2. HARMONIZAÇÃO (BOTOX E PREENCHIMENTO) ---
+  const multiplier = patient.sex === 'Masculino' ? 1.5 : 1; // Ajuste de dose para força muscular masculina
   
-  // Limpeza de Pele
-  if (patient.skin.biotipo.includes('Oleosa') || patient.skin.acne) {
-      result.pele.limpeza = "A cada 21 dias (Controle de oleosidade)";
-      result.pele.peeling = "Ácido Salicílico ou Mandélico (Superficial)";
-  } else if (patient.skin.biotipo.includes('Seca')) {
-      result.pele.limpeza = "A cada 45 dias (Foco em Hidratação)";
-  }
-
-  // Microagulhamento / Cicatrizes
-  if (patient.complaints.some(c => c.includes('Cicatrizes') || c.includes('Poros'))) {
-      if (!patient.lifestyle.keloidHistory && !patient.lifestyle.isotretinoin) {
-          result.pele.microagulhamento = "Indicado (Drug Delivery com Fatores de Crescimento)";
-      } else {
-          result.pele.microagulhamento = "Contraindicado (Histórico de Queloide ou Roacutan)";
-      }
-  }
-
-  // --- 3. TECNOLOGIAS (NOVO) ---
-  
-  // Manchas / Melasma
-  if (patient.skin.melasma || patient.complaints.some(c => c.includes('Manchas'))) {
-      result.tecnologias.laser = "Luz Pulsada (IPL) ou Laser Q-Switched (Baixa energia)";
-      result.tecnologias.outros = "LEDterapia Ambar/Vermelho";
-  }
-
-  // Flacidez (Tecnologias)
-  if (patient.complaints.some(c => c.includes('Flacidez'))) {
-      result.tecnologias.radiofrequencia = "Indicada (Ex: Multipolar) - Estimulo de colágeno sem agulhas";
-      if (patient.age > 45) {
-          result.tecnologias.outros += " / Considerar Ultraformer (HIFU)";
-      }
-  }
-
-  // --- 4. INJETÁVEIS (LÓGICA ANTERIOR MANTIDA) ---
-  
-  const multiplier = patient.sex === 'Masculino' ? 1.5 : 1;
-  
-  // Toxina
-  if (patient.age > 25 || patient.complaints.some(c => c.includes('Rugas'))) {
+  // Toxina Botulínica
+  if (patient.age > 25 || hasComplaint('Ruga') || hasComplaint('Linha')) {
     result.botox = {
       "Glabela": Math.ceil((patient.age > 45 ? 25 : 20) * multiplier),
-      "Testa": Math.ceil((patient.age > 55 ? 10 : 12) * multiplier),
-      "Olhos": Math.ceil(12 * multiplier),
+      "Frontal": Math.ceil((patient.age > 50 ? 12 : 10) * multiplier),
+      "Orbicular": Math.ceil(12 * multiplier),
     };
   }
 
-  // Preenchimento
-  if (patient.age > 35 || patient.complaints.some(c => c.includes('Olheiras') || c.includes('Bigode'))) {
-    if (patient.age > 40) {
-        result.preenchimento["Malar"] = "1.0ml/lado (Sustentação)";
-        result.preenchimento["Mento"] = "1.0ml";
+  // Ácido Hialurônico (Preenchimento)
+  if (patient.age > 35 || hasComplaint('Olheira') || hasComplaint('Bigode Chinês') || hasComplaint('Volume')) {
+    if (patient.age > 40 || patient.skin.flacidez !== 'Leve') {
+      result.preenchimento["Malar/Zigomático"] = "1.0ml a 2.0ml (Sustentação de terço médio)";
+      result.preenchimento["Mento"] = "1.0ml (Projeção e perfilometria)";
     }
-    if (patient.complaints.some(c => c.includes('Olheiras'))) {
-        result.preenchimento["Olheiras"] = "1.0ml (Redensity II)";
+    if (hasComplaint('Olheira')) {
+      result.preenchimento["Goteira Lacrimal"] = "1.0ml (Baixa higroscopicidade)";
+    }
+    if (hasComplaint('Lábio') || patient.age < 35) {
+      result.preenchimento["Lábios"] = "1.0ml (Refinamento/Hidratação)";
     }
   }
 
-  // Bioestimulador
-  const hasFlacidez = patient.complaints.some(c => c.includes("Flacidez")) || patient.age > 30;
-  if (hasFlacidez) {
+  // --- 3. BIOESTIMULADORES DE COLÁGENO ---
+  if (patient.age > 30 || patient.skin.flacidez !== 'Leve' || hasComplaint('Flacidez')) {
+    // Escolha baseada em Fototipo para evitar manchas inflamatórias
     const isDarkSkin = ['IV', 'V', 'VI'].includes(patient.skin.fototipo);
+    
     if (isDarkSkin) {
-      result.bioestimuladores = { produto: "Radiesse (Hidroxiapatita)", sessoes: 2, intervalo: "45 dias" };
-      result.justificativa += " Radiesse preferido para fototipos altos.";
+      result.bioestimuladores = { 
+        produto: "Radiesse (Hidroxiapatita de Cálcio)", 
+        sessoes: 2, 
+        intervalo: "45 a 60 dias" 
+      };
+      result.justificativa += " Radiesse selecionado por segurança em fototipos altos.";
     } else {
-      result.bioestimuladores = { produto: "Sculptra", sessoes: 3, intervalo: "30 dias" };
+      result.bioestimuladores = { 
+        produto: "Sculptra (Ácido Poli-L-Lático)", 
+        sessoes: 3, 
+        intervalo: "30 a 45 dias" 
+      };
     }
+  }
+
+  // --- 4. GERENCIAMENTO DE PELE ---
+  
+  // Limpeza e Peeling
+  if (patient.skin.biotipo === 'Oleosa' || patient.skin.acne) {
+    result.pele.limpeza = "A cada 21-28 dias (Foco em controle sebáceo)";
+    result.pele.peeling = "Peeling de Ácido Salicílico ou Retinoico";
+  } else if (patient.skin.biotipo === 'Seca') {
+    result.pele.limpeza = "A cada 45 dias (Foco em Hidratação)";
+    result.pele.mesoterapia = "Skinboosters (Ácido Hialurônico não reticulado)";
+  }
+
+  // Microagulhamento
+  if (hasComplaint('Cicatriz') || hasComplaint('Poro')) {
+    if (!patient.lifestyle.keloidHistory && !patient.lifestyle.isotretinoin) {
+      result.pele.microagulhamento = "Indicado (Drug Delivery com Vitamina C/Fatores de Crescimento)";
+    } else {
+      result.pele.microagulhamento = "Risco de Queloide/Cicatriz detectado: Não realizar.";
+    }
+  }
+
+  // --- 5. TECNOLOGIAS ---
+  
+  // Melasma e Manchas
+  if (patient.skin.melasma || hasComplaint('Mancha')) {
+    result.tecnologias.laser = "Laser Lavieen (Modo Thulium) ou Laser Q-Switched";
+    result.tecnologias.outros = "LEDterapia Vermelho/Âmbar (Foto-biomodulação)";
+    
+    if (patient.lifestyle.sunExposure === 'Alta') {
+      result.alertas.push("Exposição Solar Alta: Risco de rebote no Melasma. Obrigatório filtro solar com cor.");
+    }
+  }
+
+  // Flacidez Muscular/Estrutural
+  if (patient.skin.flacidez === 'Grave' || (patient.age > 45 && hasComplaint('Flacidez'))) {
+    result.tecnologias.radiofrequencia = "Radiofrequência Microagulhada ou Multipolar";
+    result.tecnologias.outros += " / Ultrassom Microfocado (HIFU) para SMAS";
   }
 
   return result;

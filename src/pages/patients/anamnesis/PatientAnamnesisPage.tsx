@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   ClipboardList, Heart, Smile, User, Loader2, Save, Sparkles, 
   CheckCircle2, Scissors, ChevronRight, Scale, Syringe, 
-  AlertTriangle, X
+  AlertTriangle, X, Printer, ShieldCheck
 } from "lucide-react";
 
 import { supabase } from "../../../lib/supabase"; 
@@ -23,15 +23,31 @@ import { TabCapilar } from "./tabs/TabCapilar";
 import { TabBioimpedancia } from "./tabs/TabBioimpedancia";
 import { TabInjetaveis } from "./tabs/TabInjetaveis";
 
-// Utils de conversão
-const strToArray = (s: any) => typeof s === 'string' ? s.split("; ").map((v:string) => v.trim()).filter(Boolean) : (Array.isArray(s) ? s : []);
-const arrayToStr = (a: any) => (Array.isArray(a) ? a.join("; ") : a);
+// Utils de higienização de dados
+const strToArray = (s: any) => {
+  if (Array.isArray(s)) return s;
+  if (typeof s === 'string') return s.split("; ").map(v => v.trim()).filter(Boolean);
+  return [];
+};
+
+const arrayToStr = (a: any) => {
+  if (Array.isArray(a)) return a.filter(Boolean).join("; ");
+  return a || "";
+};
 
 const PremiumTabButton = ({ active, onClick, icon: Icon, label }: any) => (
-    <button type="button" onClick={onClick} className={`relative flex items-center gap-2 px-6 py-3 rounded-full text-sm font-bold transition-all duration-300 whitespace-nowrap ${active ? 'bg-gray-900 text-white shadow-lg shadow-gray-200 scale-105' : 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900 border border-gray-100'}`}>
-        <Icon size={18} className={active ? "text-rose-400" : ""} />
+    <button 
+      type="button" 
+      onClick={onClick} 
+      className={`relative flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all duration-300 whitespace-nowrap ${
+        active 
+        ? 'bg-gray-900 text-white shadow-xl shadow-gray-200 dark:shadow-none scale-105 z-10' 
+        : 'bg-white dark:bg-gray-800 text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-100 dark:border-gray-700'
+      }`}
+    >
+        <Icon size={16} className={active ? "text-pink-500" : ""} />
         {label}
-        {active && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-rose-500 rounded-full"></span>}
+        {active && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-pink-500 rounded-full"></span>}
     </button>
 );
 
@@ -39,16 +55,23 @@ export default function PatientAnamnesisPage() {
   const { id } = useParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"queixa" | "saude" | "facial" | "corporal" | "bio" | "capilar" | "injectables">("queixa");
+  const [activeTab, setActiveTab] = useState<string>("queixa");
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [showAiModal, setShowAiModal] = useState(false);
 
   const methods = useForm<AnamnesisFormValues>({
     resolver: zodResolver(anamnesisSchema),
-    defaultValues: { body_mapping: [], queixa_principal: [], doencas_cronicas: [], facial_baumann: [], corporal_adipometria_dados: {}, corporal_perimetria_dados: {} }
+    defaultValues: { 
+      body_mapping: [], 
+      queixa_principal: [], 
+      doencas_cronicas: [], 
+      facial_baumann: [], 
+      corporal_adipometria_dados: {}, 
+      corporal_perimetria_dados: {} 
+    }
   });
 
-  // --- CARREGAR DADOS ---
+  // --- CARREGAR DADOS DO PACIENTE E ANAMNESE ---
   useEffect(() => {
     async function fetchAnamnesis() {
       if (!id) return;
@@ -56,9 +79,9 @@ export default function PatientAnamnesisPage() {
         const { data, error } = await supabase.from("patients").select("*").eq("id", id).single();
         if (error) throw error;
         
-        const f = { ...data };
+        const formData = { ...data };
         
-        // 1. Campos que são Arrays no Front e Strings no Banco
+        // Mapeamento de campos que o banco guarda como String e o Front usa como Array
         const arrayFields = [
             "doencas_cronicas", "alergias_medicamentosas", "queixa_principal", "procedimentos_previos", 
             "facial_lesoes", "facial_patologias", "facial_discromias", "facial_envelhecimento", 
@@ -66,36 +89,24 @@ export default function PatientAnamnesisPage() {
             "facial_telangiectasias_local", "facial_discromias_local", "facial_rugas_local", 
             "corporal_gordura_local", "corporal_celulite_local", "corporal_estrias_local", "corporal_flacidez_local", 
             "capilar_displasias_congenitas", "capilar_displasias_adquiridas", "capilar_alopecia_areata", 
-            "facial_baumann",
-            // Novos campos da Queixa e Outros
-            "locais_gordura", "locais_flacidez_corporal", "locais_flacidez_facial", "locais_celulite",
-            "locais_manchas", "locais_acne", "locais_estrias", "rotina_skincare"
+            "facial_baumann", "locais_gordura", "locais_flacidez_corporal", "locais_flacidez_facial", 
+            "locais_celulite", "locais_manchas", "locais_acne", "locais_estrias", "rotina_skincare"
         ];
-        arrayFields.forEach(k => { f[k] = strToArray(data[k]) });
 
-        // 2. Lógica Booleana e JSONs
-        f.teve_intercorrencia = data.intercorrencias_previas && data.intercorrencias_previas !== "Não" ? "true" : "false";
-        if (f.teve_intercorrencia === "true") f.intercorrencias_detalhes = data.intercorrencias_previas;
-        f.pratica_atividade = data.pratica_atividade ? "true" : "false";
-        f.ingere_agua = data.ingere_agua ? "true" : "false";
-        f.tem_telangiectasias = data.tem_telangiectasias ? "true" : "false";
-        
-        // Assegurar que campos JSON sejam objetos válidos
-        if (!f.anamnesis_body_mapping) f.anamnesis_body_mapping = [];
-        f.body_mapping = f.anamnesis_body_mapping; // Mapear para o nome usado no form
-        
-        if (!f.corporal_adipometria_dados) f.corporal_adipometria_dados = {};
-        if (!f.corporal_perimetria_dados) f.corporal_perimetria_dados = {};
+        arrayFields.forEach(field => {
+          if (data[field]) formData[field] = strToArray(data[field]);
+        });
 
-        // Definir valores no formulário
-        Object.keys(f).forEach(k => methods.setValue(k as any, f[k]));
+        // Tratamento de tipos específicos e JSON
+        formData.tem_telangiectasias = data.tem_telangiectasias ? "true" : "false";
+        formData.body_mapping = data.anamnesis_body_mapping || [];
         
-        // Forçar atualização do body_mapping especificamente
-        methods.setValue('body_mapping', f.body_mapping);
+        // Resetar o formulário com os dados higienizados
+        methods.reset(formData);
 
       } catch (e) { 
-          console.error("Erro ao carregar dados:", e); 
-          toast.error("Erro ao carregar dados."); 
+          console.error("Erro ao carregar anamnese:", e); 
+          toast.error("Não foi possível carregar os dados do paciente."); 
       } finally { 
           setLoading(false); 
       }
@@ -103,178 +114,189 @@ export default function PatientAnamnesisPage() {
     fetchAnamnesis();
   }, [id, methods]);
 
-  // --- SALVAR DADOS ---
+  // --- PERSISTÊNCIA DOS DADOS ---
   const onSubmitAnamnesis = async (data: any) => {
     setSaving(true);
-    console.log("Tentando salvar dados:", data);
-
     try {
       const payload = {
-        // Campos simples (texto, número) são copiados diretamente
-        // Note: desestruturamos 'data' para pegar tudo que não for tratado especificamente abaixo
         ...data,
-        
-        // Converter Arrays -> Strings
-        doencas_cronicas: arrayToStr(data.doencas_cronicas),
-        alergias_medicamentosas: arrayToStr(data.alergias_medicamentosas),
-        queixa_principal: arrayToStr(data.queixa_principal),
-        procedimentos_previos: arrayToStr(data.procedimentos_previos),
-        facial_lesoes: arrayToStr(data.facial_lesoes),
-        facial_patologias: arrayToStr(data.facial_patologias),
-        facial_discromias: arrayToStr(data.facial_discromias),
-        facial_envelhecimento: arrayToStr(data.facial_envelhecimento),
-        corporal_postura: arrayToStr(data.corporal_postura),
-        corporal_lipodistrofia: arrayToStr(data.corporal_lipodistrofia),
-        corporal_estrias: arrayToStr(data.corporal_estrias),
-        corporal_flacidez_tipo: arrayToStr(data.corporal_flacidez_tipo),
-        facial_telangiectasias_local: arrayToStr(data.facial_telangiectasias_local),
-        facial_discromias_local: arrayToStr(data.facial_discromias_local),
-        facial_rugas_local: arrayToStr(data.facial_rugas_local),
-        corporal_gordura_local: arrayToStr(data.corporal_gordura_local),
-        corporal_celulite_local: arrayToStr(data.corporal_celulite_local),
-        corporal_estrias_local: arrayToStr(data.corporal_estrias_local),
-        corporal_flacidez_local: arrayToStr(data.corporal_flacidez_local),
-        capilar_displasias_congenitas: arrayToStr(data.capilar_displasias_congenitas),
-        capilar_displasias_adquiridas: arrayToStr(data.capilar_displasias_adquiridas),
-        capilar_alopecia_areata: arrayToStr(data.capilar_alopecia_areata),
-        facial_baumann: arrayToStr(data.facial_baumann),
-        
-        // Novos Campos da Queixa e Rotina (Arrays -> Strings)
-        locais_gordura: arrayToStr(data.locais_gordura),
-        locais_flacidez_corporal: arrayToStr(data.locais_flacidez_corporal),
-        locais_flacidez_facial: arrayToStr(data.locais_flacidez_facial),
-        locais_celulite: arrayToStr(data.locais_celulite),
-        locais_manchas: arrayToStr(data.locais_manchas),
-        locais_acne: arrayToStr(data.locais_acne),
-        locais_estrias: arrayToStr(data.locais_estrias),
-        rotina_skincare: arrayToStr(data.rotina_skincare),
-
-        // Campos Especiais / Lógica de Negócio
-        intercorrencias_previas: data.teve_intercorrencia === "true" ? data.intercorrencias_detalhes : "Não",
-        pratica_atividade: data.pratica_atividade === "true",
-        ingere_agua: data.ingere_agua === "true",
+        // Conversão reversa: Array -> String para o Supabase
+        ...Object.fromEntries(
+          Object.entries(data).map(([key, value]) => 
+            Array.isArray(value) && key !== 'body_mapping' ? [key, arrayToStr(value)] : [key, value]
+          )
+        ),
+        // Mapeamentos específicos
         tem_telangiectasias: data.tem_telangiectasias === "true",
-        
-        // Campos JSON
         anamnesis_body_mapping: data.body_mapping || [],
-        corporal_adipometria_dados: data.corporal_adipometria_dados || {},
-        corporal_perimetria_dados: data.corporal_perimetria_dados || {}
+        updated_at: new Date().toISOString()
       };
 
-      // Remover campos que não existem no banco ou são auxiliares do formulário
-      delete payload.teve_intercorrencia;
-      delete payload.intercorrencias_detalhes;
-      delete payload.body_mapping; // O banco usa anamnesis_body_mapping
-
-      console.log("Payload enviado ao Supabase:", payload);
+      // Limpar campos auxiliares do formulário que não vão para o DB
+      delete payload.body_mapping;
 
       const { error } = await supabase.from("patients").update(payload).eq("id", id);
-      
-      if (error) {
-        console.error("Erro do Supabase:", error);
-        throw error;
-      }
+      if (error) throw error;
 
-      toast.success("Prontuário salvo com sucesso!");
+      toast.success("Prontuário atualizado!");
       
-      if (id) {
-          const ai = await AnamnesisAIService.analyzeAnamnesis(id, payload);
-          setAiAnalysis(ai);
-          if (ai && ai.confidence_score < 80) setShowAiModal(true);
+      // Acionar IA para análise de risco se houver mudança significativa
+      const ai = await AnamnesisAIService.analyzeAnamnesis(id!, payload);
+      if (ai) {
+        setAiAnalysis(ai);
+        if (ai.confidence_score < 70) setShowAiModal(true);
       }
 
     } catch (e: any) { 
-        console.error("Erro no catch:", e); 
-        toast.error(`Erro ao salvar: ${e.message || "Verifique o console"}`); 
+        toast.error("Falha ao salvar alterações."); 
     } finally { 
         setSaving(false); 
     }
   };
 
-  if (loading) return <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-rose-600 w-10 h-10"/></div>;
+  if (loading) return (
+    <div className="h-screen flex flex-col items-center justify-center gap-4 bg-white dark:bg-gray-900">
+      <Loader2 className="animate-spin text-pink-600" size={40}/>
+      <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Carregando Prontuário...</p>
+    </div>
+  );
 
   return (
-    <div className="bg-gray-50/50 dark:bg-gray-900 min-h-screen font-sans">
+    <div className="bg-gray-50/50 dark:bg-gray-950 min-h-screen">
       
-      {/* Botão IA */}
-      {aiAnalysis && (
-        <div className="fixed bottom-8 right-8 z-50 animate-in slide-in-from-bottom-4 duration-500">
-          <button onClick={() => setShowAiModal(true)} className={`group flex items-center gap-3 px-6 py-4 rounded-full shadow-2xl hover:shadow-rose-500/20 transition-all hover:scale-105 border ${aiAnalysis.confidence_score < 80 ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white border-red-400' : 'bg-white text-gray-900 border-gray-100'}`}>
-            <div className={`p-2 rounded-full ${aiAnalysis.confidence_score < 80 ? 'bg-white/20' : 'bg-purple-100'}`}><Sparkles size={20} className={aiAnalysis.confidence_score < 80 ? 'text-white' : 'text-purple-600'} /></div>
-            <div className="text-left"><p className="text-[10px] font-bold uppercase opacity-80">Segurança IA</p><p className="text-sm font-bold">{aiAnalysis.confidence_score < 80 ? 'Risco Detectado' : 'Paciente Seguro'}</p></div>
-          </button>
-        </div>
-      )}
+      {/* HEADER DE NAVEGAÇÃO E INDICADOR IA */}
+      <div className="sticky top-0 z-40 bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-b border-gray-100 dark:border-gray-800 px-6 py-4">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              <PremiumTabButton active={activeTab==="queixa"} onClick={()=>setActiveTab("queixa")} icon={ClipboardList} label="Queixa" />
+              <ChevronRight className="w-4 h-4 text-gray-200 flex-shrink-0"/>
+              <PremiumTabButton active={activeTab==="saude"} onClick={()=>setActiveTab("saude")} icon={Heart} label="Saúde" />
+              <ChevronRight className="w-4 h-4 text-gray-200 flex-shrink-0"/>
+              <PremiumTabButton active={activeTab==="facial"} onClick={()=>setActiveTab("facial")} icon={Smile} label="Facial" />
+              <ChevronRight className="w-4 h-4 text-gray-200 flex-shrink-0"/>
+              <PremiumTabButton active={activeTab==="corporal"} onClick={()=>setActiveTab("corporal")} icon={User} label="Corporal" />
+              <ChevronRight className="w-4 h-4 text-gray-200 flex-shrink-0"/>
+              <PremiumTabButton active={activeTab==="bio"} onClick={()=>setActiveTab("bio")} icon={Scale} label="Bioimpedância" />
+              <ChevronRight className="w-4 h-4 text-gray-200 flex-shrink-0"/>
+              <PremiumTabButton active={activeTab==="capilar"} onClick={()=>setActiveTab("capilar")} icon={Scissors} label="Capilar" />
+              <ChevronRight className="w-4 h-4 text-gray-200 flex-shrink-0"/>
+              <PremiumTabButton active={activeTab==="injectables"} onClick={()=>setActiveTab("injectables")} icon={Syringe} label="Injetáveis" />
+          </div>
 
-      {/* Navegação */}
-      <div className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="max-w-[1600px] mx-auto flex items-center gap-2 overflow-x-auto custom-scrollbar pb-2">
-            <PremiumTabButton active={activeTab==="queixa"} onClick={()=>setActiveTab("queixa")} icon={ClipboardList} label="1. Queixa" />
-            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0"/>
-            <PremiumTabButton active={activeTab==="saude"} onClick={()=>setActiveTab("saude")} icon={Heart} label="2. Saúde" />
-            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0"/>
-            <PremiumTabButton active={activeTab==="facial"} onClick={()=>setActiveTab("facial")} icon={Smile} label="3. Facial" />
-            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0"/>
-            <PremiumTabButton active={activeTab==="corporal"} onClick={()=>setActiveTab("corporal")} icon={User} label="4. Corporal" />
-            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0"/>
-            <PremiumTabButton active={activeTab==="bio"} onClick={()=>setActiveTab("bio")} icon={Scale} label="5. Bio Rápida" />
-            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0"/>
-            <PremiumTabButton active={activeTab==="capilar"} onClick={()=>setActiveTab("capilar")} icon={Scissors} label="6. Capilar" />
-            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0"/>
-            <PremiumTabButton active={activeTab==="injectables"} onClick={()=>setActiveTab("injectables")} icon={Syringe} label="7. Injetáveis" />
+          {aiAnalysis && (
+            <button 
+              onClick={() => setShowAiModal(true)}
+              className={`hidden md:flex items-center gap-3 px-5 py-2.5 rounded-2xl border transition-all hover:scale-105 ${
+                aiAnalysis.confidence_score < 70 
+                ? 'bg-red-50 text-red-600 border-red-100 animate-bounce' 
+                : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+              }`}
+            >
+              <ShieldCheck size={18} />
+              <div className="text-left leading-tight">
+                <p className="text-[9px] font-black uppercase">Auditoria IA</p>
+                <p className="text-xs font-bold">{aiAnalysis.confidence_score < 70 ? 'Risco Detectado' : 'Paciente Seguro'}</p>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto p-6 pb-32">
+      {/* CONTEÚDO DINÂMICO */}
+      <div className="max-w-[1600px] mx-auto p-6 pb-40">
         <FormProvider {...methods}>
             <form onSubmit={methods.handleSubmit(onSubmitAnamnesis)}>
-                {activeTab === "queixa" && <TabQueixa />}
-                {activeTab === "saude" && <TabSaude />}
-                {activeTab === "facial" && <TabFacial />}
-                {activeTab === "corporal" && <TabCorporal />}
-                {activeTab === "bio" && <TabBioimpedancia />}
-                {activeTab === "capilar" && <TabCapilar />}
-                {activeTab === "injectables" && <TabInjetaveis />}
+                <div className="transition-all duration-500">
+                  {activeTab === "queixa" && <TabQueixa />}
+                  {activeTab === "saude" && <TabSaude />}
+                  {activeTab === "facial" && <TabFacial />}
+                  {activeTab === "corporal" && <TabCorporal />}
+                  {activeTab === "bio" && <TabBioimpedancia />}
+                  {activeTab === "capilar" && <TabCapilar />}
+                  {activeTab === "injectables" && <TabInjetaveis />}
+                </div>
                 
-                {activeTab !== "injectables" && (
-                    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 animate-in slide-in-from-bottom-8">
-                        <Button type="submit" disabled={saving} className="bg-gray-900 hover:bg-black text-white px-8 py-6 rounded-full shadow-2xl hover:shadow-gray-500/30 hover:-translate-y-1 transition-all text-lg font-bold flex items-center gap-3">
-                            {saving ? <Loader2 className="animate-spin" /> : <Save size={20} />} Salvar Alterações
-                        </Button>
-                    </div>
-                )}
+                {/* BOTÃO SALVAR FLUTUANTE */}
+                <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
+                    <Button 
+                      type="submit" 
+                      disabled={saving} 
+                      className="bg-gray-900 hover:bg-black text-white px-10 py-7 rounded-[2rem] shadow-2xl hover:-translate-y-1 transition-all text-sm font-black uppercase tracking-[0.2em] flex items-center gap-4"
+                    >
+                        {saving ? <Loader2 className="animate-spin" /> : <Save size={20} className="text-pink-500" />} 
+                        {saving ? 'Processando...' : 'Salvar Prontuário'}
+                    </Button>
+                </div>
             </form>
         </FormProvider>
       </div>
 
-      {/* Modal IA */}
+      {/* MODAL DE ANÁLISE IA (AUDITORIA) */}
       {showAiModal && aiAnalysis && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xl animate-in fade-in">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col transform transition-all scale-100">
-            <div className={`p-8 flex justify-between items-center text-white ${aiAnalysis.confidence_score < 50 ? 'bg-gradient-to-r from-red-500 to-orange-600' : 'bg-gradient-to-r from-emerald-500 to-teal-600'}`}>
-                <div><h2 className="font-bold text-2xl flex items-center gap-3"><CheckCircle2 className="w-8 h-8"/> Auditoria de Segurança IA</h2><p className="opacity-90 text-sm mt-1">Análise em tempo real de contraindicações e riscos.</p></div>
-                <button type="button" onClick={() => setShowAiModal(false)} className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition-colors"><X size={24}/></button>
-            </div>
-            <div className="p-8 overflow-y-auto bg-gray-50 dark:bg-gray-900 custom-scrollbar">
-                <div className="mb-8 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Parecer Geral</h3>
-                    <p className="text-lg font-medium text-gray-800 dark:text-white leading-relaxed">{aiAnalysis.ai_suggestions}</p>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-[3rem] shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+            
+            <div className={`p-10 flex justify-between items-center text-white ${aiAnalysis.confidence_score < 60 ? 'bg-gradient-to-br from-red-500 to-rose-600' : 'bg-gradient-to-br from-emerald-500 to-teal-600'}`}>
+                <div>
+                  <h2 className="font-black text-3xl flex items-center gap-3 italic tracking-tighter">
+                    <ShieldCheck className="w-10 h-10"/> Parecer de Segurança
+                  </h2>
+                  <p className="opacity-80 text-xs font-bold uppercase tracking-widest mt-2">Análise algorítmica de intercorrências e contraindicações</p>
                 </div>
-                {aiAnalysis.risk_factors && aiAnalysis.risk_factors.length > 0 && (
-                    <div className="space-y-3 mb-8">
-                        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Alertas Detectados</h3>
-                        {aiAnalysis.risk_factors.map((alert: any, i: number) => (
-                            <div key={i} className={`p-4 rounded-xl border-l-4 shadow-sm flex gap-4 items-start bg-white dark:bg-gray-800 ${alert.type === 'danger' ? 'border-red-500' : 'border-amber-500'}`}>
-                                <div className={`p-2 rounded-full ${alert.type === 'danger' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}`}>{alert.type === 'danger' ? <X size={20}/> : <AlertTriangle size={20}/>}</div>
-                                <div><h4 className="font-bold text-gray-900 dark:text-white">{alert.title}</h4><p className="text-gray-600 dark:text-gray-300 text-sm">{alert.message}</p></div>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                <button onClick={() => setShowAiModal(false)} className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition-colors"><X/></button>
             </div>
-            <div className="p-6 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setShowAiModal(false)} className="h-12 px-6 rounded-xl border-gray-200">Fechar</Button>
-                <Button className="bg-gray-900 text-white hover:bg-black h-12 px-6 rounded-xl shadow-lg" onClick={() => window.print()}>Imprimir Laudo</Button>
+
+            <div className="p-10 overflow-y-auto bg-gray-50 dark:bg-gray-900 custom-scrollbar flex-1">
+                <div className="grid md:grid-cols-3 gap-8">
+                  <div className="md:col-span-2 space-y-8">
+                    <section>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Sugestão de Conduta</h3>
+                      <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                        {aiAnalysis.ai_suggestions}
+                      </div>
+                    </section>
+
+                    {aiAnalysis.risk_factors?.length > 0 && (
+                      <section>
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 text-red-500">Alertas Detectados</h3>
+                        <div className="space-y-4">
+                          {aiAnalysis.risk_factors.map((risk: any, i: number) => (
+                            <div key={i} className="flex gap-4 p-5 bg-white dark:bg-gray-800 rounded-2xl border-l-4 border-red-500 shadow-sm">
+                              <AlertTriangle className="text-red-500 flex-shrink-0" size={20}/>
+                              <div>
+                                <h4 className="font-black text-gray-900 dark:text-white text-sm">{risk.title}</h4>
+                                <p className="text-xs text-gray-500 mt-1">{risk.message}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="bg-gray-900 rounded-[2rem] p-8 text-center text-white">
+                       <p className="text-[10px] font-black uppercase opacity-50 tracking-widest mb-2">Score de Confiança</p>
+                       <div className="text-5xl font-black text-pink-500">{aiAnalysis.confidence_score}%</div>
+                       <div className="w-full bg-white/10 h-1.5 rounded-full mt-4 overflow-hidden">
+                          <div className="bg-pink-500 h-full transition-all duration-1000" style={{ width: `${aiAnalysis.confidence_score}%` }}></div>
+                       </div>
+                    </div>
+                    
+                    <div className="p-6 bg-blue-50 dark:bg-blue-900/20 rounded-[2rem] border border-blue-100 dark:border-blue-800/30">
+                       <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold leading-relaxed">
+                         Este laudo é informativo e não substitui a decisão clínica do profissional responsável.
+                       </p>
+                    </div>
+                  </div>
+                </div>
+            </div>
+
+            <div className="p-8 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowAiModal(false)} className="h-14 px-8 rounded-2xl font-bold">Revisar Prontuário</Button>
+                <Button className="bg-gray-900 text-white h-14 px-8 rounded-2xl font-black uppercase tracking-widest flex items-center gap-2" onClick={() => window.print()}>
+                  <Printer size={18}/> Imprimir Auditoria
+                </Button>
             </div>
           </div>
         </div>

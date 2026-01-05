@@ -29,7 +29,11 @@ interface CalendarEvent {
   title: string;
   start: Date;
   end: Date;
-  resource?: any;
+  resource?: {
+    status: string;
+    professionalName?: string;
+    notes?: string;
+  };
 }
 
 export function AppointmentsPage() {
@@ -37,6 +41,8 @@ export function AppointmentsPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>(Views.WEEK);
+  
+  // REMOVIDO: const [clinicId, setClinicId] = useState... (Não era usado)
 
   useEffect(() => {
     fetchAppointments();
@@ -46,45 +52,49 @@ export function AppointmentsPage() {
     try {
       setLoading(true);
       
-      // 1. Busca APENAS os dados puros da tabela (SEM RELAÇÃO PARA NÃO DAR ERRO)
-      const { data: appointments, error: appError } = await supabase
-        .from('appointments')
-        .select('*'); // Pega tudo, inclusive patient_id e treatment_id
+      // 1. Identificar a Clínica
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      if (appError) throw appError;
+      const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+      
+      // Se não tiver clínica, para por aqui
+      if (!profile?.clinicId) return;
+
+      // 2. Buscar Agendamentos (JA COM OS RELACIONAMENTOS)
+      const { data: appointments, error } = await supabase
+        .from('appointments')
+        .select(`
+            id, 
+            startAt, 
+            endAt, 
+            status, 
+            notes,
+            patient:patientId ( name ),
+            service:serviceId ( name ),
+            professional:professionalId ( firstName )
+        `)
+        .eq('clinicId', profile.clinicId); // Filtra usando a variável local 'profile'
+
+      if (error) throw error;
       if (!appointments) return;
 
-      // 2. Extrai os IDs para buscar os nomes manualmente
-      const patientIds = appointments.map(a => a.patient_id).filter(Boolean);
-      const treatmentIds = appointments.map(a => a.treatment_id).filter(Boolean);
-
-      // 3. Busca os nomes dos Pacientes (Manual Fetch)
-      const { data: patients } = await supabase
-        .from('patients')
-        .select('id, name')
-        .in('id', patientIds);
-
-      // 4. Busca os nomes dos Tratamentos (Manual Fetch)
-      const { data: treatments } = await supabase
-        .from('treatments')
-        .select('id, name')
-        .in('id', treatmentIds);
-
-      // 5. CRUZA OS DADOS NO JAVASCRIPT (Manual Join)
+      // 3. Formata para o Calendário
       const formattedEvents: CalendarEvent[] = appointments.map((appt: any) => {
-        // Encontra o nome na lista que baixamos
-        const foundPatient = patients?.find(p => p.id === appt.patient_id);
-        const foundTreatment = treatments?.find(t => t.id === appt.treatment_id);
-
-        const patientName = foundPatient?.name || 'Paciente';
-        const treatmentName = foundTreatment?.name || 'Consulta';
+        const patientName = Array.isArray(appt.patient) ? appt.patient[0]?.name : appt.patient?.name;
+        const serviceName = Array.isArray(appt.service) ? appt.service[0]?.name : appt.service?.name;
+        const profName = Array.isArray(appt.professional) ? appt.professional[0]?.firstName : appt.professional?.firstName;
 
         return {
             id: appt.id,
-            title: `${patientName} - ${treatmentName}`,
-            start: new Date(appt.start_time),
-            end: new Date(appt.end_time),
-            resource: { status: appt.status }
+            title: `${patientName || 'Paciente'} - ${serviceName || 'Consulta'}`,
+            start: new Date(appt.startAt),
+            end: new Date(appt.endAt),
+            resource: { 
+                status: appt.status,
+                professionalName: profName,
+                notes: appt.notes
+            }
         };
       });
 
@@ -92,7 +102,7 @@ export function AppointmentsPage() {
 
     } catch (error: any) {
       console.error('Erro:', error);
-      toast.error('Erro ao carregar dados.');
+      toast.error('Erro ao carregar agenda.');
     } finally {
       setLoading(false);
     }
@@ -100,21 +110,23 @@ export function AppointmentsPage() {
 
   // Estilização condicional dos eventos
   const eventStyleGetter = (event: CalendarEvent) => {
-    let backgroundColor = '#3b82f6'; // Azul
+    let backgroundColor = '#3b82f6'; // Azul (Scheduled)
     
-    if (event.resource?.status === 'completed') backgroundColor = '#22c55e'; // Verde
-    if (event.resource?.status === 'cancelled') backgroundColor = '#ef4444'; // Vermelho
-    if (event.resource?.status === 'waiting') backgroundColor = '#f59e0b'; // Laranja
+    const status = event.resource?.status;
+    if (status === 'completed') backgroundColor = '#10b981'; // Verde
+    if (status === 'cancelled') backgroundColor = '#ef4444'; // Vermelho
+    if (status === 'no_show') backgroundColor = '#6b7280';   // Cinza
 
     return {
       style: {
         backgroundColor,
         borderRadius: '6px',
-        opacity: 0.9,
+        opacity: 0.95,
         color: 'white',
         border: '0px',
         display: 'block',
-        fontSize: '0.85rem'
+        fontSize: '0.80rem',
+        padding: '2px 5px'
       }
     };
   };
@@ -124,7 +136,7 @@ export function AppointmentsPage() {
   };
 
   const handleSelectEvent = (event: CalendarEvent) => {
-    toast(`Agendamento: ${event.title}`);
+    navigate(`/appointments/edit/${event.id}`);
   };
 
   if (loading) return <div className="flex justify-center items-center h-full p-10"><Loader2 className="animate-spin text-pink-600 w-8 h-8" /></div>;
@@ -138,11 +150,14 @@ export function AppointmentsPage() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Agenda</h1>
           <p className="text-gray-500 text-sm">Gerencie os horários da clínica.</p>
         </div>
-        <Link to="/appointments/new">
-          <Button className="bg-pink-600 hover:bg-pink-700 text-white flex items-center gap-2 shadow-md transition-all hover:scale-105">
-            <Plus size={18} /> Novo Agendamento
-          </Button>
-        </Link>
+        
+        <div className="flex gap-2">
+            <Link to="/appointments/new">
+            <Button className="bg-pink-600 hover:bg-pink-700 text-white flex items-center gap-2 shadow-md transition-all hover:scale-105">
+                <Plus size={18} /> Novo Agendamento
+            </Button>
+            </Link>
+        </div>
       </div>
 
       {/* Calendário Visual */}
@@ -165,7 +180,7 @@ export function AppointmentsPage() {
             date: "Data",
             time: "Hora",
             event: "Evento",
-            noEventsInRange: "Sem agendamentos."
+            noEventsInRange: "Sem agendamentos nesta data."
           }}
           defaultView={Views.WEEK}
           views={['month', 'week', 'day', 'agenda']}
@@ -175,8 +190,8 @@ export function AppointmentsPage() {
           onSelectSlot={handleSelectSlot}
           onSelectEvent={handleSelectEvent}
           eventPropGetter={eventStyleGetter}
-          min={new Date(0, 0, 0, 8, 0, 0)} 
-          max={new Date(0, 0, 0, 20, 0, 0)} 
+          min={new Date(0, 0, 0, 7, 0, 0)} 
+          max={new Date(0, 0, 0, 21, 0, 0)} 
         />
       </div>
     </div>

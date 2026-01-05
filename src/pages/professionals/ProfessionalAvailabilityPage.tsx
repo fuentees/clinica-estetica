@@ -6,7 +6,7 @@ import { z } from "zod";
 import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
 import {
-  Calendar, Loader2, Info, CalendarOff, Trash2, CheckCircle2, Plus, // <--- Ícone PLUS adicionado
+  Calendar, Loader2, Info, CalendarOff, Trash2, CheckCircle2, Plus,
 } from "lucide-react"; 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -111,7 +111,8 @@ export function ProfessionalAvailabilityPage() {
             
             toast.success("Exceção de agenda adicionada!");
             reset({
-                ...data, // Mantém as datas preenchidas como sugestão
+                start_date: new Date().toISOString().split('T')[0],
+                end_date: new Date().toISOString().split('T')[0],
                 reason: '',
                 is_full_day: true,
                 start_time: '09:00',
@@ -150,8 +151,7 @@ export function ProfessionalAvailabilityPage() {
 
     // Helper para formatar data
     const formatDate = (dateString: string) => {
-        // Garantir que a string seja tratada como UTC ou local
-        return new Date(dateString).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+        return new Date(dateString + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
     }
 
     return (
@@ -213,11 +213,11 @@ export function ProfessionalAvailabilityPage() {
                             {/* Motivo */}
                             <div>
                                 <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Motivo (Opcional)</label>
-                                <textarea {...register("reason")} rows={2} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600 resize-none text-sm"></textarea>
+                                <textarea {...register("reason")} rows={2} className="w-full p-2.5 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600 resize-none text-sm outline-none focus:ring-2 focus:ring-pink-500"></textarea>
                             </div>
 
-                            <Button type="submit" disabled={loading} className="w-full bg-pink-600 hover:bg-pink-700">
-                                {loading ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 className="mr-2"/>}
+                            <Button type="submit" disabled={loading} className="w-full bg-pink-600 hover:bg-pink-700 text-white">
+                                {loading ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 className="mr-2" size={18}/>}
                                 Adicionar Exceção
                             </Button>
                         </form>

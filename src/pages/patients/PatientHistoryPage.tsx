@@ -12,11 +12,13 @@ import {
   History,
   Loader2,
   Search,
-  FileText // Usado no estado vazio
+  FileText,
+  ChevronRight,
+  ClipboardList
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
-// Tipagem do Tratamento
+// Tipagem do Tratamento (Integral)
 interface Treatment {
   id: string;
   data_procedimento: string;
@@ -27,14 +29,14 @@ interface Treatment {
   created_at: string;
 }
 
-// Helper para cores das tags
+// Helper para cores das tags (Integral)
 const getProcedureColor = (type: string) => {
     const t = type.toLowerCase();
-    if (t.includes("botox") || t.includes("toxina")) return "bg-purple-100 text-purple-700 border-purple-200";
-    if (t.includes("preenchimento") || t.includes("bioestimulador")) return "bg-pink-100 text-pink-700 border-pink-200";
-    if (t.includes("laser") || t.includes("lavieen")) return "bg-blue-100 text-blue-700 border-blue-200";
-    if (t.includes("peeling") || t.includes("limpeza")) return "bg-green-100 text-green-700 border-green-200";
-    return "bg-gray-100 text-gray-700 border-gray-200";
+    if (t.includes("botox") || t.includes("toxina")) return "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400";
+    if (t.includes("preenchimento") || t.includes("bioestimulador")) return "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400";
+    if (t.includes("laser") || t.includes("lavieen")) return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400";
+    if (t.includes("peeling") || t.includes("limpeza")) return "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400";
+    return "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-400";
 };
 
 export function PatientEvolutionPage() {
@@ -44,7 +46,7 @@ export function PatientEvolutionPage() {
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // Form States
+  // Form States (Todos os campos mantidos)
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newType, setNewType] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -111,81 +113,91 @@ export function PatientEvolutionPage() {
     }
   };
 
-  // Filtragem local
   const filteredTreatments = treatments.filter(t => 
     t.tipo_procedimento.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-600" /></div>;
+  if (loading) return (
+    <div className="h-96 flex flex-col items-center justify-center gap-4 bg-white/50 dark:bg-gray-900/50 rounded-3xl">
+      <Loader2 className="animate-spin text-pink-600" size={40} />
+      <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Sincronizando Histórico...</p>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen grid md:grid-cols-12 gap-8 bg-gray-50 dark:bg-gray-900 p-6 rounded-xl">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-700">
       <Toaster position="top-right" />
 
-      {/* --- ESQUERDA: FORMULÁRIO (1/3) --- */}
-      <div className="md:col-span-4">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 sticky top-6">
-          <h2 className="text-lg font-bold mb-6 flex items-center gap-2 text-gray-800 dark:text-white border-b pb-4 dark:border-gray-700">
-            <PlusCircle size={20} className="text-pink-600" /> Nova Evolução
-          </h2>
-          
-          <form onSubmit={handleAddTreatment} className="space-y-5">
+      {/* --- ESQUERDA: FORMULÁRIO (4/12 da tela) --- */}
+      <div className="lg:col-span-4">
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-xl shadow-pink-100/20 dark:shadow-none border border-gray-100 dark:border-gray-700 sticky top-24">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-3 bg-pink-50 dark:bg-pink-900/30 text-pink-600 rounded-2xl">
+              <PlusCircle size={24} />
+            </div>
             <div>
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Data</label>
+              <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">Evolução</h2>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Anotações da Sessão</p>
+            </div>
+          </div>
+          
+          <form onSubmit={handleAddTreatment} className="space-y-6">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Data do Atendimento</label>
               <input 
                 type="date" 
                 value={newDate} 
                 onChange={e => setNewDate(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-pink-500"
+                className="w-full h-12 px-4 bg-gray-50 dark:bg-gray-900 border-0 rounded-xl text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none transition-all"
               />
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Procedimento</label>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Tipo de Procedimento</label>
               <div className="relative">
-                <Syringe className="absolute top-3 left-3 text-gray-400" size={16} />
+                <Syringe className="absolute top-1/2 -translate-y-1/2 left-4 text-pink-500" size={18} />
                 <input 
                   type="text" 
-                  placeholder="Ex: Botox..." 
+                  placeholder="Ex: Botox, Peeling..." 
                   value={newType}
                   onChange={e => setNewType(e.target.value)}
-                  className="w-full pl-10 p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-pink-500"
+                  className="w-full h-12 pl-12 pr-4 bg-gray-50 dark:bg-gray-900 border-0 rounded-xl text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none transition-all"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Descrição</label>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Relato Técnico / Evolução</label>
               <textarea 
                 rows={5}
-                placeholder="Relato técnico..."
+                placeholder="Descreva a aplicação, parâmetros, reações..."
                 value={newDesc}
                 onChange={e => setNewDesc(e.target.value)}
-                className="w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-pink-500 resize-none"
+                className="w-full p-4 bg-gray-50 dark:bg-gray-900 border-0 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-pink-500 outline-none transition-all resize-none shadow-inner"
               />
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Produtos / Lotes</label>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Insumos (Marca/Lote)</label>
               <input 
                 type="text" 
-                placeholder="Ex: Lote 1234" 
+                placeholder="Rastreabilidade dos produtos..." 
                 value={newProducts}
                 onChange={e => setNewProducts(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-pink-500"
+                className="w-full h-12 px-4 bg-gray-50 dark:bg-gray-900 border-0 rounded-xl text-sm font-medium focus:ring-2 focus:ring-pink-500 outline-none transition-all"
               />
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Retorno</label>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Previsão de Retorno</label>
               <div className="relative">
-                <Clock className="absolute top-3 left-3 text-gray-400" size={16} />
+                <Clock className="absolute top-1/2 -translate-y-1/2 left-4 text-orange-400" size={18} />
                 <input 
                   type="date" 
                   value={nextSession}
                   onChange={e => setNextSession(e.target.value)}
-                  className="w-full pl-10 p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-pink-500"
+                  className="w-full h-12 pl-12 pr-4 bg-gray-50 dark:bg-gray-900 border-0 rounded-xl text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none transition-all"
                 />
               </div>
             </div>
@@ -193,81 +205,101 @@ export function PatientEvolutionPage() {
             <Button 
               type="submit" 
               disabled={isSaving}
-              className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-3 rounded-lg shadow-sm mt-2"
+              className="w-full h-14 bg-gray-900 hover:bg-black text-white font-black uppercase tracking-widest rounded-2xl shadow-xl transition-all hover:scale-[1.02] active:scale-95"
             >
-              {isSaving ? <Loader2 className="animate-spin" /> : <Save size={18} className="mr-2" />}
-              Salvar
+              {isSaving ? <Loader2 className="animate-spin" /> : <Save size={20} className="mr-2 text-pink-500" />}
+              Registrar Visita
             </Button>
           </form>
         </div>
       </div>
 
-      {/* --- DIREITA: HISTÓRICO (2/3) --- */}
-      <div className="md:col-span-8">
+      {/* --- DIREITA: HISTÓRICO (8/12 da tela) --- */}
+      <div className="lg:col-span-8 space-y-6">
         
-        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-            <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-              <History className="text-pink-600" /> Histórico
+        {/* Barra de Pesquisa e Header Local */}
+        <div className="flex flex-col sm:flex-row justify-between items-center bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm gap-4">
+            <h2 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-3 italic uppercase tracking-tighter">
+              <History className="text-pink-600" /> Linha do Tempo
             </h2>
-            <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+            <div className="relative w-full sm:w-80">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <input 
                     type="text" 
-                    placeholder="Buscar..." 
+                    placeholder="Filtrar histórico..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 p-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm focus:ring-2 focus:ring-pink-500 outline-none"
+                    className="w-full h-12 pl-12 pr-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 text-sm font-bold focus:ring-2 focus:ring-pink-500 outline-none"
                 />
             </div>
         </div>
 
         {filteredTreatments.length === 0 ? (
-          <div className="bg-white dark:bg-gray-800 p-12 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 text-center">
-            <FileText size={48} className="mx-auto mb-4 text-gray-300" />
-            <p className="text-gray-500 font-medium">Nenhum registro encontrado.</p>
+          <div className="bg-white dark:bg-gray-800 py-32 rounded-[3rem] border-2 border-dashed border-gray-100 dark:border-gray-700 text-center flex flex-col items-center">
+            <div className="w-20 h-20 bg-gray-50 dark:bg-gray-900 rounded-full flex items-center justify-center mb-6 text-gray-200">
+              <ClipboardList size={40} />
+            </div>
+            <p className="text-gray-500 font-black uppercase text-xs tracking-widest italic">Aguardando primeiro registro...</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {filteredTreatments.map((item) => (
-              <div key={item.id} className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow relative group">
+              <div key={item.id} className="group relative animate-in slide-in-from-bottom-4 duration-500">
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-2xl hover:border-pink-100 transition-all duration-500 relative">
                   
-                  {/* Botão Excluir (Hover) */}
-                  <button onClick={() => handleDelete(item.id)} className="absolute top-4 right-4 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 size={16} />
-                  </button>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
-                    <div className="flex flex-col">
-                        <span className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1">
-                            <Calendar size={12}/> {new Date(item.data_procedimento).toLocaleDateString('pt-BR')}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                    <div className="space-y-1">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-1.5">
+                            <Calendar size={12} className="text-pink-500"/> 
+                            {new Date(item.data_procedimento).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
                         </span>
-                        <div className="flex items-center gap-3 mt-1">
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                        <div className="flex items-center gap-3">
+                            <h3 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">
                                 {item.tipo_procedimento}
                             </h3>
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase font-bold tracking-wider ${getProcedureColor(item.tipo_procedimento)}`}>
+                            <span className={`text-[9px] px-3 py-1 rounded-lg border font-black uppercase tracking-widest ${getProcedureColor(item.tipo_procedimento)}`}>
                                 {item.tipo_procedimento.split(' ')[0]}
                             </span>
                         </div>
                     </div>
+                    <button 
+                      onClick={() => handleDelete(item.id)} 
+                      className="p-3 bg-gray-50 dark:bg-gray-900 text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-all shadow-inner"
+                    >
+                      <Trash2 size={18} />
+                    </button>
                   </div>
 
-                  <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed mb-4 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg border border-gray-100 dark:border-gray-800">
-                      {item.descricao || "Sem observações."}
-                  </p>
+                  <div className="space-y-4">
+                    <div className="bg-gray-50 dark:bg-gray-900/50 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 p-4 opacity-5 text-gray-400"><FileText size={80}/></div>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line relative z-10">
+                        {item.descricao || "Nenhuma nota clínica registrada para esta sessão."}
+                      </p>
+                    </div>
 
-                  <div className="flex flex-wrap gap-3">
-                      {item.produtos_usados && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                              <Syringe size={12}/> {item.produtos_usados}
-                          </span>
-                      )}
-                      {item.proxima_sessao && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-orange-50 text-orange-700 border border-orange-100">
-                              <Clock size={12}/> Retorno: {new Date(item.proxima_sessao).toLocaleDateString('pt-BR')}
-                          </span>
-                      )}
+                    <div className="flex flex-wrap gap-4 pt-2">
+                        {item.produtos_usados && (
+                            <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-4 py-2.5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                                <Syringe size={14} className="text-blue-500" />
+                                <span className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-tighter italic">Rastreabilidade: {item.produtos_usados}</span>
+                            </div>
+                        )}
+                        {item.proxima_sessao && (
+                            <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-900/20 px-4 py-2.5 rounded-full border border-orange-100 dark:border-orange-900/30">
+                                <Clock size={14} className="text-orange-500" />
+                                <span className="text-[10px] font-black text-orange-700 dark:text-orange-400 uppercase tracking-tighter">
+                                  Próxima Sessão: {new Date(item.proxima_sessao).toLocaleDateString('pt-BR')}
+                                </span>
+                            </div>
+                        )}
+                    </div>
                   </div>
+                  
+                  <div className="absolute right-8 bottom-8 text-gray-50 dark:text-gray-900 pointer-events-none group-hover:text-pink-100/30 transition-colors">
+                     <ChevronRight size={64} />
+                  </div>
+                </div>
               </div>
             ))}
           </div>

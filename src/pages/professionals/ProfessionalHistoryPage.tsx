@@ -7,8 +7,7 @@ import {
   Activity, 
 } from 'lucide-react';
 
-// Tipagem dos dados do banco
-// A tipagem Appointment foi removida.
+// --- TIPAGEM (INTEGRAL) ---
 type Treatment = {
   id: string;
   data_evolucao: string;
@@ -19,9 +18,7 @@ type Treatment = {
 export default function ProfessionalHistoryPage() {
   const { id } = useParams<{ id: string }>(); 
   const [loading, setLoading] = useState(true);
-  // O estado appointments foi removido
   const [treatments, setTreatments] = useState<Treatment[]>([]);
-  // activeTab foi removido
 
   useEffect(() => {
     if (id) {
@@ -32,8 +29,7 @@ export default function ProfessionalHistoryPage() {
   async function fetchProfessionalData(professionalId: string) {
     setLoading(true);
     try {
-      
-      // 1. TRATAMENTOS REALIZADOS (Histórico)
+      // 1. TRATAMENTOS REALIZADOS (Busca na tabela de evoluções/prontuário)
       const { data: treatmentsData, error: treatmentsError } = await supabase
         .from('treatments')
         .select(`
@@ -42,13 +38,13 @@ export default function ProfessionalHistoryPage() {
           procedimento_realizado:tipo_procedimento,
           patient:patient_id (id, name)
         `)
-        .eq('professional_id', professionalId) // Ou o nome da sua coluna (ex: realizador_id)
+        .eq('professional_id', professionalId) 
         .order('data_evolucao', { ascending: false });
 
       if (treatmentsError) throw treatmentsError;
       
-      // Mapeamento e Correção da Tipagem
-      const mappedTreatments: Treatment[] = treatmentsData.map((t: any) => {
+      // Mapeamento SaaS: Proteção contra dados nulos e normalização de arrays
+      const mappedTreatments: Treatment[] = (treatmentsData || []).map((t: any) => {
           const patientData = Array.isArray(t.patient) ? t.patient[0] : t.patient;
           
           return {
@@ -70,7 +66,7 @@ export default function ProfessionalHistoryPage() {
     }
   }
 
-  // Componente de carregamento Skeleton
+  // --- SKELETON LOADING (LAYOUT PRESERVADO) ---
   if (loading) {
     return (
       <div className="p-6 space-y-4 animate-pulse">
@@ -84,37 +80,45 @@ export default function ProfessionalHistoryPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700">
+    <div className="p-4 sm:p-6 lg:p-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 animate-in fade-in duration-500">
       
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
         <Activity size={24} className="text-pink-600 dark:text-pink-400" />
         Histórico de Tratamentos Realizados
       </h2>
 
-      {/* Conteúdo */}
       <div className="space-y-6">
-        
-        {/* TRATAMENTOS REALIZADOS */}
+        {/* GRID DE CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {treatments.length === 0 ? (
-              <p className="col-span-2 text-center text-gray-500 dark:text-gray-400 py-10">
-                Nenhum tratamento realizado registrado para este profissional.
-              </p>
+              <div className="col-span-2 text-center py-20 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border-2 border-dashed border-gray-100 dark:border-gray-700">
+                <User size={48} className="mx-auto text-gray-300 mb-4 opacity-20" />
+                <p className="text-gray-500 dark:text-gray-400 font-medium italic">
+                  Nenhum procedimento registrado no prontuário para este profissional.
+                </p>
+              </div>
             ) : (
               treatments.map((t) => (
-                <div key={t.id} className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 transition-shadow hover:shadow-md">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 flex items-center gap-1">
-                        <CheckSquare size={14} /> Concluído
+                <div key={t.id} className="bg-gray-50 dark:bg-gray-700 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 transition-all hover:shadow-md hover:border-pink-100 dark:hover:border-pink-900 group">
+                  <div className="flex justify-between items-center mb-3">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-green-600 dark:text-green-400 flex items-center gap-1 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-md">
+                        <CheckSquare size={12} /> Concluído
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className="text-xs font-bold text-gray-400 dark:text-gray-500 tabular-nums">
                         {new Date(t.data_evolucao).toLocaleDateString('pt-BR')}
                     </p>
                   </div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">{t.patient.name}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300 flex items-center gap-1">
-                      <User size={14} /> {t.procedimento_realizado}
-                  </p>
+                  
+                  <h3 className="text-lg font-black text-gray-900 dark:text-white mb-2 uppercase tracking-tighter italic group-hover:text-pink-600 transition-colors">
+                    {t.patient.name}
+                  </h3>
+                  
+                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                      <div className="p-1.5 bg-white dark:bg-gray-800 rounded-lg shadow-inner">
+                        <Activity size={14} className="text-pink-500" />
+                      </div>
+                      <span className="font-medium">{t.procedimento_realizado}</span>
+                  </div>
                 </div>
               ))
             )}
@@ -123,5 +127,3 @@ export default function ProfessionalHistoryPage() {
     </div>
   );
 }
-
-// O Componente TabButton não é mais necessário e foi removido.

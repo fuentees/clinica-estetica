@@ -2,143 +2,266 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
-    CalendarCheck, User, Clock, Stethoscope, ArrowLeft, Loader2, Calendar
+    CalendarCheck, User, Clock, Stethoscope, ArrowLeft, Loader2, Calendar, 
+    Sparkles, FileText, CheckCircle2
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
+import { addMinutes } from "date-fns"; // Certifique-se de ter date-fns instalado
 
-// Interface para o dado que vamos buscar do Supabase
-interface Professional {
-    id: string;
-    first_name: string;
-    last_name?: string;
-    agenda_color?: string;
-}
+// Interfaces para Tipagem
+interface Professional { id: string; firstName: string; }
+interface Patient { id: string; name: string; }
+interface Service { id: string; name: string; duration: number; }
 
 export function NewAppointmentPage() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [clinicId, setClinicId] = useState<string | null>(null);
+
+    // Listas de Dados
     const [professionals, setProfessionals] = useState<Professional[]>([]);
-    
-    // Estado para o formulário (simplificado)
-    const [selectedProfessional, setSelectedProfessional] = useState<string | null>(null);
+    const [patients, setPatients] = useState<Patient[]>([]);
+    const [services, setServices] = useState<Service[]>([]);
+
+    // Formulário
+    const [formData, setFormData] = useState({
+        professionalId: "",
+        patientId: "",
+        serviceId: "",
+        date: new Date().toISOString().split('T')[0], // Hoje
+        time: "09:00",
+        notes: ""
+    });
 
     useEffect(() => {
-        fetchActiveProfessionals();
+        loadAllData();
     }, []);
 
-    // FUNÇÃO CRÍTICA: Busca apenas profissionais ATIVOS e de atendimento.
-    async function fetchActiveProfessionals() {
+    async function loadAllData() {
         try {
             setLoading(true);
-            const { data, error } = await supabase
-                .from("profiles")
-                .select("id, first_name, last_name, agenda_color")
-                // Filtra explicitamente por quem está ATIVO e quem é de ATENDIMENTO
-                .eq("is_active", true) 
-                .in("role", ["profissional", "esteticista", "doutor"]) 
-                .order("first_name");
-
-            if (error) throw error;
             
-            setProfessionals(data || []);
-            // Define o primeiro como padrão, se houver
-            if (data && data.length > 0) {
-                setSelectedProfessional(data[0].id);
+            // 1. Pega usuário e clínica
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error("Não logado");
+
+            const { data: profile } = await supabase.from("profiles").select("clinicId").eq("id", user.id).single();
+            if (!profile?.clinicId) throw new Error("Sem clínica");
+            
+            setClinicId(profile.clinicId);
+
+            // 2. Busca TUDO em paralelo (Profissionais, Pacientes, Serviços)
+            const [profsReq, patientsReq, servicesReq] = await Promise.all([
+                supabase.from("profiles")
+                    .select("id, first_name")
+                    .eq("clinicId", profile.clinicId)
+                    .eq("isActive", true)
+                    .in("role", ["profissional", "esteticista", "doutor", "admin"])
+                    .order("first_name"),
+                
+                supabase.from("patients")
+                    .select("id, name")
+                    .eq("clinicId", profile.clinicId)
+                    .order("name"),
+
+                supabase.from("services")
+                    .select("id, name, duration")
+                    .eq("clinicId", profile.clinicId)
+                    .eq("isActive", true)
+                    .order("name")
+            ]);
+
+            // Formata e Salva nos estados
+            if (profsReq.data) {
+                setProfessionals(profsReq.data.map((p: any) => ({ id: p.id, firstName: p.first_name })));
+                // Seleciona o primeiro profissional automaticamente
+                if (profsReq.data.length > 0) setFormData(prev => ({ ...prev, professionalId: profsReq.data[0].id }));
             }
+            if (patientsReq.data) setPatients(patientsReq.data);
+            if (servicesReq.data) setServices(servicesReq.data);
 
         } catch (error) {
-            console.error("Erro ao carregar profissionais para agendamento:", error);
-            toast.error("Erro ao carregar lista de profissionais.");
+            console.error(error);
+            toast.error("Erro ao carregar dados.");
         } finally {
             setLoading(false);
         }
     }
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedProfessional) {
-            toast.error("Selecione um profissional.");
+        
+        // Validação básica
+        if (!formData.professionalId || !formData.patientId || !formData.serviceId || !formData.date || !formData.time) {
+            toast.error("Preencha todos os campos obrigatórios.");
             return;
         }
-        
-        // Lógica de agendamento real viria aqui
-        toast.success(`Agendamento simulado para ${selectedProfessional}!`);
-        // navigate('/agenda');
+
+        setSaving(true);
+        try {
+            // 1. Calcular Horários
+            const startAt = new Date(`${formData.date}T${formData.time}`);
+            
+            // Pega a duração do serviço escolhido (ou 30 min padrão)
+            const selectedService = services.find(s => s.id === formData.serviceId);
+            const duration = selectedService?.duration || 30;
+            
+            const endAt = addMinutes(startAt, duration);
+
+            // 2. Inserir no Banco
+            const { error } = await supabase.from("appointments").insert({
+                clinicId: clinicId,
+                patientId: formData.patientId,
+                professionalId: formData.professionalId,
+                serviceId: formData.serviceId,
+                startAt: startAt.toISOString(),
+                endAt: endAt.toISOString(),
+                status: "scheduled",
+                notes: formData.notes
+            });
+
+            if (error) throw error;
+
+            toast.success("Agendamento criado com sucesso!");
+            navigate("/appointments"); // Volta para a agenda
+
+        } catch (error: any) {
+            console.error(error);
+            toast.error("Erro ao agendar: " + error.message);
+        } finally {
+            setSaving(false);
+        }
     };
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center h-screen">
-                <Loader2 className="animate-spin text-pink-600 size-8" />
-            </div>
-        );
-    }
+    if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-pink-600 size-10"/></div>;
 
     return (
-        <div className="max-w-3xl mx-auto p-6">
-            
-            {/* Cabeçalho */}
-            <div className="flex items-center gap-4 mb-8">
-                <Button variant="ghost" onClick={() => navigate("/agenda")} className="bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
-                    <ArrowLeft size={20} />
-                </Button>
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <CalendarCheck className="text-pink-600"/> Novo Agendamento
-                    </h1>
-                    <p className="text-sm text-gray-500">Preencha os dados da consulta e horário.</p>
-                </div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6 flex items-center justify-center">
+            <div className="w-full max-w-2xl">
                 
-                {/* SELEÇÃO DO PROFISSIONAL (O PONTO QUE FALTAVA) */}
-                <div>
-                    <label htmlFor="professional" className="text-xs font-bold text-gray-500 uppercase mb-2 block flex items-center gap-1">
-                        <Stethoscope size={14}/> Profissional
-                    </label>
-                    <div className="relative">
-                        <select 
-                            id="professional"
-                            value={selectedProfessional || ""}
-                            onChange={(e) => setSelectedProfessional(e.target.value)}
-                            className="w-full p-3 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-pink-500 transition-all text-base appearance-none"
-                            required
-                        >
-                            {professionals.map(p => (
-                                <option key={p.id} value={p.id}>
-                                    {p.first_name} {p.last_name}
-                                </option>
-                            ))}
-                        </select>
-                        <Calendar size={20} className="absolute right-3 top-3 text-gray-400 pointer-events-none"/>
-                    </div>
-                    {professionals.length === 0 && (
-                        <p className="text-sm text-red-500 mt-2">Nenhum profissional ativo encontrado para agendamento.</p>
-                    )}
-                </div>
-
-                {/* OUTROS CAMPOS NECESSÁRIOS (SIMULAÇÃO) */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-4 mb-6">
+                    <Button variant="ghost" onClick={() => navigate("/appointments")} className="rounded-full w-10 h-10 p-0 bg-white shadow-sm hover:bg-gray-100">
+                        <ArrowLeft size={20} />
+                    </Button>
                     <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 block flex items-center gap-1">
-                            <User size={14}/> Paciente
-                        </label>
-                        <input type="text" placeholder="Buscar paciente..." className="w-full p-3 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600" />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 block flex items-center gap-1">
-                            <Clock size={14}/> Data e Hora
-                        </label>
-                        <input type="datetime-local" className="w-full p-3 border rounded-lg bg-gray-50 dark:bg-gray-900 dark:border-gray-600" />
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <CalendarCheck className="text-pink-600"/> Novo Agendamento
+                        </h1>
+                        <p className="text-sm text-gray-500">Preenchimento rápido de consulta.</p>
                     </div>
                 </div>
 
-                <Button type="submit" className="w-full h-12 bg-pink-600 hover:bg-pink-700 text-white font-bold shadow-lg shadow-pink-300 dark:shadow-none transition-all">
-                    Criar Agendamento
-                </Button>
-            </form>
+                <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 space-y-6 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 to-purple-600"></div>
+
+                    {/* Linha 1: Profissional e Serviço */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
+                                <Stethoscope size={14} className="text-pink-600"/> Profissional
+                            </label>
+                            <select 
+                                value={formData.professionalId}
+                                onChange={e => setFormData({...formData, professionalId: e.target.value})}
+                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-pink-500 outline-none"
+                                required
+                            >
+                                <option value="">Selecione...</option>
+                                {professionals.map(p => <option key={p.id} value={p.id}>{p.firstName}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
+                                <Sparkles size={14} className="text-purple-600"/> Serviço
+                            </label>
+                            <select 
+                                value={formData.serviceId}
+                                onChange={e => setFormData({...formData, serviceId: e.target.value})}
+                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-purple-500 outline-none"
+                                required
+                            >
+                                <option value="">Selecione...</option>
+                                {services.map(s => <option key={s.id} value={s.id}>{s.name} ({s.duration} min)</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Linha 2: Paciente */}
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
+                            <User size={14} className="text-blue-600"/> Paciente
+                        </label>
+                        {patients.length > 0 ? (
+                            <select 
+                                value={formData.patientId}
+                                onChange={e => setFormData({...formData, patientId: e.target.value})}
+                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"
+                                required
+                            >
+                                <option value="">Selecione o paciente...</option>
+                                {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        ) : (
+                            <div className="p-3 bg-yellow-50 text-yellow-700 text-sm rounded-lg border border-yellow-200">
+                                Nenhum paciente cadastrado. Cadastre um paciente primeiro.
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Linha 3: Data e Hora */}
+                    <div className="grid grid-cols-2 gap-6">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
+                                <Calendar size={14} className="text-gray-600"/> Data
+                            </label>
+                            <input 
+                                type="date"
+                                value={formData.date}
+                                onChange={e => setFormData({...formData, date: e.target.value})}
+                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-pink-500 outline-none"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
+                                <Clock size={14} className="text-gray-600"/> Hora
+                            </label>
+                            <input 
+                                type="time"
+                                value={formData.time}
+                                onChange={e => setFormData({...formData, time: e.target.value})}
+                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-pink-500 outline-none"
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    {/* Notas */}
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
+                            <FileText size={14} className="text-gray-400"/> Observações
+                        </label>
+                        <textarea 
+                            rows={2}
+                            value={formData.notes}
+                            onChange={e => setFormData({...formData, notes: e.target.value})}
+                            className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-pink-500 outline-none resize-none"
+                            placeholder="Alguma observação especial?"
+                        />
+                    </div>
+
+                    <Button 
+                        type="submit" 
+                        disabled={saving || patients.length === 0}
+                        className="w-full h-12 text-lg bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-[1.01]"
+                    >
+                        {saving ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 className="mr-2"/>}
+                        Confirmar Agendamento
+                    </Button>
+                </form>
+            </div>
         </div>
     );
 }

@@ -1,19 +1,180 @@
-import React from "react";
-import { DollarSign, AlertCircle } from "lucide-react";
+import React, { useState } from "react";
+import { 
+  DollarSign, 
+  Plus, 
+  Receipt, 
+  CreditCard, 
+  TrendingUp, 
+  Clock, 
+  CheckCircle2, 
+  AlertCircle,
+  ArrowUpRight,
+  ArrowDownRight,
+  Package
+} from "lucide-react";
+import { Button } from "../../components/ui/button";
+
+// --- COMPONENTES AUXILIARES ---
+const StatCard = ({ title, value, sub, type }: any) => (
+  <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm">
+    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{title}</p>
+    <div className="flex items-baseline gap-2">
+      <h3 className="text-2xl font-black text-gray-900 dark:text-white italic tracking-tighter">{value}</h3>
+      {type === 'up' && <ArrowUpRight size={16} className="text-emerald-500" />}
+      {type === 'down' && <ArrowDownRight size={16} className="text-rose-500" />}
+    </div>
+    <p className="text-[10px] font-bold text-gray-400 mt-1 uppercase">{sub}</p>
+  </div>
+);
 
 export function PatientFinancialPage() {
+  const [activeTab, setActiveTab] = useState<'transacoes' | 'pacotes'>('transacoes');
+
+  // Dados mockados para visualização do layout
+  const transactions = [
+    { id: 1, date: "2023-12-28", desc: "Toxina Botulínica - 3 Áreas", value: 1200.00, status: "Pago", method: "Pix" },
+    { id: 2, date: "2023-12-15", desc: "Pacote Lavieen (5 sessões)", value: 2500.00, status: "Pendente", method: "Cartão" },
+  ];
+
   return (
-    <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 shadow-sm text-center">
-      <div className="bg-green-100 p-4 rounded-full mb-4">
-        <DollarSign size={48} className="text-green-600" />
+    <div className="max-w-[1600px] mx-auto p-6 space-y-8 animate-in fade-in duration-700">
+      
+      {/* HEADER FINANCEIRO */}
+      <div className="flex flex-col md:flex-row justify-between items-end gap-6">
+        <div className="flex items-center gap-6">
+          <div className="p-5 bg-emerald-50 dark:bg-emerald-900/20 rounded-[2rem] text-emerald-600">
+            <DollarSign size={40} />
+          </div>
+          <div>
+            <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase">Financeiro</h1>
+            <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Gestão de faturamento e créditos do paciente</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" className="h-12 rounded-xl border-gray-200 font-bold uppercase text-[10px] tracking-widest">
+            <Receipt size={16} className="mr-2" /> Gerar Recibo
+          </Button>
+          <Button className="h-12 px-8 bg-gray-900 hover:bg-black text-white rounded-xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl">
+            <Plus size={18} className="mr-2 text-emerald-400" /> Nova Venda
+          </Button>
+        </div>
       </div>
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Módulo Financeiro</h2>
-      <p className="text-gray-500 max-w-md">
-        Aqui você poderá gerenciar orçamentos, registrar pagamentos, parcelas e gerar recibos para este paciente.
-      </p>
-      <div className="mt-6 p-4 bg-yellow-50 text-yellow-800 text-sm rounded-lg flex items-center gap-2 border border-yellow-200">
-        <AlertCircle size={16} />
-        <span>Em desenvolvimento: Controle de Pacotes e Sessões.</span>
+
+      {/* MÉTRICAS (KPIs) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard title="Total Investido" value="R$ 8.450,00" sub="LTV (Lifetime Value)" type="up" />
+        <StatCard title="Saldo Devedor" value="R$ 1.200,00" sub="Pagamentos Pendentes" type="down" />
+        <StatCard title="Sessões em Aberto" value="04" sub="Pacotes Ativos" />
+        <StatCard title="Crédito em Conta" value="R$ 0,00" sub="Adiantamentos" />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        
+        {/* COLUNA ESQUERDA: LISTAGENS (2/3) */}
+        <div className="xl:col-span-2 space-y-6">
+          <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+            <div className="flex border-b border-gray-100 dark:border-gray-700">
+              <button 
+                onClick={() => setActiveTab('transacoes')}
+                className={`px-8 py-5 text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'transacoes' ? 'text-emerald-600 border-b-2 border-emerald-500 bg-emerald-50/30' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Últimas Transações
+              </button>
+              <button 
+                onClick={() => setActiveTab('pacotes')}
+                className={`px-8 py-5 text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'pacotes' ? 'text-emerald-600 border-b-2 border-emerald-500 bg-emerald-50/30' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                Pacotes & Sessões
+              </button>
+            </div>
+
+            <div className="p-4">
+              {activeTab === 'transacoes' ? (
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-50 dark:border-gray-700">
+                      <th className="text-left p-4">Data</th>
+                      <th className="text-left p-4">Descrição</th>
+                      <th className="text-left p-4">Valor</th>
+                      <th className="text-left p-4">Status</th>
+                      <th className="text-right p-4">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+                    {transactions.map(t => (
+                      <tr key={t.id} className="group hover:bg-gray-50/50 dark:hover:bg-gray-900/50 transition-colors">
+                        <td className="p-4 text-xs font-bold text-gray-500">{new Date(t.date).toLocaleDateString()}</td>
+                        <td className="p-4">
+                          <p className="text-sm font-black text-gray-800 dark:text-white uppercase tracking-tighter italic">{t.desc}</p>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{t.method}</p>
+                        </td>
+                        <td className="p-4 text-sm font-black text-gray-900 dark:text-white">R$ {t.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                        <td className="p-4">
+                          <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter border ${t.status === 'Pago' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
+                            {t.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <button className="p-2 text-gray-300 hover:text-emerald-500 transition-colors">
+                            <Receipt size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-12 text-center flex flex-col items-center">
+                  <div className="w-16 h-16 bg-gray-50 dark:bg-gray-900 rounded-full flex items-center justify-center mb-4">
+                    <Package size={24} className="text-gray-300" />
+                  </div>
+                  <p className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tighter">Módulo de Pacotes</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Controle o consumo de sessões contratadas.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* COLUNA DIREITA: CARTÕES E PAGAMENTOS (1/3) */}
+        <div className="space-y-6">
+          <div className="bg-gray-900 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+              <CreditCard size={100} />
+            </div>
+            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-emerald-400 mb-8 flex items-center gap-2">
+              <TrendingUp size={16}/> Inteligência de Vendas
+            </h3>
+            <div className="space-y-6">
+               <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Ticket Médio</p>
+                  <p className="text-2xl font-black italic tracking-tighter">R$ 1.850,00</p>
+               </div>
+               <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <p className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-1">Frequência de Compra</p>
+                  <p className="text-2xl font-black italic tracking-tighter">A cada 45 dias</p>
+               </div>
+               <div className="pt-4 border-t border-white/10">
+                  <p className="text-[10px] font-bold text-gray-400 leading-relaxed uppercase">
+                    Este paciente prefere pagamentos via <span className="text-white">Pix</span> e costuma fechar pacotes de <span className="text-white">Alta Performance</span>.
+                  </p>
+               </div>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 dark:bg-amber-950/20 p-6 rounded-[2rem] border border-amber-100 dark:border-amber-900/30">
+            <div className="flex items-center gap-3 text-amber-800 dark:text-amber-200">
+               <AlertCircle size={20}/>
+               <p className="text-[10px] font-black uppercase tracking-widest">Aviso de Pendência</p>
+            </div>
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mt-3 leading-relaxed">
+              Existe uma parcela de <span className="font-black">R$ 1.200,00</span> vencida há 5 dias. Deseja enviar um lembrete via WhatsApp?
+            </p>
+            <Button className="w-full mt-4 bg-amber-600 hover:bg-amber-700 text-white h-10 rounded-xl font-bold uppercase text-[9px] tracking-widest">
+              Enviar Cobrança
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -5,63 +5,72 @@ import {
   Calendar, 
   ChevronDown, 
   Info, 
-  AlertCircle,
-  PlusCircle
+  AlertCircle
 } from "lucide-react";
 
-// 🛡️ PROTEÇÃO TOTAL: Garante que o componente nunca tente ler .join ou .includes em strings
+// 🛡️ Utils
 const ensureArray = (v: any): string[] => {
   if (Array.isArray(v)) return v;
   if (typeof v === 'string' && v.trim() !== "") return v.split("; ").map(s => s.trim());
   return [];
 };
 
-// 1. CONTAINER DE SEÇÃO (Visual Premium)
+// 1. CONTAINER DE SEÇÃO (Igual aos Cards do Dashboard)
 export const Section = ({ title, children, icon: Icon, description }: any) => (
-  <div className="bg-white p-10 rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 mb-10 transition-all hover:shadow-lg group">
-    <div className="flex items-center gap-5 mb-8 border-l-[10px] border-rose-500 pl-6">
-      {Icon && <Icon className="text-rose-500 group-hover:scale-110 transition-transform" size={32} />}
+  <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 mb-8 transition-all hover:shadow-md group">
+    <div className="flex items-center gap-4 mb-6 border-b border-gray-50 dark:border-gray-700 pb-4">
+      {Icon && (
+        <div className="w-10 h-10 rounded-xl bg-pink-50 dark:bg-pink-900/20 flex items-center justify-center text-pink-600 shadow-sm">
+          <Icon size={20} />
+        </div>
+      )}
       <div>
-        <h2 className="text-2xl font-black text-gray-900 tracking-tighter uppercase italic">{title}</h2>
-        {description && <p className="text-xs font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">{description}</p>}
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          {title}
+        </h2>
+        {description && <p className="text-xs text-gray-500 font-medium">{description}</p>}
       </div>
     </div>
-    {children}
+    <div className="relative z-10">
+      {children}
+    </div>
   </div>
 );
 
-// 2. WRAPPER DE CAMPO (Utilizado para títulos simples)
+// 2. WRAPPER DE CAMPO
 export const Field = ({ label, children }: any) => (
-  <div className="space-y-3 w-full">
-    {label && <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] block ml-4">{label}</label>}
+  <div className="space-y-2 w-full">
+    {label && <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1">{label}</label>}
     {children}
   </div>
 );
 
-// 3. GRUPO DE CHECKBOXES (Seleção Múltipla Estilizada)
+// 3. GRUPO DE CHECKBOXES
 export const CheckboxGroup = ({ name, label, options, control }: any) => {
   const { field } = useController({ name, control, defaultValue: [] });
   const safeValue = ensureArray(field.value);
 
   return (
-    <div className="space-y-4">
-      {label && <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] block mb-4 ml-4">{label}</label>}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="space-y-3">
+      {label && <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1">{label}</label>}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {options.map((opt: string) => {
           const active = safeValue.includes(opt);
           return (
-            <label key={opt} className={`group flex items-center justify-between p-6 rounded-[2rem] border-2 transition-all cursor-pointer ${
-              active ? 'bg-rose-50 border-rose-200 ring-4 ring-rose-500/5' : 'bg-gray-50 border-transparent hover:border-gray-200'
+            <label key={opt} className={`group flex items-center justify-between p-4 rounded-2xl border transition-all cursor-pointer ${
+              active 
+                ? 'bg-pink-50 border-pink-200 shadow-sm dark:bg-pink-900/20 dark:border-pink-800' 
+                : 'bg-gray-50 border-transparent hover:bg-white hover:border-gray-200 dark:bg-gray-800/50 dark:border-gray-700'
             }`}>
-              <span className={`text-sm font-black tracking-tight ${active ? 'text-rose-700' : 'text-gray-600'}`}>{opt}</span>
+              <span className={`text-sm font-bold ${active ? 'text-pink-700 dark:text-pink-400' : 'text-gray-600 dark:text-gray-300'}`}>{opt}</span>
               <input type="checkbox" checked={active} className="hidden" onChange={(e) => {
                 const next = e.target.checked ? [...safeValue, opt] : safeValue.filter(v => v !== opt);
                 field.onChange(next);
               }} />
-              <div className={`w-7 h-7 rounded-xl flex items-center justify-center border-2 transition-all ${
-                active ? 'bg-rose-500 border-rose-500 rotate-0 scale-100' : 'bg-white border-gray-200 opacity-0 group-hover:opacity-100 rotate-45 scale-75'
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center border transition-all ${
+                active ? 'bg-pink-500 border-pink-500 scale-100' : 'bg-white border-gray-300 scale-90'
               }`}>
-                {active && <CheckCircle2 size={16} className="text-white" />}
+                {active && <CheckCircle2 size={12} className="text-white" />}
               </div>
             </label>
           );
@@ -71,22 +80,25 @@ export const CheckboxGroup = ({ name, label, options, control }: any) => {
   );
 };
 
-// 4. GRADE DE REGIÕES (Pílulas de Seleção Rápida)
+// 4. GRADE DE REGIÕES (Pílulas)
 export const RegionGrid = ({ name, options, control, label }: any) => {
   const { field } = useController({ name, control, defaultValue: [] });
   const safeValue = ensureArray(field.value);
+  
   return (
-    <div className="space-y-4">
-      {label && <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] block mb-4 ml-4">{label}</label>}
-      <div className="flex flex-wrap gap-2 pt-2">
+    <div className="space-y-3">
+      {label && <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1">{label}</label>}
+      <div className="flex flex-wrap gap-2">
         {options.map((opt: string) => {
           const active = safeValue.includes(opt);
           return (
             <button key={opt} type="button" onClick={() => {
               const next = active ? safeValue.filter(v => v !== opt) : [...safeValue, opt];
               field.onChange(next);
-            }} className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all border-2 ${
-              active ? 'bg-gray-900 border-gray-900 text-white shadow-xl scale-105' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-900 hover:text-gray-900'
+            }} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+              active 
+                ? 'bg-gray-900 border-gray-900 text-white shadow-md dark:bg-white dark:text-gray-900' 
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'
             }`}>
               {opt}
             </button>
@@ -97,110 +109,118 @@ export const RegionGrid = ({ name, options, control, label }: any) => {
   );
 };
 
-// 5. INPUT COM LABEL (Design Arredondado)
+// 5. INPUT COM LABEL (Estilo Dashboard)
 export const InputWithLabel = React.forwardRef(({ label, style, ...props }: any, ref: any) => (
-  <div className="w-full group">
-    {label && <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-3 ml-4 transition-colors group-focus-within:text-rose-500">{label}</label>}
-    <input {...props} ref={ref} style={style} className="w-full bg-gray-50 border-2 border-transparent p-5 rounded-[1.5rem] text-sm font-bold text-gray-700 outline-none focus:bg-white focus:border-rose-200 focus:ring-8 focus:ring-rose-500/5 transition-all placeholder:text-gray-300 placeholder:font-medium" />
+  <div className="w-full group space-y-2">
+    {label && <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1 transition-colors group-focus-within:text-pink-600">{label}</label>}
+    <input 
+      {...props} 
+      ref={ref} 
+      style={style} 
+      className="w-full bg-gray-50 border border-gray-200 px-4 py-3 rounded-xl text-sm font-medium text-gray-900 outline-none focus:bg-white focus:border-pink-500 focus:ring-4 focus:ring-pink-500/10 transition-all placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-700 dark:text-white" 
+    />
   </div>
 ));
 InputWithLabel.displayName = "InputWithLabel";
 
 // 6. SELECT PERSONALIZADO
 export const SelectField = ({ label, name, register, options }: any) => (
-  <div className="relative group w-full">
-    {label && <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-3 ml-4 transition-colors group-focus-within:text-rose-500">{label}</label>}
+  <div className="relative group w-full space-y-2">
+    {label && <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1 transition-colors group-focus-within:text-pink-600">{label}</label>}
     <div className="relative">
-      <select {...register(name)} className="w-full appearance-none bg-gray-50 border-2 border-transparent p-5 rounded-[1.5rem] text-sm font-bold text-gray-700 outline-none focus:bg-white focus:border-rose-200 focus:ring-8 focus:ring-rose-500/5 transition-all">
+      <select 
+        {...register(name)} 
+        className="w-full appearance-none bg-gray-50 border border-gray-200 px-4 py-3 rounded-xl text-sm font-medium text-gray-900 outline-none focus:bg-white focus:border-pink-500 focus:ring-4 focus:ring-pink-500/10 transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+      >
         <option value="">Selecione...</option>
         {options.map((o: string) => <option key={o} value={o}>{o}</option>)}
       </select>
-      <ChevronDown size={20} className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none group-focus-within:rotate-180 transition-transform" />
+      <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
     </div>
   </div>
 );
 
-// 7. COMPONENTE SIM/NÃO (Estilo Pílula Dupla)
+// 7. COMPONENTE SIM/NÃO
 export const YesNoRadio = ({ label, name, register, watchValue }: any) => {
   const current = String(watchValue);
   return (
-    <div className="space-y-3">
-      {label && <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block ml-2">{label}</label>}
+    <div className="space-y-2">
+      {label && <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1">{label}</label>}
       <div className="flex gap-2">
-        <label className={`flex-1 cursor-pointer p-4 rounded-xl border-2 text-center transition-all ${current === "true" ? 'bg-rose-500 border-rose-500 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400 font-bold'}`}>
+        <label className={`flex-1 cursor-pointer py-3 px-4 rounded-xl border text-center transition-all ${current === "true" ? 'bg-pink-600 border-pink-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 font-medium'}`}>
           <input type="radio" value="true" {...register(name)} className="hidden" />
-          <span className="text-xs font-black uppercase">Sim</span>
+          <span className="text-xs font-bold uppercase">Sim</span>
         </label>
-        <label className={`flex-1 cursor-pointer p-4 rounded-xl border-2 text-center transition-all ${current === "false" ? 'bg-gray-800 border-gray-800 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-400 font-bold'}`}>
+        <label className={`flex-1 cursor-pointer py-3 px-4 rounded-xl border text-center transition-all ${current === "false" ? 'bg-gray-800 border-gray-800 text-white shadow-md' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50 font-medium'}`}>
           <input type="radio" value="false" {...register(name)} className="hidden" />
-          <span className="text-xs font-black uppercase">Não</span>
+          <span className="text-xs font-bold uppercase">Não</span>
         </label>
       </div>
     </div>
   );
 };
 
-// 8. SLIDER DE URGÊNCIA (Utilizado na barra lateral)
+// 8. SLIDER
 export const LabelSlider = ({ label, name, register, min, max, low, high }: any) => (
-  <div className="w-full">
-    {label && <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4 ml-2">{label}</label>}
+  <div className="w-full space-y-3">
+    {label && <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1">{label}</label>}
     <input
       type="range"
       min={min}
       max={max}
       step="1"
       {...register(name)}
-      className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-rose-500 hover:accent-rose-400 transition-all"
+      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-pink-600 hover:accent-pink-500 transition-all dark:bg-gray-700"
     />
-    <div className="flex justify-between text-[10px] font-black uppercase mt-3 text-gray-500">
+    <div className="flex justify-between text-[10px] font-bold uppercase text-gray-400">
       <span>{low}</span>
       <span>{high}</span>
     </div>
   </div>
 );
 
-// 9. ITEM ÚNICO CHECKBOX
+// 9. CHECKBOX ITEM ÚNICO
 export const CheckboxItem = ({ name, label, register }: any) => (
-  <label className="flex items-center gap-5 p-6 bg-white border-2 border-gray-50 rounded-[2rem] cursor-pointer hover:shadow-md hover:border-rose-100 transition-all active:scale-[0.98]">
+  <label className="flex items-center gap-4 p-4 bg-white border border-gray-100 rounded-2xl cursor-pointer hover:border-pink-200 hover:shadow-sm transition-all dark:bg-gray-800 dark:border-gray-700">
     <div className="relative flex items-center">
-      <input type="checkbox" {...register(name)} className="peer w-7 h-7 rounded-xl border-2 border-gray-200 text-rose-500 focus:ring-rose-500/20 transition-all checked:border-rose-500" />
-      <CheckCircle2 className="absolute inset-0 m-auto text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" size={16} />
+      <input type="checkbox" {...register(name)} className="peer w-5 h-5 rounded-md border-2 border-gray-300 text-pink-600 focus:ring-pink-500/20 transition-all checked:border-pink-600 checked:bg-pink-600" />
+      <CheckCircle2 className="absolute inset-0 m-auto text-white opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" size={12} />
     </div>
-    <span className="text-sm font-black text-gray-700 uppercase tracking-tight">{label}</span>
+    <span className="text-sm font-bold text-gray-700 dark:text-gray-200">{label}</span>
   </label>
 );
 
-// 10. LISTA DE PROCEDIMENTOS COM DATAS
+// 10. LISTA DE PROCEDIMENTOS
 export const ProcedureListWithDates = ({ control, register, setValue, list }: any) => {
   const { field } = useController({ name: "procedimentos_previos", control, defaultValue: [] });
   const safeValue = ensureArray(field.value);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {list.map((proc: string) => {
         const isChecked = safeValue.includes(proc);
         const inputName = `data_proc_${proc.toLowerCase().replace(/\s+/g, '_')}`;
         return (
-          <div key={proc} className={`p-6 rounded-[2rem] border-2 transition-all ${isChecked ? 'bg-rose-50 border-rose-200 shadow-sm' : 'bg-gray-50 border-transparent'}`}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <label className="flex items-center gap-4 cursor-pointer">
+          <div key={proc} className={`p-4 rounded-2xl border transition-all ${isChecked ? 'bg-pink-50 border-pink-200 dark:bg-pink-900/10 dark:border-pink-800' : 'bg-gray-50 border-transparent dark:bg-gray-800 dark:border-gray-700'}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <label className="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" checked={isChecked} onChange={(e) => {
                   const next = e.target.checked ? [...safeValue, proc] : safeValue.filter(v => v !== proc);
                   field.onChange(next);
                   if(!e.target.checked) setValue(inputName, ""); 
-                }} className="w-6 h-6 rounded-xl border-2 border-gray-200 text-rose-500" />
-                <span className={`text-sm font-black uppercase tracking-tight ${isChecked ? 'text-rose-900' : 'text-gray-500'}`}>{proc}</span>
+                }} className="w-5 h-5 rounded-md border-gray-300 text-pink-600 focus:ring-pink-500" />
+                <span className={`text-sm font-bold ${isChecked ? 'text-pink-700 dark:text-pink-400' : 'text-gray-600 dark:text-gray-400'}`}>{proc}</span>
               </label>
               
               {isChecked && (
-                <div className="flex items-center gap-3 animate-in fade-in slide-in-from-right-4 duration-300">
-                  <span className="text-[10px] font-black text-rose-400 uppercase tracking-widest flex items-center gap-1">
-                    <Calendar size={14}/> Última Sessão:
+                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                    <Calendar size={12}/> Data:
                   </span>
                   <input 
                     type="date" 
                     {...register(inputName)} 
-                    className="bg-white p-3 rounded-xl border border-rose-100 text-xs font-bold text-rose-700 outline-none focus:ring-4 focus:ring-rose-500/10" 
+                    className="bg-white px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-700 outline-none focus:border-pink-500 dark:bg-gray-900 dark:border-gray-600 dark:text-white" 
                   />
                 </div>
               )}
@@ -212,14 +232,14 @@ export const ProcedureListWithDates = ({ control, register, setValue, list }: an
   );
 };
 
-// 11. ÁREA DE TEXTO ESTILIZADA
-export const TextareaField = ({ label, name, register, placeholder }: any) => (
-  <div className="w-full">
-    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-3 ml-4">{label}</label>
+// 11. TEXTAREA (Design Dashboard)
+export const TextAreaField = ({ label, name, register, placeholder }: any) => (
+  <div className="w-full space-y-2">
+    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block ml-1">{label}</label>
     <textarea 
       {...register(name)} 
       placeholder={placeholder}
-      className="w-full bg-gray-50 border-2 border-transparent p-8 rounded-[2.5rem] text-sm font-bold text-gray-700 outline-none focus:bg-white focus:border-rose-200 focus:ring-8 focus:ring-rose-500/5 transition-all h-48 resize-none"
+      className="w-full bg-gray-50 border border-gray-200 p-4 rounded-2xl text-sm font-medium text-gray-900 outline-none focus:bg-white focus:border-pink-500 focus:ring-4 focus:ring-pink-500/10 transition-all h-32 resize-none placeholder:text-gray-400 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
     />
   </div>
 );

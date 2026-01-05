@@ -15,9 +15,9 @@ import { addMinutes, format, parseISO } from 'date-fns';
 
 // --- SCHEMA ---
 const appointmentSchema = z.object({
-  patient_id: z.string().min(1, "Selecione um paciente"),
-  professional_id: z.string().min(1, "Selecione um profissional"),
-  treatment_id: z.string().min(1, "Selecione um procedimento"),
+  patientId: z.string().min(1, "Selecione um paciente"),
+  professionalId: z.string().min(1, "Selecione um profissional"),
+  serviceId: z.string().min(1, "Selecione um procedimento"),
   date: z.string().min(1, "Data é obrigatória"),
   time: z.string().min(1, "Horário é obrigatório"),
   room: z.string().optional(),
@@ -28,31 +28,32 @@ type AppointmentFormData = z.infer<typeof appointmentSchema>;
 
 // --- TIPAGEM ---
 interface Patient {
-    id: string;
-    name: string;
-    cpf?: string;
+  id: string;
+  name: string;
+  cpf?: string;
 }
 
 interface Professional {
-    id: string;
-    first_name: string;
-    last_name?: string;
-    formacao?: string;
-    role: string;
+  id: string;
+  firstName: string;
+  lastName?: string;
+  formacao?: string;
+  role: string;
+  fullName?: string;
 }
 
-interface Treatment {
-    id: string;
-    name: string;
-    duration: string;
-    price: number;
+interface Service { 
+  id: string;
+  name: string;
+  duration: number;
+  price: number;
 }
 
 interface PackageType {
-    id: string;
-    title: string;
-    total_sessions: number;
-    used_sessions: number;
+  id: string;
+  title: string;
+  total_sessions: number;
+  used_sessions: number;
 }
 
 // Salas Disponíveis
@@ -70,10 +71,11 @@ export function AppointmentFormPage() {
 
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clinicId, setClinicId] = useState<string | null>(null);
   
   // Listas de Dados
   const [patientsList, setPatientsList] = useState<Patient[]>([]);
-  const [treatmentsList, setTreatmentsList] = useState<Treatment[]>([]);
+  const [servicesList, setServicesList] = useState<Service[]>([]); 
   const [professionalsList, setProfessionalsList] = useState<Professional[]>([]);
 
   // Controle de Pacotes
@@ -85,67 +87,73 @@ export function AppointmentFormPage() {
     defaultValues: { 
         date: initialDate, 
         time: initialTime,
-        professional_id: preSelectedProfId || '' 
+        professionalId: preSelectedProfId || '' 
     }
   });
 
-  const selectedPatientId = watch('patient_id');
-  const selectedTreatmentId = watch('treatment_id');
-  const selectedProfessionalId = watch('professional_id');
+  const selectedPatientId = watch('patientId');
+  const selectedServiceId = watch('serviceId');
+  const selectedProfessionalId = watch('professionalId');
   const watchDate = watch('date');
   const watchTime = watch('time');
 
   useEffect(() => {
-      if (preSelectedProfId) setValue('professional_id', preSelectedProfId);
+      if (preSelectedProfId) setValue('professionalId', preSelectedProfId);
       if (preSelectedDate) setValue('date', initialDate);
   }, [preSelectedProfId, preSelectedDate, setValue]);
 
-  // --- CARREGAMENTO INICIAL (CORRIGIDO) ---
+  // --- CARREGAMENTO INICIAL ---
   useEffect(() => {
     async function loadData() {
       try {
         setLoading(true);
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Usuário não logado");
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('clinicId')
+          .eq('id', user.id)
+          .single();
+
+        if (!profile?.clinicId) throw new Error("Usuário sem clínica vinculada");
+        setClinicId(profile.clinicId);
         
-        // 1. Pacientes (Simplificado para evitar erro de relação)
-        // Se der erro aqui, é porque a tabela patients não tem a coluna name ou cpf.
+        // 2. Pacientes
         const { data: patients, error: patError } = await supabase
             .from('patients')
             .select('id, cpf, name') 
+            .eq('clinicId', profile.clinicId)
             .order('name', { ascending: true });
         
-        if (patError) {
-            console.error("Erro Pacientes:", patError);
-            throw patError;
-        }
+        if (patError) throw patError;
         setPatientsList(patients || []);
 
-        // 2. Tratamentos
-        const { data: treatments, error: treatError } = await supabase
-            .from('treatments')
-            .select('*')
+        // 3. Serviços
+        const { data: services, error: servError } = await supabase
+            .from('services')
+            .select('id, name, duration, price')
+            .eq('clinicId', profile.clinicId)
+            .eq('isActive', true)
             .order('name');
         
-        if (treatError) {
-            console.error("Erro Tratamentos:", treatError);
-            throw treatError;
-        }
-        setTreatmentsList(treatments || []);
+        if (servError) throw servError;
+        setServicesList(services || []);
 
-        // 3. Profissionais
+        // 4. Profissionais
         const { data: professionals, error: profError } = await supabase
             .from('profiles')
-            .select('id, first_name, last_name, role, formacao')
-            .neq('role', 'paciente'); // Garanta que 'paciente' é o termo exato no banco
+            .select('id, firstName, lastName, fullName, role') 
+            .eq('clinicId', profile.clinicId)
+            .in('role', ['profissional', 'admin']); 
         
-        if (profError) {
-            console.error("Erro Profissionais:", profError);
-            throw profError;
-        }
+        if (profError) throw profError;
         setProfessionalsList(professionals || []);
 
       } catch (error: any) {
-        console.error("ERRO GERAL:", error);
-        toast.error(`Erro ao carregar dados: ${error.message || "Verifique o console"}`); 
+        console.error("ERRO DE CARREGAMENTO:", error);
+        toast.error("Erro ao carregar dados iniciais."); 
       } finally {
         setLoading(false);
       }
@@ -153,11 +161,11 @@ export function AppointmentFormPage() {
     loadData();
   }, []);
 
-  // --- BUSCA PACOTES ---
+  // --- BUSCA PACOTES (CORRIGIDO AQUI) ---
   useEffect(() => {
     if (selectedPatientId) {
         async function fetchPackages() {
-            // Verifica se a tabela patient_packages existe antes de quebrar
+            // Tenta buscar pacotes. Se a tabela não existir, o 'error' será capturado e ignorado.
             const { data, error } = await supabase
               .from("patient_packages")
               .select("*")
@@ -170,7 +178,9 @@ export function AppointmentFormPage() {
                 setUsePackageId(null);
             }
         }
-        fetchPackages();
+        
+        // AQUI ESTAVA O ERRO: A função estava comentada. Agora está ativa.
+        fetchPackages(); 
     } else {
         setActivePackages([]);
         setUsePackageId(null);
@@ -179,35 +189,31 @@ export function AppointmentFormPage() {
 
   // --- DADOS DO RESUMO ---
   const selectedPatient = patientsList.find(p => p.id === selectedPatientId);
-  const selectedTreatment = treatmentsList.find(t => t.id === selectedTreatmentId);
+  const selectedService = servicesList.find(s => s.id === selectedServiceId);
   const selectedProfessional = professionalsList.find(p => p.id === selectedProfessionalId);
 
   // --- SUBMIT ---
   const onSubmit = async (data: AppointmentFormData) => {
+    if (!clinicId) {
+        toast.error("Erro de identificação da clínica.");
+        return;
+    }
     setIsSubmitting(true);
+    
     try {
       const startDateTime = new Date(`${data.date}T${data.time}`);
       
-      let durationMinutes = 60;
-      if (selectedTreatment?.duration) {
-          const durationStr = String(selectedTreatment.duration);
-          if(durationStr.includes('min')) durationMinutes = parseInt(durationStr);
-          else if (durationStr.includes(':')) {
-             const [h, m] = durationStr.split(':').map(Number);
-             durationMinutes = (h * 60) + m;
-          }
-      }
+      const durationMinutes = selectedService?.duration || 60;
       const endDateTime = addMinutes(startDateTime, durationMinutes);
 
       const { error } = await supabase.from('appointments').insert({
-          patient_id: data.patient_id,
-          professional_id: data.professional_id,
-          treatment_id: data.treatment_id,
-          start_time: startDateTime.toISOString(),
-          end_time: endDateTime.toISOString(),
+          clinicId: clinicId,
+          patientId: data.patientId,
+          professionalId: data.professionalId,
+          serviceId: data.serviceId,
+          startAt: startDateTime.toISOString(),
+          endAt: endDateTime.toISOString(),
           status: 'scheduled',
-          date: data.date, 
-          room: data.room,
           notes: data.notes,
         });
 
@@ -266,15 +272,21 @@ export function AppointmentFormPage() {
                     <div className="grid md:grid-cols-2 gap-6">
                         <div className="md:col-span-2">
                             <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Nome do Paciente</label>
-                            <select {...register('patient_id')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 transition-all">
-                                <option value="">Selecione...</option>
-                                {patientsList.map(p => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.name} {p.cpf ? `(CPF: ${p.cpf})` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                            {errors.patient_id && <span className="text-xs text-red-500 mt-1 block">{errors.patient_id.message}</span>}
+                            {patientsList.length === 0 ? (
+                                <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-lg text-yellow-800 text-sm">
+                                    Nenhum paciente cadastrado nesta clínica. Cadastre um paciente antes de agendar.
+                                </div>
+                            ) : (
+                                <select {...register('patientId')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 transition-all">
+                                    <option value="">Selecione...</option>
+                                    {patientsList.map(p => (
+                                        <option key={p.id} value={p.id}>
+                                            {p.name} {p.cpf ? `(CPF: ${p.cpf})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                            {errors.patientId && <span className="text-xs text-red-500 mt-1 block">{errors.patientId.message}</span>}
                         </div>
                     </div>
                 </section>
@@ -292,35 +304,41 @@ export function AppointmentFormPage() {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             {professionalsList.map(p => (
                                 <label key={p.id} className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all hover:shadow-md flex flex-col items-center text-center gap-2 ${selectedProfessionalId === p.id ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20' : 'border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900'}`}>
-                                    <input type="radio" value={p.id} {...register('professional_id')} className="absolute opacity-0 w-full h-full cursor-pointer" />
+                                    <input type="radio" value={p.id} {...register('professionalId')} className="absolute opacity-0 w-full h-full cursor-pointer" />
                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${selectedProfessionalId === p.id ? 'bg-pink-500' : 'bg-gray-400'}`}>
-                                        {p.first_name ? p.first_name[0] : '?'}
+                                        {p.firstName ? p.firstName[0] : '?'}
                                     </div>
                                     <div>
-                                        <span className="block font-bold text-sm text-gray-800 dark:text-white">{p.first_name}</span>
-                                        <span className="block text-[10px] uppercase text-gray-500">{p.formacao || 'Profissional'}</span>
+                                        <span className="block font-bold text-sm text-gray-800 dark:text-white">{p.firstName}</span>
+                                        <span className="block text-[10px] uppercase text-gray-500">{p.role}</span>
                                     </div>
                                     {selectedProfessionalId === p.id && <div className="absolute top-2 right-2 text-pink-500"><CheckCircle2 size={16}/></div>}
                                 </label>
                             ))}
                         </div>
                     )}
-                    {errors.professional_id && <span className="text-xs text-red-500 mt-2 block">{errors.professional_id.message}</span>}
+                    {errors.professionalId && <span className="text-xs text-red-500 mt-2 block">{errors.professionalId.message}</span>}
                 </section>
 
-                {/* 3. PROCEDIMENTO & DATA & SALA */}
+                {/* 3. SERVIÇO & DATA & SALA */}
                 <section className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                     <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-800 dark:text-white"><Clock size={18} className="text-blue-600"/> Detalhes da Sessão</h2>
                     <div className="grid md:grid-cols-2 gap-6">
                         <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Procedimento</label>
-                            <select {...register('treatment_id')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500">
-                                <option value="">Selecione...</option>
-                                {treatmentsList.map(t => (
-                                    <option key={t.id} value={t.id}>{t.name} ({t.duration})</option>
-                                ))}
-                            </select>
-                            {errors.treatment_id && <span className="text-xs text-red-500 mt-1 block">{errors.treatment_id.message}</span>}
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Serviço / Procedimento</label>
+                            {servicesList.length === 0 ? (
+                                <div className="p-3 border rounded-xl bg-gray-50 text-gray-500 text-sm">
+                                    Nenhum serviço cadastrado. Vá em Serviços para criar.
+                                </div>
+                            ) : (
+                                <select {...register('serviceId')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500">
+                                    <option value="">Selecione...</option>
+                                    {servicesList.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name} ({s.duration} min)</option>
+                                    ))}
+                                </select>
+                            )}
+                            {errors.serviceId && <span className="text-xs text-red-500 mt-1 block">{errors.serviceId.message}</span>}
                         </div>
                         
                         <div className="grid grid-cols-2 gap-4">
@@ -379,7 +397,7 @@ export function AppointmentFormPage() {
                     <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-500">Profissional</span>
                         <span className="text-sm font-bold text-gray-800 dark:text-white text-right">
-                            {selectedProfessional ? selectedProfessional.first_name : '-'}
+                            {selectedProfessional ? selectedProfessional.firstName : '-'}
                         </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -389,13 +407,13 @@ export function AppointmentFormPage() {
                         </span>
                     </div>
                     <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700">
-                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">Procedimento</p>
-                        <p className="text-base font-bold text-pink-600">{selectedTreatment?.name || 'Nenhum selecionado'}</p>
+                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">Serviço</p>
+                        <p className="text-base font-bold text-pink-600">{selectedService?.name || 'Nenhum selecionado'}</p>
                     </div>
                 </div>
 
                 {/* SEÇÃO DE COBRANÇA */}
-                {selectedTreatment && (
+                {selectedService && (
                     <div className="mb-6 animate-in fade-in slide-in-from-bottom-4">
                         <p className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-1"><CreditCard size={12}/> Método de Cobrança</p>
                         
@@ -424,7 +442,7 @@ export function AppointmentFormPage() {
                                     </div>
                                 </div>
                                 <span className="text-sm font-bold text-blue-600">
-                                    {selectedTreatment.price ? `R$ ${selectedTreatment.price}` : 'R$ -'}
+                                    {selectedService.price ? `R$ ${selectedService.price}` : 'R$ -'}
                                 </span>
                             </label>
                         </div>

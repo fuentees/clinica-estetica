@@ -12,12 +12,14 @@ import {
   LayoutDashboard,
   Image as ImageIcon,
   ClipboardList,
-  ClipboardCheck,
+  Sparkles, // Ícone novo para Planejamento (mais comercial/estético)
   BrainCircuit,
-  Scale // <--- 1. IMPORTAMOS O ÍCONE AQUI
+  Scale,
+  Settings
 } from "lucide-react";
 
-// Tipagem básica do Paciente
+import { Button } from "../../components/ui/button";
+
 interface Patient {
   id: string;
   name: string;
@@ -35,7 +37,6 @@ export function PatientDashboardLayout() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- CARREGAR DADOS ---
   useEffect(() => {
     async function fetchPatient() {
       if (!id) return;
@@ -60,98 +61,105 @@ export function PatientDashboardLayout() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <Loader2 className="animate-spin text-rose-600 w-10 h-10" />
+      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sincronizando Prontuário...</p>
+        </div>
       </div>
     );
   }
 
   if (!patient) return null;
 
-  // --- MENU DE ABAS ---
+  // ✅ LISTA DE NAVEGAÇÃO OTIMIZADA
   const navItems = [
     { label: "Visão Geral", path: "", icon: LayoutDashboard },
-    { label: "Dados", path: "details", icon: User },
     
-    // Anamnese
-    { label: "Anamnese & Plano", path: "anamnesis", icon: ClipboardList },
-    
-    // IA
-    { label: "Auditoria IA", path: "ai-analysis", icon: BrainCircuit }, 
-
-    // 2. ADICIONAMOS A BIOIMPEDÂNCIA AQUI
+    // Bloco Clínico
+    { label: "Anamnese", path: "anamnesis", icon: ClipboardList }, // Inclui Injetáveis e Exames
     { label: "Bioimpedância", path: "bioimpedance", icon: Scale }, 
-
-    { label: "Planos de Tratamento", path: "treatment-plans", icon: ClipboardCheck },
-    { label: "Evolução", path: "evolution", icon: Activity },
+    { label: "Auditoria IA", path: "ai-analysis", icon: BrainCircuit }, 
+    
+    // Bloco Comercial/Tratamento (A CORREÇÃO AQUI 👇)
+    { label: "Planejamento", path: "treatment-plans", icon: Sparkles }, // Aqui ficam os Orçamentos/Planos de Tratamento
+    
+    // Bloco Administrativo
+    { label: "Financeiro", path: "financial", icon: DollarSign }, // Aqui ficam Pagamentos/Débitos
     { label: "Receitas", path: "prescriptions", icon: ScrollText },
-    { label: "Financeiro", path: "financial", icon: DollarSign },
+    
+    // Bloco Histórico/Docs
+    { label: "Evolução", path: "evolution", icon: Activity },
     { label: "Galeria", path: "gallery", icon: ImageIcon },
     { label: "Termos", path: "terms", icon: FileText },
+    { label: "Dados", path: "details", icon: User },
   ];
 
-  const initials = patient.name.substring(0, 2).toUpperCase();
+  const initials = patient.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50/50 dark:bg-gray-900 font-sans">
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-950 font-sans">
       
-      {/* --- HEADER PREMIUM --- */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm relative overflow-hidden">
-        {/* Barra Colorida Superior */}
-        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-rose-500 via-pink-500 to-purple-500"></div>
+      {/* --- HEADER FIXO --- */}
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 sticky top-0 z-40 shadow-sm transition-all">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 opacity-80"></div>
 
-        <div className="max-w-[1600px] mx-auto px-6 py-8">
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
+        <div className="max-w-[1600px] mx-auto px-6 pt-6 pb-0">
+          
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-6 mb-6">
             
             <button 
               onClick={() => navigate("/patients")} 
-              className="absolute top-6 right-6 md:static md:mr-2 p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 transition-colors"
+              className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-all group border border-transparent hover:border-pink-100"
               title="Voltar para a lista"
             >
-              <ArrowLeft size={24} />
+              <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
             </button>
 
-            {/* AVATAR */}
-            <div className="relative">
-              <div className="w-20 h-20 md:w-24 md:h-24 rounded-full p-1 bg-gradient-to-tr from-rose-400 to-purple-500 shadow-lg">
-                <div className="w-full h-full rounded-full bg-white dark:bg-gray-800 border-4 border-white dark:border-gray-800 flex items-center justify-center overflow-hidden">
-                  {patient.avatar_url ? (
-                    <img src={patient.avatar_url} alt={patient.name} className="w-full h-full object-cover"/>
-                  ) : (
-                    <span className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-tr from-rose-500 to-purple-600">
-                      {initials}
-                    </span>
-                  )}
+            {/* Avatar & Nome */}
+            <div className="flex items-center gap-5 flex-1">
+                <div className="relative group cursor-pointer">
+                    <div className="w-16 h-16 rounded-2xl p-0.5 bg-gradient-to-br from-pink-200 to-purple-200 group-hover:from-pink-500 group-hover:to-purple-600 transition-all">
+                        <div className="w-full h-full rounded-2xl bg-white dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+                            {patient.avatar_url ? (
+                                <img src={patient.avatar_url} alt={patient.name} className="w-full h-full object-cover"/>
+                            ) : (
+                                <span className="text-xl font-bold text-pink-600 bg-pink-50 w-full h-full flex items-center justify-center">
+                                    {initials}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-[3px] border-white dark:border-gray-900 rounded-full"></div>
                 </div>
-              </div>
+
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight leading-tight">
+                        {patient.name}
+                    </h1>
+                    <div className="flex items-center gap-3 mt-1">
+                        <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-[10px] font-bold text-gray-500 rounded-md uppercase tracking-wider border border-gray-200 dark:border-gray-700">
+                            ID: {patient.id.substring(0,6)}
+                        </span>
+                        {patient.phone && (
+                            <span className="text-xs font-medium text-gray-500 flex items-center gap-1">
+                                <div className="w-1 h-1 rounded-full bg-gray-400"></div> {patient.phone}
+                            </span>
+                        )}
+                    </div>
+                </div>
             </div>
 
-            {/* INFO */}
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight mb-1">
-                {patient.name}
-              </h1>
-              
-              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                {patient.cpf && (
-                  <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-mono font-bold text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
-                    CPF: {patient.cpf}
-                  </span>
-                )}
-                {patient.phone && (
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                    {patient.phone}
-                  </span>
-                )}
-              </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="rounded-xl border-gray-200 text-gray-500 hover:bg-gray-50 font-bold text-xs h-10">
+                <Settings size={16} className="mr-2"/> Configurar
+              </Button>
             </div>
           </div>
 
-          {/* --- ABAS DE NAVEGAÇÃO --- */}
-          <div className="flex items-center gap-1 mt-8 overflow-x-auto custom-scrollbar border-b border-gray-200 dark:border-gray-700">
+          {/* NAVEGAÇÃO POR ABAS (Estilo Clean) */}
+          <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar -mb-[1px]">
             {navItems.map((item) => {
-              // Lógica para detectar rota ativa
               const isActive = item.path === "" 
                 ? location.pathname.endsWith(id!) || location.pathname.endsWith(`${id}/`)
                 : location.pathname.includes(item.path);
@@ -161,26 +169,28 @@ export function PatientDashboardLayout() {
                   key={item.path}
                   to={item.path}
                   className={`
-                    flex items-center gap-2 px-5 py-3 border-b-2 text-sm font-medium transition-all whitespace-nowrap
+                    group flex items-center gap-2 px-5 py-4 border-b-[3px] text-[11px] font-bold uppercase tracking-wider transition-all whitespace-nowrap
                     ${isActive 
-                      ? "border-rose-500 text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-900/10" 
-                      : "border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                      ? "border-pink-500 text-pink-600 dark:text-pink-400 bg-pink-50/50 dark:bg-pink-900/10 rounded-t-xl" 
+                      : "border-transparent text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-t-xl"
                     }
                   `}
                 >
-                  <item.icon size={18} className={isActive ? "text-rose-500" : "text-gray-400"} />
+                  <item.icon 
+                    size={16} 
+                    className={`transition-colors ${isActive ? "text-pink-500" : "text-gray-400 group-hover:text-gray-500"}`} 
+                  />
                   {item.label}
                 </Link>
               );
             })}
-          </div>
+          </nav>
         </div>
-      </div>
+      </header>
 
-      {/* --- CONTEÚDO --- */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto p-6">
-        <Outlet context={{ patient }} /> 
-      </div>
+      <main className="flex-1 max-w-[1600px] w-full mx-auto p-6 animate-in fade-in duration-700">
+         <Outlet context={{ patient }} /> 
+      </main>
     </div>
   );
 }

@@ -6,67 +6,60 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "./contexts/AuthContext"; 
 import { ThemeProvider } from "./contexts/ThemeContext"; 
 
-// --- LAYOUTS ---
-import { Layout } from "./components/Layout"; 
-import { PatientLayout } from "./components/layouts/PatientLayout"; 
-import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"; 
-import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout"; 
-
-// --- GUARDIÃO DE ROTAS ---
+// --- LAYOUTS GLOBAIS ---
+import { Layout } from "./components/layouts/Layout"; 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 // --- PÁGINAS GERAIS ---
 import { LoginPage } from "./pages/auth/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
-
-// --- PÁGINAS ADMINISTRATIVAS ---
 import DashboardPage from "./pages/dashboard/DashboardPage"; 
+import { SettingsPage } from "./pages/settings/SettingsPage";
 
-// Agendamentos
+// --- AGENDAMENTOS ---
 import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
 import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
 import AppointmentEditPage from "./pages/appointments/AppointmentEditPage";
 
-// Pacientes
+// --- PACIENTES (ESTRUTURA DE LAYOUT ÚNICO) ---
 import { PatientsListPage } from "./pages/patients/PatientsListPage"; 
 import { PatientFormPage } from "./pages/patients/PatientFormPage"; 
-import PatientOverviewPage from "./pages/patients/PatientOverviewPage"; 
+import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"; // A MOLDURA (Header Rosa)
 
-// --- PÁGINAS DO PRONTUÁRIO ---
-import { PatientAIAnalysisPage } from "./pages/patients/PatientAIAnalysisPage"; 
+// Páginas filhas do Prontuário (Sem chaves na importação default)
+import PatientOverviewPage from "./pages/patients/PatientOverviewPage";
 import PatientAnamnesisPage from "./pages/patients/anamnesis/PatientAnamnesisPage";
-import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage";
+import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";// A página de Orçamentos/Planejamento
+
+import { PatientAIAnalysisPage } from "./pages/patients/PatientAIAnalysisPage"; 
+import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage"; // Se não tiver a página wrapper, use o TabBioimpedancia aqui, mas o ideal é ter uma página
 import { PatientEvolutionPage } from "./pages/patients/PatientEvolutionPage";
 import { PatientFinancialPage } from "./pages/patients/PatientFinancialPage";
-import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";
 import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
 import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
-import { InjectablesPlanningPage } from "./pages/patients/InjectablesPlanningPage";
-
-// Receituário
-import { PrescriptionsPage } from "./pages/prescriptions/PrescriptionsPage";
-import { PrescriptionFormPage } from "./pages/prescriptions/PrescriptionFormPage";
 import { PatientPrescriptionsPage } from "./pages/patients/PatientPrescriptionsPage";
 
-// Tratamentos
+// --- OUTROS MÓDULOS ---
+import { PrescriptionsPage } from "./pages/prescriptions/PrescriptionsPage";
+import { PrescriptionFormPage } from "./pages/prescriptions/PrescriptionFormPage";
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
-
-// --- PROFISSIONAIS ---
-import ProfessionalsListPage from "./pages/professionals/ProfessionalsListPage";
-import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage"; 
-import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
-import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
-import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
-import ProfessionalOverviewPage from "./pages/professionals/ProfessionalOverviewPage"; 
-import ProfessionalAgendaPage from "./pages/professionals/ProfessionalAgendaPage"; 
-
-// Financeiro
 import { InventoryPage } from "./pages/inventory/InventoryPage";
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
 import { CashFlowPage } from "./pages/payments/CashFlowPage";
 
-// Portal do Paciente
+// --- PROFISSIONAIS ---
+import ProfessionalsListPage from "./pages/professionals/ProfessionalsListPage";
+import { ProfessionalFormPage } from "./pages/professionals/ProfessionalFormPage"; 
+import { ProfessionalDashboardLayout } from "./pages/professionals/ProfessionalDashboardLayout";
+import ProfessionalOverviewPage from "./pages/professionals/ProfessionalOverviewPage"; 
+import ProfessionalAgendaPage from "./pages/professionals/ProfessionalAgendaPage"; 
+import { ProfessionalAvailabilityPage } from "./pages/professionals/ProfessionalAvailabilityPage";
+import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
+import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
+
+// --- PORTAL DO PACIENTE ---
+import { PatientLayout } from "./components/layouts/PatientLayout"; 
 import PatientHome from "./pages/patients/PatientHome";
 
 const queryClient = new QueryClient();
@@ -84,43 +77,51 @@ function App() {
               <Route path="/login" element={<LoginPage />} />
 
               {/* ÁREA PROTEGIDA (ADMIN, PROFISSIONAL, RECEPCIONISTA) */}
-              <Route element={<ProtectedRoute allowedRoles={[
-                  'admin', 
-                  'profissional', 
-                  'recepcionista'
-              ]} />}>
+              <Route element={<ProtectedRoute allowedRoles={['admin', 'profissional', 'recepcionista']} />}>
                 
+                {/* O LAYOUT GLOBAL ENVOLVE TUDO AQUI */}
                 <Route element={<Layout />}>
-                  {/* Dashboard */}
+                  
+                  {/* Dashboard & Configs */}
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
-                  
-                  {/* Módulos Gerais */}
+                  <Route path="/settings" element={<SettingsPage />} />
+
+                  {/* Agendamentos */}
                   <Route path="appointments" element={<AppointmentsPage />} />
                   <Route path="appointments/new" element={<AppointmentFormPage />} />
                   <Route path="appointments/:id/edit" element={<AppointmentEditPage />} />
                   
+                  {/* Lista de Pacientes (Fora do Prontuário) */}
                   <Route path="patients" element={<PatientsListPage />} /> 
                   <Route path="patients/new" element={<PatientFormPage />} />
                   
+                  {/* === O PRONTUÁRIO COM LAYOUT ÚNICO === */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
-                      <Route index element={<PatientOverviewPage />} />
-                      <Route path="details" element={<PatientFormPage />} /> 
+                      <Route index element={<PatientOverviewPage />} /> {/* Visão Geral */}
+                      
+                      {/* Bloco Clínico */}
                       <Route path="anamnesis" element={<PatientAnamnesisPage />} />
+                      <Route path="bioimpedance" element={<PatientBioimpedancePage />} /> {/* Se ainda não tiver essa página, crie ou aponte para um componente temporário */}
                       <Route path="ai-analysis" element={<PatientAIAnalysisPage />} /> 
+                      
+                      {/* Bloco Comercial/Planejamento */}
+                      <Route path="treatment-plans" element={<PatientPlanningPage />} /> {/* Aqui montamos o orçamento */}
+                      
+                      {/* Bloco Administrativo/Histórico */}
                       <Route path="prescriptions" element={<PatientPrescriptionsPage />} />
-                      <Route path="bioimpedance" element={<PatientBioimpedancePage />} />
-                      <Route path="planning" element={<PatientPlanningPage />} />
-                      <Route path="terms" element={<PatientTermsPage />} />
-                      <Route path="gallery" element={<PatientGalleryPage />} />
-                      <Route path="evolution" element={<PatientEvolutionPage />} />
                       <Route path="financial" element={<PatientFinancialPage />} />
-                      <Route path="injectables" element={<InjectablesPlanningPage />} />
+                      <Route path="evolution" element={<PatientEvolutionPage />} />
+                      <Route path="gallery" element={<PatientGalleryPage />} />
+                      <Route path="terms" element={<PatientTermsPage />} />
+                      <Route path="details" element={<PatientFormPage />} /> 
                   </Route>
 
+                  {/* Prescrições Gerais */}
                   <Route path="prescriptions" element={<PrescriptionsPage />} />
                   <Route path="prescriptions/new" element={<PrescriptionFormPage />} />
                   
+                  {/* Profissionais */}
                   <Route path="professionals" element={<ProfessionalsListPage />} /> 
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                   
@@ -133,6 +134,7 @@ function App() {
                       <Route path="history" element={<ProfessionalHistoryPage />} />
                   </Route>
 
+                  {/* Financeiro e Estoque */}
                   <Route path="treatments" element={<TreatmentsPage />} />
                   <Route path="treatments/new" element={<TreatmentFormPage />} />
                   <Route path="inventory" element={<InventoryPage />} />
@@ -141,7 +143,7 @@ function App() {
                 </Route>
               </Route>
 
-              {/* PORTAL DO PACIENTE */}
+              {/* PORTAL DO PACIENTE (Área Externa) */}
               <Route element={<ProtectedRoute allowedRoles={['paciente']} />}>
                 <Route path="/portal" element={<PatientLayout />}>
                   <Route index element={<PatientHome />} />

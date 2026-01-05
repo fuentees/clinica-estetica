@@ -1,16 +1,76 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useForm } from "react-hook-form";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { Printer, Save, CheckSquare, Loader2, ScrollText } from "lucide-react";
+import { 
+  Printer, 
+  CheckSquare, 
+  Loader2, 
+  ScrollText, 
+  ShieldCheck, 
+  FileText, 
+  Eraser, 
+  ArrowLeft,
+  User as UserIcon 
+} from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import * as Components from "../../components/anamnesis/AnamnesisFormComponents";
 import * as Constants from "../../data/anamnesisOptions";
-import generateAnamnesisPdf from "../../utils/generateAnamnesisPdf";
+import { generateAnamnesisPdf } from "../../utils/generateAnamnesisPdf"; 
+import SignatureCanvas from "react-signature-canvas";
 
+// --- COMPONENTE INTERNO DE ASSINATURA ---
+function LocalSignaturePad({ onEnd, existingSignature, isLoading }: any) {
+  const sigCanvas = useRef<SignatureCanvas>(null);
+
+  const clear = () => {
+    sigCanvas.current?.clear();
+    onEnd("");
+  };
+
+  const save = () => {
+    if (sigCanvas.current?.isEmpty()) {
+      onEnd("");
+    } else {
+      onEnd(sigCanvas.current?.getTrimmedCanvas().toDataURL("image/png"));
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white dark:bg-gray-950 rounded-[2rem] border-2 border-gray-100 dark:border-gray-800 overflow-hidden shadow-inner">
+        <SignatureCanvas
+          ref={sigCanvas}
+          onEnd={save}
+          canvasProps={{
+            className: "w-full h-64 cursor-crosshair",
+          }}
+        />
+      </div>
+      <div className="flex justify-between items-center px-2">
+        {existingSignature && (
+          <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-2">
+            <ShieldCheck size={14}/> Assinatura biométrica registrada
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={clear}
+          disabled={isLoading}
+          className="text-[10px] font-black text-gray-400 hover:text-rose-500 uppercase tracking-widest flex items-center gap-2 transition-colors ml-auto group"
+        >
+          <Eraser size={14} className="group-hover:rotate-12 transition-transform" /> Limpar e refazer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- PÁGINA PRINCIPAL ---
 export function PatientTermsPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   
@@ -18,117 +78,172 @@ export function PatientTermsPage() {
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [fullData, setFullData] = useState<any>(null);
 
-  const { register, handleSubmit, setValue } = useForm();
+  const { register, handleSubmit, setValue, watch } = useForm();
+  const termoAceito = watch("termo_aceito");
 
   useEffect(() => {
     async function load() {
-        try {
-            // Busca dados completos para poder gerar o PDF depois
-            const { data } = await supabase.from("patients").select("*, profiles:profile_id(*)").eq("id", id).single();
-            
-            if(data) {
-                setFullData(data);
-                setValue("termo_aceito", data.termo_aceito);
-                setValue("autoriza_foto", data.autoriza_foto);
-                setValue("autoriza_midia", data.autoriza_midia);
-                
-                const json = data.procedimentos_detalhes_json || {};
-                if(json.assinatura_base64) {
-                    setSavedSignature(json.assinatura_base64);
-                    setSignatureData(json.assinatura_base64);
-                }
-            }
-        } catch(e) { console.error(e); } finally { setLoading(false); }
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from("patients")
+          .select("*, profiles:profile_id(*)")
+          .eq("id", id)
+          .single();
+        
+        if (error) throw error;
+
+        if (data) {
+          setFullData(data);
+          setValue("termo_aceito", data.termo_aceito || false);
+          setValue("autoriza_foto", data.autoriza_foto || false);
+          setValue("autoriza_midia", data.autoriza_midia || false);
+          
+          const json = data.procedimentos_detalhes_json || {};
+          if (json.assinatura_base64) {
+            setSavedSignature(json.assinatura_base64);
+            setSignatureData(json.assinatura_base64);
+          }
+        }
+      } catch (e) { 
+        console.error("Erro:", e);
+        toast.error("Erro ao carregar dados.");
+      } finally { 
+        setLoading(false); 
+      }
     }
     load();
   }, [id, setValue]);
 
   const handlePrint = () => {
-    if (!fullData) return toast.error("Aguarde o carregamento dos dados.");
-    
-    // Mescla dados atuais da tela com dados do banco para garantir que o PDF esteja atualizado
-    const currentTerms = { 
-        ...fullData,
-        // Força valores true/false para o PDF caso o usuário tenha acabado de clicar
-        termo_aceito: true, 
-    }; 
-    
-    generateAnamnesisPdf(fullData, currentTerms, savedSignature || signatureData);
-    toast.success("PDF gerado!");
+    if (!fullData) return toast.error("Carregando...");
+    const pdfData = { ...fullData, ...watch() };
+    generateAnamnesisPdf(fullData, pdfData, signatureData || savedSignature);
+    toast.success("PDF Gerado!");
   }
 
   const onSubmit = async (data: any) => {
+    if (!signatureData && !savedSignature) {
+      return toast.error("Assinatura obrigatória.");
+    }
+
     setSaving(true);
     try {
-        // 1. Atualiza campos de termo na tabela patients
+      const { error: updateError } = await supabase.from("patients").update({
+        termo_aceito: data.termo_aceito,
+        autoriza_foto: data.autoriza_foto,
+        autoriza_midia: data.autoriza_midia,
+        updated_at: new Date().toISOString()
+      }).eq("id", id);
+
+      if (updateError) throw updateError;
+      
+      if (signatureData) {
+        const { data: curr } = await supabase.from("patients").select("procedimentos_detalhes_json").eq("id", id).single();
+        const json = curr?.procedimentos_detalhes_json || {};
+        
         await supabase.from("patients").update({
-            termo_aceito: data.termo_aceito,
-            autoriza_foto: data.autoriza_foto,
-            autoriza_midia: data.autoriza_midia
+          procedimentos_detalhes_json: { ...json, assinatura_base64: signatureData }
         }).eq("id", id);
         
-        // 2. Atualiza assinatura no JSON (sem sobrescrever o resto do JSON)
-        if(signatureData) {
-            const { data: curr } = await supabase.from("patients").select("procedimentos_detalhes_json").eq("id", id).single();
-            const json = curr?.procedimentos_detalhes_json || {};
-            
-            await supabase.from("patients").update({
-                procedimentos_detalhes_json: { ...json, assinatura_base64: signatureData }
-            }).eq("id", id);
-            
-            setSavedSignature(signatureData);
-        }
-        toast.success("Termos e assinatura salvos!");
-    } catch(e) { 
-        toast.error("Erro ao salvar"); 
+        setSavedSignature(signatureData);
+      }
+
+      toast.success("Documentação confirmada!");
+      navigate(`/patients/${id}`);
+    } catch (e: any) { 
+      toast.error("Erro: " + e.message); 
     } finally { 
-        setSaving(false); 
+      setSaving(false); 
     }
   }
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-600" /></div>;
+  if (loading) return (
+    <div className="h-screen flex flex-col items-center justify-center gap-4">
+      <Loader2 className="animate-spin text-pink-600" size={40} />
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando...</p>
+    </div>
+  );
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-            <h2 className="text-xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                <ScrollText className="text-pink-600" /> Consentimento e Jurídico
-            </h2>
-            <Button type="button" onClick={handlePrint} variant="outline" className="gap-2 w-full md:w-auto">
-              <Printer size={18} /> Gerar PDF do Prontuário
-            </Button>
-         </div>
+    <div className="max-w-5xl mx-auto space-y-8 pb-20 animate-in fade-in duration-700">
+      
+      {/* HEADER */}
+      <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="flex items-center gap-6">
+          <Button variant="ghost" onClick={() => navigate(-1)} className="h-12 w-12 rounded-2xl bg-gray-50 dark:bg-gray-900 p-0">
+            <ArrowLeft size={20} />
+          </Button>
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-pink-50 dark:bg-pink-900/20 rounded-2xl text-pink-600">
+              <ScrollText size={28} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic">Termos Jurídicos</h2>
+              <p className="text-gray-400 font-bold text-[9px] uppercase tracking-widest mt-0.5">Consentimento e LGPD</p>
+            </div>
+          </div>
+        </div>
+        <Button type="button" onClick={handlePrint} variant="outline" className="h-12 px-6 rounded-xl border-gray-200 font-black uppercase text-[10px] tracking-widest">
+          <Printer size={18} className="mr-2 text-pink-500" /> Exportar PDF
+        </Button>
+      </div>
 
-         <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 mb-8 max-h-80 overflow-y-auto text-sm text-justify leading-relaxed text-gray-700 dark:text-gray-300">
-             {Constants.TERMO_LGPD_COMPLETO.split('\n').map((p, i) => (
-                 p.trim() && <p key={i} className="mb-3">{p}</p>
-             ))}
-         </div>
+      {/* TERMO DE TEXTO */}
+      <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden">
+        <div className="absolute -top-6 -right-6 text-gray-50 dark:text-gray-900/40 opacity-50">
+          <ShieldCheck size={180} />
+        </div>
+        <div className="relative z-10">
+          <h3 className="text-[10px] font-black text-pink-600 uppercase tracking-[0.2em] mb-6 flex items-center gap-2">
+            <FileText size={14}/> Cláusulas de Proteção
+          </h3>
+          <div className="max-h-[300px] overflow-y-auto pr-6 custom-scrollbar text-sm text-justify leading-relaxed text-gray-600 dark:text-gray-400 italic font-medium">
+            {Constants.TERMO_LGPD_COMPLETO?.split('\n').map((p, i) => (
+              p.trim() && <p key={i} className="mb-4">{p}</p>
+            ))}
+          </div>
+        </div>
+      </div>
 
-         <form onSubmit={handleSubmit(onSubmit)}>
-             <div className="space-y-4 mb-8 bg-pink-50 dark:bg-pink-900/10 p-6 rounded-xl border border-pink-100 dark:border-pink-900/30">
-                <h3 className="font-bold text-pink-800 dark:text-pink-300 mb-2 flex items-center gap-2"><CheckSquare size={18}/> Declarações do Paciente</h3>
-                <Components.CheckboxItem name="termo_aceito" label="Li, compreendi e ACEITO integralmente os termos acima." register={register} />
-                <Components.CheckboxItem name="autoriza_foto" label="Autorizo a captura de fotos para composição do meu prontuário." register={register} />
-                <Components.CheckboxItem name="autoriza_midia" label="Autorizo o uso da minha imagem em redes sociais (Marketing)." register={register} />
-             </div>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <div className="bg-pink-50/30 dark:bg-pink-900/5 p-10 rounded-[3rem] border-2 border-pink-100 dark:border-pink-900/20">
+          <h3 className="text-[10px] font-black text-pink-800 dark:text-pink-400 mb-8 flex items-center gap-3 uppercase tracking-widest">
+            <CheckSquare size={20}/> Validação do Paciente
+          </h3>
+          <div className="grid gap-4">
+            <Components.CheckboxItem name="termo_aceito" label="Li e aceito os termos de responsabilidade." register={register} />
+            <Components.CheckboxItem name="autoriza_foto" label="Autorizo fotos para fins de prontuário técnico." register={register} />
+            <Components.CheckboxItem name="autoriza_midia" label="Autorizo uso de imagem em redes sociais." register={register} />
+          </div>
+        </div>
 
-             <div className="mb-8">
-                 <label className="block font-bold mb-3 text-gray-700 dark:text-gray-300">Assinatura Digital</label>
-                 <Components.SignaturePad 
-                    onEnd={setSignatureData} 
-                    existingSignature={savedSignature} 
-                    isLoading={saving} 
-                 />
-             </div>
+        {/* ASSINATURA */}
+        <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-700 shadow-sm">
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-8 ml-1 flex items-center gap-2">
+            <UserIcon size={14} className="text-pink-500" /> Assinatura Digital
+          </label>
+          <LocalSignaturePad 
+            onEnd={setSignatureData} 
+            existingSignature={savedSignature} 
+            isLoading={saving} 
+          />
+        </div>
 
-             <div className="flex justify-end border-t pt-6">
-                <Button type="submit" disabled={saving} className="bg-pink-600 hover:bg-pink-700 text-white px-8">
-                    {saving ? <Loader2 className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />} 
-                    Salvar e Assinar
-                </Button>
-             </div>
-         </form>
+        {/* SALVAR */}
+        <div className="flex justify-end">
+          <Button 
+            type="submit" 
+            disabled={saving || !termoAceito} 
+            className={`h-16 px-14 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl transition-all flex items-center gap-3 ${
+              termoAceito ? 'bg-gray-900 text-white hover:scale-[1.02]' : 'bg-gray-200 text-gray-400'
+            }`}
+          >
+            {saving ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} className="text-pink-500" />}
+            {saving ? "Salvando..." : "Confirmar Assinatura"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

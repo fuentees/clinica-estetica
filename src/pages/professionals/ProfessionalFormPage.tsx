@@ -65,7 +65,7 @@ type ProfessionalFormData = z.infer<typeof professionalSchema>;
 
 const defaultValues: Partial<ProfessionalFormData> = {
     role: "profissional",
-    agenda_color: "#db2777", // Pink padrão
+    agenda_color: "#db2777",
     commission_rate: 0,
     working_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     start_time: '09:00',
@@ -80,7 +80,6 @@ export function ProfessionalFormPage() {
   const [isNew, setIsNew] = useState(true);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   
-  // Refs Assinatura
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
@@ -97,7 +96,6 @@ export function ProfessionalFormPage() {
   const councilLabel = watchFormacao ? (COUNCIL_MAP[watchFormacao] || "Registro") : "Especialidade";
   const initials = (watchFirstName?.[0] || 'U').toUpperCase();
 
-  // --- CARREGAMENTO ---
   useEffect(() => {
     if (!isValidUUID(id)) {
         setIsNew(true);
@@ -109,12 +107,11 @@ export function ProfessionalFormPage() {
   }, [id, reset]);
 
   async function loadProfessional(profId: string) {
-      if (!isValidUUID(profId)) return;
       setLoading(true);
       try {
           const { data, error } = await supabase.from("profiles").select("*").eq("id", profId).single();
           if (error) {
-              if (error.code !== 'PGRST116') toast.error("Erro ao buscar.");
+              if (error.code !== 'PGRST116') toast.error("Erro ao buscar profissional.");
               navigate("/professionals");
           } else if (data) {
               const cleanStart = data.start_time?.slice(0, 5) || '09:00';
@@ -127,7 +124,6 @@ export function ProfessionalFormPage() {
       finally { setLoading(false); }
   }
   
-  // --- ASSINATURA ---
   const startDrawing = (e: any) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -186,7 +182,6 @@ export function ProfessionalFormPage() {
   };
 
   const onSubmit = async (data: ProfessionalFormData) => {
-    setLoading(true);
     try {
         const payload = {
             ...data,
@@ -204,149 +199,133 @@ export function ProfessionalFormPage() {
         }
         navigate("/professionals");
     } catch (error: any) {
-        toast.error(`Erro: ${error.message}`);
-    } finally {
-        setLoading(false);
+        toast.error(`Erro ao salvar: ${error.message}`);
     }
   };
   
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-pink-600 w-10 h-10" /></div>;
+  if (loading) return (
+    <div className="flex h-screen flex-col items-center justify-center gap-4">
+        <Loader2 className="animate-spin text-pink-600 w-12 h-12" />
+        <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">Sincronizando Perfil...</p>
+    </div>
+  );
 
-  // --- ESTILOS COMPARTILHADOS (Baseado no Layout.tsx) ---
   const inputClassName = "w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500 transition-all text-sm";
   const labelClassName = "text-xs font-bold text-gray-500 uppercase mb-1.5 block";
-  const cardClassName = "bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden";
+  const cardClassName = "bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden";
 
   return (
-    <div className="font-sans">
+    <div className="max-w-[1400px] mx-auto animate-in fade-in duration-700">
         
         {/* CABEÇALHO */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
-            <div className="flex items-center gap-4">
-                <Button variant="ghost" onClick={() => navigate("/professionals")} className="bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl h-10 w-10 p-0 flex items-center justify-center transition-all">
-                    <ArrowLeft size={20} className="text-gray-600 dark:text-gray-300" />
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center gap-6">
+                <Button variant="ghost" onClick={() => navigate("/professionals")} className="bg-gray-50 hover:bg-gray-100 dark:bg-gray-900 rounded-2xl h-14 w-14 p-0 shadow-inner transition-all">
+                    <ArrowLeft size={24} className="text-gray-600 dark:text-gray-300" />
                 </Button>
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-2">
-                        {isNew ? "Novo Colaborador" : `Editar: ${watchFirstName}`}
-                        {isNew && <Sparkles size={18} className="text-pink-500 animate-pulse" />}
+                    <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase flex items-center gap-3">
+                        {isNew ? "Novo Colaborador" : `Perfil: ${watchFirstName}`}
+                        {isNew && <Sparkles size={24} className="text-pink-500 animate-pulse" />}
                     </h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Gestão completa de perfil e permissões.
-                    </p>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">Configurações de Acesso e Registro Clínico</p>
                 </div>
             </div>
-            
-            {!isNew && (
-                <div className="flex items-center gap-2 bg-gradient-to-r from-pink-50 to-purple-50 dark:from-gray-800 dark:to-gray-800 text-pink-700 dark:text-pink-300 px-4 py-2 rounded-xl text-sm font-bold border border-pink-100 dark:border-gray-700 shadow-sm">
-                    <Shield size={16} />
-                    {watchRole.toUpperCase()}
-                </div>
-            )}
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                {/* COLUNA ESQUERDA (8/12) */}
+                <div className="lg:col-span-8 space-y-8">
                     
-                    {/* 1. DADOS PESSOAIS */}
                     <div className={cardClassName}>
-                        {/* Detalhe de gradiente no topo do card (igual menu ativo) */}
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-600 to-purple-600"></div>
-                        
-                        <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-6 flex items-center gap-2">
-                            <User size={18} className="text-pink-600"/> Informações Pessoais
+                        <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
+                            <User size={18} className="text-pink-600"/> Dados Cadastrais
                         </h2>
                         
-                        <div className="flex flex-col md:flex-row gap-8">
+                        <div className="flex flex-col md:flex-row gap-10">
                             <div className="flex flex-col items-center gap-4">
-                                <div className="relative group w-32 h-32 rounded-full p-1 bg-gradient-to-tr from-pink-500 to-purple-600 shadow-lg">
-                                    <div className="w-full h-full rounded-full bg-white dark:bg-gray-800 border-4 border-transparent flex items-center justify-center overflow-hidden">
+                                <div className="relative group w-36 h-36 rounded-[2.5rem] p-1 bg-gradient-to-tr from-pink-500 to-purple-600 shadow-xl">
+                                    <div className="w-full h-full rounded-[2.2rem] bg-white dark:bg-gray-900 border-4 border-white dark:border-gray-800 flex items-center justify-center overflow-hidden transition-transform group-hover:scale-[0.98]">
                                         {avatarPreview ? (
                                             <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover"/>
                                         ) : (
-                                            <span className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-tr from-pink-600 to-purple-600">
+                                            <span className="text-5xl font-black text-pink-600 italic uppercase">
                                                 {initials}
                                             </span>
                                         )}
                                     </div>
-                                    <label className="absolute bottom-1 right-1 w-10 h-10 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-full flex items-center justify-center cursor-pointer shadow-lg transition-transform hover:scale-110 z-10 border-2 border-white dark:border-gray-800">
-                                        <Camera size={18}/>
+                                    <label className="absolute -bottom-2 -right-2 w-12 h-12 bg-gray-900 text-white rounded-2xl flex items-center justify-center cursor-pointer shadow-2xl hover:scale-110 transition-all border-4 border-white dark:border-gray-800">
+                                        <Camera size={20}/>
                                         <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                                     </label>
                                 </div>
-                                <span className="text-xs font-medium text-gray-400">JPG ou PNG (Max 5MB)</span>
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Foto de Perfil</span>
                             </div>
 
-                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-5">
-                                <div>
+                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-1.5">
                                     <label className={labelClassName}>Nome</label>
-                                    <Input {...register("first_name")} className={inputClassName.replace('pl-10', 'pl-4')} placeholder="Ex: Ana" />
-                                    {errors.first_name && <p className="text-red-500 text-xs mt-1">{errors.first_name.message}</p>}
+                                    <Input {...register("first_name")} className="h-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="Ana" />
+                                    {errors.first_name && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1">{errors.first_name.message}</p>}
                                 </div>
-                                <div>
+                                <div className="space-y-1.5">
                                     <label className={labelClassName}>Sobrenome</label>
-                                    <Input {...register("last_name")} className={inputClassName.replace('pl-10', 'pl-4')} placeholder="Ex: Silva" />
-                                    {errors.last_name && <p className="text-red-500 text-xs mt-1">{errors.last_name.message}</p>}
+                                    <Input {...register("last_name")} className="h-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="Silva" />
+                                    {errors.last_name && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1">{errors.last_name.message}</p>}
                                 </div>
-                                
-                                <div className="md:col-span-2">
-                                    <label className={labelClassName}>Email de Login</label>
+                                <div className="md:col-span-2 space-y-1.5">
+                                    <label className={labelClassName}>Email Corporativo</label>
                                     <div className="relative">
-                                        <Mail size={18} className="absolute left-3 top-3 text-gray-400"/>
-                                        <Input {...register("email")} className={inputClassName} placeholder="nome@clinica.com" />
+                                        <Mail size={18} className="absolute left-4 top-3.5 text-gray-400"/>
+                                        <Input {...register("email")} className="h-12 pl-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="ana.silva@clinica.com" />
                                     </div>
-                                    {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
+                                    {errors.email && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1">{errors.email.message}</p>}
                                 </div>
-                                
-                                <div className="md:col-span-2">
-                                    <label className={labelClassName}>WhatsApp / Celular</label>
+                                <div className="md:col-span-2 space-y-1.5">
+                                    <label className={labelClassName}>WhatsApp Profissional</label>
                                     <div className="relative">
-                                        <Phone size={18} className="absolute left-3 top-3 text-gray-400"/>
-                                        <Input {...register("phone")} className={inputClassName} placeholder="(00) 00000-0000" />
+                                        <Phone size={18} className="absolute left-4 top-3.5 text-gray-400"/>
+                                        <Input {...register("phone")} className="h-12 pl-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="(11) 99999-9999" />
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* 2. DADOS DA FUNÇÃO */}
                     <div className={cardClassName}>
-                        <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-6 flex items-center gap-2">
+                        <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
                             <Briefcase size={18} className="text-purple-600"/> Atuação Profissional
                         </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className={labelClassName}>Cargo no Sistema</label>
-                                <div className="relative">
-                                    <select {...register("role")} className={inputClassName.replace('pl-10', 'pl-4')}>
-                                        <option value="profissional">Profissional / Especialista</option>
-                                        <option value="recepcionista">Recepcionista</option>
-                                        <option value="admin">Administrador</option>
-                                    </select>
-                                </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Permissão no Sistema</label>
+                                <select {...register("role")} className="w-full h-12 px-4 rounded-xl border-0 bg-gray-50 dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none">
+                                    <option value="profissional">👨‍⚕️ Especialista Técnico</option>
+                                    <option value="recepcionista">📅 Recepcionista / Front Desk</option>
+                                    <option value="admin">⚙️ Administrador do Sistema</option>
+                                </select>
                             </div>
 
                             {isMedicalStaff && (
                                 <>
-                                    <div>
-                                        <label className={labelClassName}>Especialidade</label>
+                                    <div className="space-y-1.5">
+                                        <label className={labelClassName}>Formação Principal</label>
                                         <div className="relative">
-                                            <Award size={18} className="absolute left-3 top-3 text-gray-400 pointer-events-none"/>
-                                            <select {...register("formacao")} className={inputClassName}>
+                                            <Award size={18} className="absolute left-4 top-3.5 text-gray-400 pointer-events-none"/>
+                                            <select {...register("formacao")} className="w-full h-12 pl-12 rounded-xl border-0 bg-gray-50 dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none">
                                                 <option value="">Selecione...</option>
                                                 {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
                                             </select>
                                         </div>
                                     </div>
-                                    
-                                    <div className="md:col-span-2">
-                                        <label className={labelClassName}>
-                                            NÚMERO <span className="text-pink-600">{councilLabel}</span>
-                                        </label>
+                                    <div className="md:col-span-2 space-y-1.5">
+                                        <label className={labelClassName}>Número do Registro Profissional ({councilLabel})</label>
                                         <div className="relative">
-                                            <Shield size={18} className="absolute left-3 top-3 text-gray-400"/>
-                                            <Input {...register("registration_number")} className={inputClassName} placeholder="Digite o número do registro" />
+                                            <Shield size={18} className="absolute left-4 top-3.5 text-gray-400"/>
+                                            <Input {...register("registration_number")} className="h-12 pl-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="000.000-00" />
                                         </div>
                                     </div>
                                 </>
@@ -354,57 +333,54 @@ export function ProfessionalFormPage() {
                         </div>
                     </div>
 
-                    {/* 3. ASSINATURA DIGITAL */}
                     {isMedicalStaff && (
                         <div className={cardClassName}>
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                                    <PenTool size={18} className="text-pink-600"/> Assinatura Digital
+                            <div className="flex justify-between items-center mb-8">
+                                <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] flex items-center gap-3">
+                                    <PenTool size={18} className="text-pink-600"/> Assinatura Autenticada
                                 </h2>
-                                <Button type="button" variant="outline" size="sm" onClick={clearSignature} className="text-xs hover:bg-gray-50 border-gray-200 text-gray-500">
-                                    <Eraser size={14} className="mr-1"/> Limpar
+                                <Button type="button" variant="outline" size="sm" onClick={clearSignature} className="h-10 rounded-xl font-bold text-[10px] uppercase border-gray-100 dark:border-gray-700">
+                                    <Eraser size={14} className="mr-2"/> Limpar
                                 </Button>
                             </div>
-                            <div className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/50 dark:bg-gray-900 flex justify-center overflow-hidden relative h-40 w-full hover:border-pink-300 transition-colors" style={{ touchAction: 'none' }}>
+                            <div className="border-4 border-dashed border-gray-50 dark:border-gray-900 rounded-[2rem] bg-gray-50/30 dark:bg-gray-950 flex justify-center overflow-hidden relative h-48 w-full hover:border-pink-100 transition-colors" style={{ touchAction: 'none' }}>
                                 {signaturePreview && !isDrawing ? (
-                                    <img src={signaturePreview} alt="Assinatura" className="h-full object-contain p-2" />
+                                    <img src={signaturePreview} alt="Assinatura" className="h-full object-contain p-4" />
                                 ) : (
                                     <canvas
                                         ref={canvasRef}
-                                        width={600} height={160}
+                                        width={800} height={200}
                                         className="w-full h-full cursor-crosshair"
                                         onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing}
                                         onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing}
                                     />
                                 )}
-                                {!signaturePreview && !isDrawing && <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-300 pointer-events-none text-sm font-bold opacity-50 tracking-widest uppercase">Assine Aqui</span>}
+                                {!signaturePreview && !isDrawing && <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-200 pointer-events-none text-xs font-black uppercase tracking-[0.5em] italic">Assinar no campo acima</span>}
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* --- COLUNA DIREITA (CONFIGURAÇÕES) --- */}
-                <div className="space-y-6">
+                {/* COLUNA DIREITA (4/12) */}
+                <div className="lg:col-span-4 space-y-8">
                     
                     {isMedicalStaff && (
                         <div className={cardClassName}>
-                            <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-6 flex items-center gap-2">
-                                <Calendar size={18} className="text-purple-600"/> Agenda & Horários
+                            <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
+                                <Calendar size={18} className="text-purple-600"/> Escala & Agenda
                             </h2>
                             
-                            <div className="space-y-2 mb-6">
-                                <label className={labelClassName}>
-                                    <Clock size={12} className="inline mr-1"/> Dias de Atendimento
-                                </label>
+                            <div className="space-y-4 mb-10">
+                                <label className={labelClassName}>Frequência de Atendimento</label>
                                 <div className="flex flex-wrap gap-2">
                                     {DAYS_OF_WEEK.map(day => {
                                         const isSelected = watch('working_days')?.includes(day.value);
                                         return (
                                             <label key={day.value} className={`
-                                                cursor-pointer rounded-xl px-3 py-2 text-xs font-bold transition-all border shadow-sm
+                                                cursor-pointer rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-tighter transition-all border shadow-sm
                                                 ${isSelected 
-                                                    ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white border-transparent shadow-pink-500/20' 
-                                                    : 'bg-white dark:bg-gray-900 text-gray-500 border-gray-200 dark:border-gray-700 hover:border-pink-300'
+                                                    ? 'bg-gray-900 text-white border-transparent' 
+                                                    : 'bg-white dark:bg-gray-900 text-gray-400 border-gray-100 dark:border-gray-800 hover:border-pink-200'
                                                 }
                                             `}>
                                                 <input type="checkbox" value={day.value} {...register('working_days')} className="hidden"/>
@@ -415,53 +391,54 @@ export function ProfessionalFormPage() {
                                 </div>
                             </div>
                             
-                            <div className="space-y-2 mb-6">
-                                <label className={labelClassName}>Horário Padrão</label>
-                                <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 p-2 rounded-xl border border-gray-200 dark:border-gray-700">
-                                    <Input type="time" {...register('start_time')} className="bg-transparent border-none shadow-none text-center h-8 focus:ring-0" />
-                                    <span className="text-gray-400 font-bold">-</span>
-                                    <Input type="time" {...register('end_time')} className="bg-transparent border-none shadow-none text-center h-8 focus:ring-0" />
+                            <div className="space-y-4 mb-10">
+                                <label className={labelClassName}>Janela de Horário</label>
+                                <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-950 p-4 rounded-2xl border border-gray-100 dark:border-gray-800">
+                                    <Input type="time" {...register('start_time')} className="bg-transparent border-0 shadow-none text-center font-black italic text-sm p-0 focus:ring-0" />
+                                    <Clock size={16} className="text-gray-300" />
+                                    <Input type="time" {...register('end_time')} className="bg-transparent border-0 shadow-none text-center font-black italic text-sm p-0 focus:ring-0" />
                                 </div>
                             </div>
 
-                            <div className="space-y-2 mb-6">
-                                <label className={labelClassName}>Cor na Agenda</label>
-                                <div className="flex items-center gap-3">
-                                    <div className="relative overflow-hidden w-12 h-12 rounded-full border-2 border-gray-200 dark:border-gray-700 shadow-sm ring-2 ring-offset-2 ring-transparent hover:ring-pink-200 transition-all">
-                                        <input type="color" {...register("agenda_color")} className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer border-none p-0" />
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className={labelClassName}>Cor na Agenda</label>
+                                    <div className="flex items-center gap-3">
+                                        <div className="relative overflow-hidden w-12 h-12 rounded-2xl shadow-xl">
+                                            <input type="color" {...register("agenda_color")} className="absolute -top-4 -left-4 w-24 h-24 cursor-pointer border-0 p-0" />
+                                        </div>
                                     </div>
-                                    <span className="text-xs text-gray-500">Toque para alterar cor</span>
                                 </div>
-                            </div>
 
-                            <div className="space-y-2 pt-4 border-t border-gray-100 dark:border-gray-700">
-                                <label className={labelClassName}>
-                                    <Percent size={14} className="inline mr-1"/> Comissão (%)
-                                </label>
-                                <Input type="number" {...register("commission_rate")} className={`${inputClassName} font-bold text-purple-600`} />
+                                <div className="space-y-2">
+                                    <label className={labelClassName}>Comissão (%)</label>
+                                    <div className="relative">
+                                        <Percent size={14} className="absolute left-3 top-3.5 text-gray-400"/>
+                                        <Input type="number" {...register("commission_rate")} className="h-12 pl-10 font-black italic text-purple-600 bg-gray-50 border-0 rounded-xl" />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
                     
                     <div className="space-y-4">
                         {!isNew && (
-                            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 flex items-center justify-between shadow-sm">
-                                <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Status Ativo</span>
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 flex items-center justify-between shadow-sm">
+                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Acesso ao Sistema</span>
                                 <label className="relative inline-flex items-center cursor-pointer">
                                     <input type="checkbox" {...register("is_active")} className="sr-only peer"/>
-                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-pink-200 dark:peer-focus:ring-pink-900 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-gradient-to-r peer-checked:from-pink-600 peer-checked:to-purple-600"></div>
+                                    <div className="w-14 h-8 bg-gray-100 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-emerald-500"></div>
                                 </label>
                             </div>
                         )}
                         
-                        {/* BOTÃO PRINCIPAL COM GRADIENTE DO LAYOUT */}
                         <Button 
                             type="submit" 
                             disabled={isSubmitting} 
-                            className="w-full h-12 bg-gradient-to-r from-pink-600 to-purple-600 hover:shadow-lg hover:shadow-pink-500/30 text-white font-bold rounded-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                            className="w-full h-16 bg-gray-900 hover:bg-black text-white font-black uppercase text-sm tracking-[0.2em] rounded-[2rem] transition-all hover:scale-[1.02] active:scale-95 shadow-2xl shadow-pink-500/10 flex items-center justify-center gap-3"
                         >
-                            {isSubmitting ? <Loader2 className="animate-spin mr-2"/> : <CheckCircle2 size={20}/>} 
-                            {isNew ? "FINALIZAR CADASTRO" : "SALVAR ALTERAÇÕES"}
+                            {isSubmitting ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={24} className="text-pink-500"/>} 
+                            {isNew ? "Concluir Cadastro" : "Sincronizar Perfil"}
                         </Button>
                     </div>
                 </div>

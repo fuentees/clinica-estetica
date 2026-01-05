@@ -9,13 +9,14 @@ import {
   Loader2,
   User,
   MapPin,
-  Clock
+  Clock,
+  Sparkles
 } from "lucide-react";
 import { format, addDays, subDays, isSameDay, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "react-hot-toast";
 
-// --- TIPAGEM ---
+// --- TIPAGEM (INTEGRAL) ---
 interface Appointment {
   id: string;
   start_time: string;
@@ -29,10 +30,10 @@ interface Appointment {
   };
 }
 
-// --- CONFIGURAÇÕES DA GRADE ---
-const START_HOUR = 6;  // Início da grade visual (06:00)
-const END_HOUR = 23;   // Fim da grade visual
-const HOUR_HEIGHT = 100; // Altura em pixels de cada hora
+// --- CONFIGURAÇÕES DA GRADE VISUAL ---
+const START_HOUR = 6;  
+const END_HOUR = 23;   
+const HOUR_HEIGHT = 100; 
 
 export default function ProfessionalAgendaPage() {
   const { id } = useParams<{ id: string }>();
@@ -42,18 +43,14 @@ export default function ProfessionalAgendaPage() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
-  // --- 1. BUSCAR DADOS (COM INTERVALO CORRETO DE FUSO) ---
+  // --- 1. BUSCA DE DADOS (SaaS MULTI-TENANT READY) ---
   useEffect(() => {
     if (id) fetchAppointments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, selectedDate]);
 
   async function fetchAppointments() {
     setLoading(true);
     try {
-      // date-fns startOfDay pega o início do dia NO FUSO LOCAL (ex: 00:00 BRT)
-      // .toISOString() converte para UTC para o banco entender (ex: 03:00 UTC)
-      // Isso garante que não "percamos" agendamentos da madrugada ou da noite.
       const startIso = startOfDay(selectedDate).toISOString();
       const endIso = endOfDay(selectedDate).toISOString();
 
@@ -70,7 +67,6 @@ export default function ProfessionalAgendaPage() {
 
       if (error) throw error;
 
-      // Normalização
       const formattedData: Appointment[] = (data || []).map((item: any) => ({
         id: item.id,
         start_time: item.start_time,
@@ -83,52 +79,41 @@ export default function ProfessionalAgendaPage() {
       setAppointments(formattedData);
     } catch (error) {
       console.error("Erro agenda:", error);
-      toast.error("Erro ao carregar agenda.");
+      toast.error("Erro ao sincronizar agenda técnica.");
     } finally {
       setLoading(false);
     }
   }
 
-  // --- 2. CÁLCULO VISUAL (CONVERTENDO PARA LOCAL) ---
+  // --- 2. MOTOR DE RENDERIZAÇÃO GEOMÉTRICA ---
   const getPositionStyles = (startStr: string, endStr: string) => {
-    // Aqui está a correção: new Date() converte automaticamente UTC -> Local
     const startDate = new Date(startStr); 
     const endDate = new Date(endStr);
 
-    // Pegamos a hora LOCAL do navegador
     const startHour = startDate.getHours(); 
     const startMin = startDate.getMinutes();
-    
     const endHour = endDate.getHours();
     const endMin = endDate.getMinutes();
 
-    // Cálculo em minutos a partir do início da grade (START_HOUR)
     const startMinutesTotal = (startHour * 60 + startMin) - (START_HOUR * 60);
     const endMinutesTotal = (endHour * 60 + endMin) - (START_HOUR * 60);
     
     const duration = endMinutesTotal - startMinutesTotal;
-
     const top = (startMinutesTotal / 60) * HOUR_HEIGHT;
     const height = (duration / 60) * HOUR_HEIGHT;
 
     return { 
       top: `${Math.max(0, top)}px`, 
-      height: `${Math.max(height, 50)}px` // Altura mínima visual
+      height: `${Math.max(height, 60)}px` 
     };
-  };
-
-  // --- 3. FORMATADORES ---
-  const formatDisplayTime = (isoString: string) => {
-    // Formata usando o fuso local do usuário
-    return format(new Date(isoString), 'HH:mm');
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'concluido': return 'bg-green-100 border-green-400 text-green-900 hover:bg-green-200';
-      case 'cancelado': return 'bg-red-100 border-red-400 text-red-900 hover:bg-red-200 opacity-70';
-      case 'falta': return 'bg-orange-100 border-orange-400 text-orange-900 hover:bg-orange-200';
-      default: return 'bg-gradient-to-l from-pink-50 to-white border-pink-300 text-pink-900 hover:shadow-md'; 
+      case 'concluido': return 'bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100 dark:bg-emerald-900/20';
+      case 'cancelado': return 'bg-rose-50 border-rose-200 text-rose-900 opacity-60 dark:bg-rose-900/20';
+      case 'falta': return 'bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-900/20';
+      default: return 'bg-white dark:bg-gray-700 border-pink-200 text-gray-900 dark:text-white shadow-sm hover:border-pink-400'; 
     }
   };
 
@@ -141,136 +126,142 @@ export default function ProfessionalAgendaPage() {
   }, []);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden font-sans">
+    <div className="flex flex-col h-[calc(100vh-120px)] bg-gray-50 dark:bg-gray-950 rounded-[2.5rem] overflow-hidden border border-gray-200 dark:border-gray-800 shadow-2xl animate-in fade-in duration-700">
       
-      {/* HEADER DA DATA */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 z-20 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="flex bg-gray-100 dark:bg-gray-700 rounded-xl p-1">
-            <button onClick={() => setSelectedDate(subDays(selectedDate, 1))} className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded-lg transition-all shadow-sm text-gray-600 dark:text-white">
-              <ChevronLeft size={18} />
+      {/* HEADER DA AGENDA */}
+      <div className="flex flex-col md:flex-row items-center justify-between p-6 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 z-30 gap-4">
+        <div className="flex items-center gap-6">
+          <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 shadow-inner">
+            <button onClick={() => setSelectedDate(subDays(selectedDate, 1))} className="p-2 hover:bg-white dark:hover:bg-gray-700 rounded-xl transition-all text-gray-600 dark:text-white shadow-sm">
+              <ChevronLeft size={20} />
             </button>
-            <button onClick={() => setSelectedDate(new Date())} className="px-4 text-xs font-bold uppercase tracking-wide hover:bg-white dark:hover:bg-gray-600 rounded-lg transition-all text-gray-600 dark:text-gray-300">
+            <button onClick={() => setSelectedDate(new Date())} className="px-6 text-[10px] font-black uppercase tracking-[0.2em] hover:text-pink-600 transition-colors text-gray-500">
               Hoje
             </button>
-            <button onClick={() => setSelectedDate(addDays(selectedDate, 1))} className="p-1.5 hover:bg-white dark:hover:bg-gray-600 rounded-lg transition-all shadow-sm text-gray-600 dark:text-white">
-              <ChevronRight size={18} />
+            <button onClick={() => setSelectedDate(addDays(selectedDate, 1))} className="p-2 hover:bg-white dark:hover:bg-gray-700 rounded-xl transition-all text-gray-600 dark:text-white shadow-sm">
+              <ChevronRight size={20} />
             </button>
           </div>
           
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white capitalize flex items-center gap-2">
-            <CalendarIcon size={22} className="text-pink-600 mb-0.5"/>
-            {format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}
-          </h2>
+          <div className="space-y-0.5">
+            <h2 className="text-2xl font-black text-gray-900 dark:text-white capitalize italic tracking-tighter flex items-center gap-3">
+              <CalendarIcon size={24} className="text-pink-600"/>
+              {format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}
+            </h2>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-9">Planejamento Diário de Procedimentos</p>
+          </div>
         </div>
 
         <button 
           onClick={() => navigate('/appointments/new')}
-          className="flex items-center gap-2 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg shadow-pink-500/25 active:scale-95"
+          className="h-14 px-8 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
         >
-          <Plus size={20} /> <span className="hidden sm:inline">Novo</span>
+          <Plus size={20} className="text-pink-500" /> Reservar Horário
         </button>
       </div>
 
-      {/* ÁREA DO CALENDÁRIO */}
-      <div className="flex-1 overflow-y-auto relative custom-scrollbar">
+      {/* ÁREA DE SCROLL DO CALENDÁRIO */}
+      <div className="flex-1 overflow-y-auto relative custom-scrollbar bg-white dark:bg-gray-900">
         {loading && (
-          <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm gap-2">
-            <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
-            <span className="text-sm font-bold text-gray-400">Carregando...</span>
+          <div className="absolute inset-0 bg-white/60 dark:bg-gray-950/60 z-50 flex flex-col items-center justify-center backdrop-blur-md gap-4">
+            <Loader2 className="animate-spin text-pink-600" size={48} />
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Sincronizando Grade...</p>
           </div>
         )}
 
-        <div className="flex min-h-full relative pb-10">
+        <div className="flex min-h-full relative pb-20">
           
-          {/* Régua de Horas */}
-          <div className="w-16 flex-shrink-0 border-r border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 pt-4">
+          {/* RÉGUA LATERAL (TIMELINE) */}
+          <div className="w-24 flex-shrink-0 border-r border-gray-50 dark:border-gray-800 bg-gray-50/30 dark:bg-gray-950/30 pt-6">
             {hoursList.map((hour) => (
               <div 
                 key={hour} 
-                className="text-xs font-bold text-gray-400 text-center relative"
+                className="text-[10px] font-black text-gray-300 dark:text-gray-600 text-center relative"
                 style={{ height: `${HOUR_HEIGHT}px` }}
               >
-                <span className="-translate-y-3 block">{hour.toString().padStart(2, '0')}:00</span>
+                <span className="-translate-y-3 block italic tracking-tighter">{hour.toString().padStart(2, '0')}:00</span>
               </div>
             ))}
           </div>
 
-          {/* Grid de Agendamentos */}
+          {/* GRID PRINCIPAL */}
           <div 
-            className="flex-1 relative bg-white dark:bg-gray-800 pt-4"
+            className="flex-1 relative pt-6"
             style={{ 
-              backgroundImage: `linear-gradient(to bottom, #f3f4f6 1px, transparent 1px)`,
+              backgroundImage: `linear-gradient(to bottom, #f9fafb 1px, transparent 1px)`,
               backgroundSize: `100% ${HOUR_HEIGHT}px`,
-              backgroundPositionY: '16px' 
+              backgroundPositionY: '24px' 
             }}
           >
-            {/* Linha do tempo atual */}
+            {/* LINHA DO TEMPO ATUAL (REAL-TIME) */}
             {isSameDay(selectedDate, new Date()) && (
               <div 
-                className="absolute w-full border-t-2 border-red-500 z-30 pointer-events-none opacity-80 flex items-center"
+                className="absolute w-full border-t-2 border-rose-500 z-30 pointer-events-none opacity-100 flex items-center"
                 style={{ 
-                  top: `${((new Date().getHours() * 60 + new Date().getMinutes()) - (START_HOUR * 60)) / 60 * HOUR_HEIGHT + 16}px` 
+                  top: `${((new Date().getHours() * 60 + new Date().getMinutes()) - (START_HOUR * 60)) / 60 * HOUR_HEIGHT + 24}px` 
                 }}
               >
-                <div className="absolute -left-1.5 w-3 h-3 bg-red-500 rounded-full shadow-sm"></div>
+                <div className="absolute -left-1 w-3 h-3 bg-rose-500 rounded-full shadow-[0_0_10px_rgba(244,63,94,0.5)]"></div>
+                <div className="ml-4 px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded uppercase tracking-widest">Agora</div>
               </div>
             )}
 
-            {/* Cards */}
-            {appointments.map((apt) => {
-              const pos = getPositionStyles(apt.start_time, apt.end_time);
-              const isShort = parseInt(pos.height) < 60;
-
-              return (
-                <div
-                  key={apt.id}
-                  onClick={() => navigate(`/appointments/${apt.id}/edit`)}
-                  className={`
-                    absolute left-2 right-4 rounded-xl border-l-[6px] p-2 cursor-pointer transition-all hover:scale-[1.01] hover:z-40 shadow-sm
-                    ${getStatusColor(apt.status)}
-                  `}
-                  style={{ top: `calc(${pos.top} + 16px)`, height: pos.height }} 
-                >
-                  <div className="flex justify-between items-start h-full overflow-hidden">
-                    <div className="flex flex-col h-full w-full">
-                      
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-xs font-black bg-white/60 px-1.5 py-0.5 rounded text-gray-800 shadow-sm">
-                          {formatDisplayTime(apt.start_time)} - {formatDisplayTime(apt.end_time)}
-                        </span>
-                      </div>
-                      
-                      <h3 className="font-bold text-sm leading-tight text-gray-900 line-clamp-1 mt-1">
-                        {apt.patient?.name || "Paciente sem nome"}
-                      </h3>
-                      
-                      {!isShort && (
-                        <div className="mt-auto flex flex-col gap-1 pt-2 border-t border-black/5">
-                           {apt.notes && (
-                             <span className="flex items-center gap-1.5 text-[10px] font-medium opacity-90 line-clamp-1">
-                               <MapPin size={10} className="text-pink-600"/> {apt.notes}
-                             </span>
-                           )}
-                           {apt.patient?.phone && (
-                             <span className="flex items-center gap-1.5 text-[10px] font-medium opacity-90">
-                               <User size={10} className="text-pink-600"/> {apt.patient.phone}
-                             </span>
-                           )}
+            {/* CARDS DE AGENDAMENTO */}
+            <div className="relative mr-8 ml-2">
+                {appointments.map((apt) => {
+                  const pos = getPositionStyles(apt.start_time, apt.end_time);
+                  
+                  return (
+                    <div
+                      key={apt.id}
+                      onClick={() => navigate(`/appointments/${apt.id}/edit`)}
+                      className={`
+                        absolute left-0 right-0 rounded-3xl border-2 p-5 cursor-pointer transition-all 
+                        hover:scale-[1.01] hover:z-40 shadow-sm group
+                        ${getStatusColor(apt.status)}
+                      `}
+                      style={{ top: `calc(${pos.top})`, height: pos.height }} 
+                    >
+                      <div className="flex flex-col h-full justify-between">
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-[10px] font-black bg-gray-900 text-white px-3 py-1 rounded-full italic tracking-tighter">
+                              {format(new Date(apt.start_time), 'HH:mm')} - {format(new Date(apt.end_time), 'HH:mm')}
+                            </span>
+                            <Sparkles size={14} className="text-pink-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          
+                          <h3 className="font-black text-base leading-tight uppercase tracking-tighter italic line-clamp-1">
+                            {apt.patient?.name || "Paciente sem nome"}
+                          </h3>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
 
-            {/* Empty State */}
+                        <div className="flex items-center gap-4 mt-4 opacity-70 group-hover:opacity-100 transition-opacity">
+                            {apt.notes && (
+                              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest truncate">
+                                <MapPin size={12} className="text-pink-500"/> {apt.notes}
+                              </span>
+                            )}
+                            {apt.patient?.phone && (
+                              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest">
+                                <User size={12} className="text-pink-500"/> {apt.patient.phone}
+                              </span>
+                            )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* EMPTY STATE */}
             {!loading && appointments.length === 0 && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 pointer-events-none select-none">
-                <Clock size={64} className="mb-4 opacity-10"/>
-                <span className="text-xl font-bold opacity-30">Agenda Livre</span>
-                <span className="text-sm opacity-30 mt-1">Nenhum atendimento marcado</span>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div className="p-8 rounded-full bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-800">
+                    <Clock size={64} className="text-gray-200 dark:text-gray-700"/>
+                </div>
+                <span className="text-xs font-black text-gray-300 uppercase tracking-[0.4em] mt-6">Agenda Livre</span>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">Nenhum atendimento para este dia</p>
               </div>
             )}
           </div>

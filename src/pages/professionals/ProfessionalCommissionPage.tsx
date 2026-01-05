@@ -9,14 +9,16 @@ import {
   AlertCircle,
   CheckCircle2
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
+// --- TIPAGEM ---
 type CommissionItem = {
   id: string;
   date: string;
   patient_name: string;
   procedure: string;
-  value: number; // Valor do procedimento
-  commission_value: number; // Valor da comissão
+  value: number; 
+  commission_value: number; 
 };
 
 export default function ProfessionalCommissionPage() {
@@ -42,9 +44,9 @@ export default function ProfessionalCommissionPage() {
   async function fetchCommissionData(profId: string, monthIso: string) {
     setLoading(true);
     try {
-      // 1. Buscar a taxa de comissão do profissional
+      // 1. Buscar a taxa de comissão do profissional no perfil
       const { data: profData, error: profError } = await supabase
-        .from('profiles') // Lembre-se que mudamos para 'profiles'
+        .from('profiles')
         .select('commission_rate')
         .eq('id', profId)
         .single();
@@ -57,41 +59,39 @@ export default function ProfessionalCommissionPage() {
       const startDate = `${year}-${month}-01`;
       const endDate = new Date(Number(year), Number(month), 0).toISOString().split('T')[0];
 
-      // 3. Buscar agendamentos concluídos neste mês
-      // Usaremos 'appointments' assumindo que status='completed' gera comissão
+      // 3. Buscar agendamentos concluídos neste mês com nomes de pacientes e serviços
       const { data: appts, error: apptError } = await supabase
         .from('appointments')
         .select(`
           id, 
-          date, 
+          start_time, 
           status,
-          service_id,
-          patient:patient_id (name) -- Pega nome do paciente
-          -- Se tiver valor no agendamento, adicione aqui (ex: price)
+          price,
+          patient:patient_id (name),
+          treatment:treatment_id (name)
         `)
         .eq('professional_id', profId)
-        .eq('status', 'completed') // Apenas concluídos contam
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date', { ascending: false });
+        .eq('status', 'concluido')
+        .gte('start_time', `${startDate}T00:00:00`)
+        .lte('start_time', `${endDate}T23:59:59`)
+        .order('start_time', { ascending: false });
 
       if (apptError) throw apptError;
 
-      // 4. Calcular totais
+      // 4. Calcular totais e mapear itens
       let totalRev = 0;
       
-      const mappedItems: CommissionItem[] = appts.map((t: any) => {
-        // SIMULAÇÃO: Valor fixo de R$ 150 se não tiver preço real salvo
-        const procedureValue = 150.00; 
-        
+      const mappedItems: CommissionItem[] = (appts || []).map((t: any) => {
+        // Usa o preço real do agendamento ou fallback de R$ 0 se não preenchido
+        const procedureValue = t.price || 0; 
         const commValue = procedureValue * (rate / 100);
         totalRev += procedureValue;
 
         return {
           id: t.id,
-          date: t.date,
+          date: t.start_time,
           patient_name: t.patient?.name || 'Paciente',
-          procedure: 'Procedimento Realizado', // Placeholder
+          procedure: t.treatment?.name || 'Procedimento',
           value: procedureValue,
           commission_value: commValue
         };
@@ -105,7 +105,8 @@ export default function ProfessionalCommissionPage() {
       });
 
     } catch (error) {
-      console.error("Erro Comissões:", error);
+      console.error("Erro ao carregar comissões:", error);
+      toast.error("Erro ao carregar dados financeiros.");
     } finally {
       setLoading(false);
     }
@@ -114,7 +115,7 @@ export default function ProfessionalCommissionPage() {
   if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-600"/></div>;
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div className="space-y-6 p-4 sm:p-6 animate-in fade-in duration-500">
       
       {/* CABEÇALHO E FILTRO */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -145,7 +146,7 @@ export default function ProfessionalCommissionPage() {
         <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Produção Total</p>
             <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">
-                R$ {stats.totalRevenue.toFixed(2).replace('.', ',')}
+                {stats.totalRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </p>
             <div className="flex items-center gap-1 text-xs text-gray-400 mt-2">
                 <TrendingUp size={14} className="text-green-500"/> {items.length} atendimentos concluídos
@@ -156,10 +157,10 @@ export default function ProfessionalCommissionPage() {
         <div className="bg-green-50 dark:bg-green-900/20 p-5 rounded-xl border border-green-100 dark:border-green-800 shadow-sm">
             <p className="text-xs font-bold text-green-700 dark:text-green-400 uppercase tracking-wider">Comissão a Pagar</p>
             <p className="text-3xl font-bold text-green-700 dark:text-green-400 mt-1">
-                R$ {stats.totalCommission.toFixed(2).replace('.', ',')}
+                {stats.totalCommission.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </p>
             <div className="flex items-center gap-1 text-xs text-green-600/70 mt-2">
-                <CheckCircle2 size={14} /> Cálculo automático
+                <CheckCircle2 size={14} /> Cálculo automático do período
             </div>
         </div>
       </div>
@@ -189,13 +190,15 @@ export default function ProfessionalCommissionPage() {
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                         {items.map((item) => (
-                            <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                                 <td className="px-6 py-4">{new Date(item.date).toLocaleDateString('pt-BR')}</td>
                                 <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{item.patient_name}</td>
                                 <td className="px-6 py-4">{item.procedure}</td>
-                                <td className="px-6 py-4 text-right">R$ {item.value.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-right">
+                                    {item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </td>
                                 <td className="px-6 py-4 text-right font-bold text-green-600">
-                                    R$ {item.commission_value.toFixed(2)}
+                                    {item.commission_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                 </td>
                             </tr>
                         ))}

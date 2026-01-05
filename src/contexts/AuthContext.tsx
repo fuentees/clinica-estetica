@@ -1,119 +1,145 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { supabase } from '../lib/supabase' 
-import { toast } from 'react-hot-toast'
-import type { User as SupabaseUser } from '@supabase/supabase-js'
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { Session, User } from "@supabase/supabase-js";
+import { supabase } from "../lib/supabase";
 
-export type UserRole = 'admin' | 'profissional' | 'recepcionista' | 'paciente'
+// --- 1. DEFINIÇÃO DE TIPOS ---
+export type UserRole = 'admin' | 'profissional' | 'recepcionista' | 'paciente';
 
-export interface UserProfile {
-  id: string
-  email: string
-  first_name: string
-  last_name: string
-  role: UserRole
-  clinicId?: string
+interface Profile {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  clinicId: string | null;
+  avatarUrl?: string | null;
 }
 
-interface AuthContextType {
-  user: SupabaseUser | null
-  profile: UserProfile | null
-  loading: boolean
-  signIn: (email: string, password: string) => Promise<void>
-  signOut: () => Promise<void>
+interface SignInData {
+  email: string;
+  password: string;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+interface AuthContextData {
+  user: User | null;
+  profile: Profile | null;
+  session: Session | null;
+  loading: boolean;
+  isAdmin: boolean;
+  isProfessional: boolean;
+  signIn: (credentials: SignInData) => Promise<void>; 
+  signOut: () => Promise<void>;
+}
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<SupabaseUser | null>(null)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState(true)
+const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
-  async function fetchUserProfile(userId: string) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // --- 2. GERENCIAMENTO DE SESSÃO ---
+  useEffect(() => {
+    // Busca sessão inicial
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    // Escuta mudanças de estado (Login/Logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        fetchProfile(session.user.id);
+      } else {
+        setProfile(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // --- 3. BUSCA DE PERFIL (SINC COM SEED/PRISMA) ---
+  async function fetchProfile(userId: string) {
     try {
-      // Busca tudo (*) da tabela profiles
+      // Buscamos todos os campos para mapear os nomes snake_case do Postgres para camelCase do React
       const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Erro ao buscar perfil:", error);
+      }
 
       if (data) {
-        // LÓGICA BLINDADA: Tenta pegar o nome de qualquer lugar possível
-        const fullName = data.full_name || data.fullName || data.name || 'Usuário';
-        const parts = fullName.split(' ');
-        const firstName = data.first_name || parts[0] || 'Usuário';
-        const lastName = data.last_name || parts.slice(1).join(' ') || '';
-        
-        // Garante um cargo válido
-        const role = (data.role || 'paciente') as UserRole;
-
         setProfile({
           id: data.id,
           email: data.email,
-          first_name: firstName,
-          last_name: lastName,
-          role: role,
-          clinicId: data.clinicId
-        })
+          fullName: data.full_name || data.fullName || "Usuário", 
+          role: (data.role as UserRole) || "paciente",
+          clinicId: data.clinic_id || data.clinicId || null, 
+          avatarUrl: data.avatar_url || data.avatarUrl || null,
+        });
       }
-    } catch (err) {
-      console.error("Erro ao carregar perfil:", err)
-      toast.error("Erro de conexão com o banco de dados.")
+    } catch (error) {
+      console.error("Erro interno no fetchProfile:", error);
+    } finally {
+      setLoading(false);
     }
   }
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchUserProfile(session.user.id).then(() => setLoading(false))
-      } else {
-        setLoading(false)
-      }
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchUserProfile(session.user.id)
-      } else {
-        setProfile(null)
-      }
-      setLoading(false)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const signIn = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) throw error
-      // O onAuthStateChange vai capturar o login e carregar o perfil automaticamente
-    } catch (error: any) {
-      console.error(error)
-      throw error
-    }
+  // --- 4. AÇÕES DE AUTENTICAÇÃO ---
+  async function signIn({ email, password }: SignInData) {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
   }
 
-  const signOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-    setProfile(null)
+  async function signOut() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    setSession(null);
   }
+
+  // --- 5. COMPUTAÇÃO DE PERMISSÕES ---
+  const isAdmin = profile?.role === "admin";
+  const isProfessional = profile?.role === "profissional" || isAdmin;
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        session,
+        loading,
+        isAdmin,
+        isProfessional,
+        signIn,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
-  )
+  );
 }
 
-export const useAuth = () => {
-  const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth deve ser usado dentro de AuthProvider')
-  return context
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth deve ser usado dentro de um AuthProvider");
+  }
+  return context;
 }

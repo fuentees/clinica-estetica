@@ -1,3 +1,6 @@
+/* 1. IMPORTAÇÃO DA FONTE PREMIUM (Plus Jakarta Sans) */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,18 +10,20 @@
     @apply antialiased;
   }
 
+  /* Aplica a fonte em todo o corpo do site */
   body {
-    @apply bg-gray-50 text-gray-900 dark:bg-dark-bg dark:text-dark-text;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 overflow-x-hidden;
   }
 
-  /* Estilos de Foco para Acessibilidade */
+  /* Estilos de Foco para Acessibilidade (com cor Rosa da marca) */
   :focus-visible {
-    @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-white dark:ring-offset-dark-bg;
+    @apply outline-none ring-2 ring-pink-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
   }
 
-  /* Barra de rolagem personalizada */
+  /* Barra de rolagem personalizada (Fina e discreta) */
   ::-webkit-scrollbar {
-    @apply w-2 h-2;
+    @apply w-1.5 h-1.5;
   }
 
   ::-webkit-scrollbar-track {
@@ -26,36 +31,65 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-gray-400 dark:bg-gray-600 rounded-full;
+    @apply bg-gray-300 dark:bg-gray-700 rounded-full hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors;
   }
 }
 
 @layer components {
+  /* Botões com visual mais moderno (arredondados e font-bold) */
   .btn {
-    @apply inline-flex items-center justify-center rounded-md font-medium transition-colors
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-bold transition-all duration-200
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 
-           disabled:pointer-events-none disabled:opacity-50;
+           disabled:pointer-events-none disabled:opacity-50 active:scale-95;
   }
 
   .btn-primary {
-    @apply bg-pink-600 text-white hover:bg-pink-700 
-           dark:bg-pink-500 dark:hover:bg-pink-600;
+    @apply bg-pink-600 text-white shadow-lg shadow-pink-500/30 
+           hover:bg-pink-700 hover:shadow-pink-500/40
+           dark:bg-pink-600 dark:hover:bg-pink-500;
   }
 
   .btn-secondary {
-    @apply bg-gray-100 text-gray-900 hover:bg-gray-200 
-           dark:bg-dark-surface dark:text-dark-text dark:hover:bg-gray-800;
+    @apply bg-white text-gray-700 border border-gray-200 shadow-sm
+           hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300
+           dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-700;
   }
 
+  .btn-ghost {
+    @apply bg-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-100
+           dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800;
+  }
+
+  /* Inputs com bordas arredondadas e foco rosa */
   .input {
-    @apply w-full rounded-md border border-gray-300 px-3 py-2 text-sm
-           placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500
-           focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50
-           dark:border-dark-border dark:bg-dark-surface dark:text-dark-text
-           dark:placeholder:text-gray-500;
+    @apply w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium transition-colors
+           placeholder:text-gray-400 
+           focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500
+           disabled:cursor-not-allowed disabled:opacity-50
+           dark:border-gray-800 dark:bg-gray-900 dark:text-white
+           dark:placeholder:text-gray-600 dark:focus:ring-pink-500/20;
   }
 
+  /* Card Padrão do Sistema */
   .card {
-    @apply bg-white rounded-lg shadow-sm dark:bg-dark-surface dark:border dark:border-dark-border;
+    @apply bg-white rounded-[2rem] p-6 shadow-sm border border-gray-100 
+           dark:bg-gray-900 dark:border-gray-800;
+  }
+}
+
+@layer utilities {
+  /* Utilitário para esconder barra de rolagem (Usado nas abas do Paciente) */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  /* Utilitário para texto gradiente (Opcional, para títulos bonitos) */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-pink-600 to-purple-600;
   }
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Plus, Search, Package, AlertTriangle, CheckCircle, Trash2, Edit, Loader2 
+  Plus, Search, Package, AlertTriangle, CheckCircle, Trash2, Edit, Loader2, ShoppingCart
 } from 'lucide-react';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
@@ -13,6 +13,7 @@ export function InventoryPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [clinicId, setClinicId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchInventory();
@@ -21,9 +22,29 @@ export function InventoryPage() {
   async function fetchInventory() {
     try {
       setLoading(true);
+      
+      // 1. Identificar a clínica do usuário logado
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('clinicId')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile?.clinicId) {
+        toast.error("Clínica não identificada.");
+        return;
+      }
+      
+      setClinicId(profile.clinicId);
+
+      // 2. Buscar apenas os produtos DESTA clínica
       const { data, error } = await supabase
         .from('inventory')
         .select('*')
+        .eq('clinicId', profile.clinicId) // FILTRO DE SEGURANÇA SaaS
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -37,149 +58,157 @@ export function InventoryPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Tem certeza? Isso não afetará históricos passados.')) return;
+    if (!confirm('Tem certeza? Esta ação removerá o item permanentemente do estoque.')) return;
     try {
-      await supabase.from('inventory').delete().eq('id', id);
-      fetchInventory();
+      // Garantimos que o delete só ocorra se o item pertencer à clínica logada
+      const { error } = await supabase
+        .from('inventory')
+        .delete()
+        .eq('id', id)
+        .eq('clinicId', clinicId); 
+
+      if (error) throw error;
+      
+      setProducts(prev => prev.filter(p => p.id !== id));
       toast.success('Produto removido.');
     } catch (error) {
-      toast.error('Erro ao remover.');
+      toast.error('Erro ao remover o item.');
     }
   }
 
-  // Filtros
+  // Filtros de busca local
   const filtered = products.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Contadores para o Dashboard Rápido
+  // Lógica de Contadores
   const lowStockCount = products.filter(p => p.quantity <= p.minimum_quantity && p.quantity > 0).length;
   const outOfStockCount = products.filter(p => p.quantity === 0).length;
 
-  // CORREÇÃO 1: Usando a variável 'loading'
   if (loading) {
     return (
-      <div className="flex justify-center p-10">
-        <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <Loader2 className="animate-spin text-pink-600 w-12 h-12" />
+        <p className="text-gray-500 animate-pulse">Sincronizando estoque...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-            <Package className="text-blue-600" /> Controle de Estoque
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+            <Package className="text-pink-600" size={32} /> Controle de Insumos
           </h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">Gerencie insumos e produtos de venda.</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Monitore frascos, agulhas e produtos da sua clínica.</p>
         </div>
         <Link to="/inventory/new">
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 shadow-sm">
-            <Plus size={18} /> Novo Produto
+          <Button className="bg-pink-600 hover:bg-pink-700 text-white flex items-center gap-2 shadow-lg shadow-pink-200 dark:shadow-none h-11 px-6 rounded-xl transition-all hover:scale-105">
+            <Plus size={20} /> Novo Produto
           </Button>
         </Link>
       </div>
 
-      {/* Cards de Alerta */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-4">
-              <div className="p-3 bg-green-100 text-green-600 rounded-full"><CheckCircle size={24} /></div>
+      {/* Quick Dashboard Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-5 group hover:border-blue-200 transition-colors">
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-2xl transition-transform group-hover:scale-110"><CheckCircle size={28} /></div>
               <div>
-                  <p className="text-2xl font-bold text-gray-800 dark:text-white">{products.length}</p>
-                  <p className="text-xs text-gray-500">Total de Itens</p>
+                  <p className="text-3xl font-black text-gray-900 dark:text-white">{products.length}</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Itens em Catálogo</p>
               </div>
           </div>
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-yellow-100 dark:border-gray-700 shadow-sm flex items-center gap-4">
-              <div className="p-3 bg-yellow-100 text-yellow-600 rounded-full"><AlertTriangle size={24} /></div>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-orange-100 dark:border-gray-700 shadow-sm flex items-center gap-5 group hover:border-orange-200 transition-colors">
+              <div className="p-4 bg-orange-50 dark:bg-orange-900/20 text-orange-600 rounded-2xl transition-transform group-hover:scale-110"><AlertTriangle size={28} /></div>
               <div>
-                  <p className="text-2xl font-bold text-gray-800 dark:text-white">{lowStockCount}</p>
-                  <p className="text-xs text-gray-500">Estoque Baixo</p>
+                  <p className="text-3xl font-black text-gray-900 dark:text-white">{lowStockCount}</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Estoque Crítico</p>
               </div>
           </div>
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-red-100 dark:border-gray-700 shadow-sm flex items-center gap-4">
-              <div className="p-3 bg-red-100 text-red-600 rounded-full"><Package size={24} /></div>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-red-100 dark:border-gray-700 shadow-sm flex items-center gap-5 group hover:border-red-200 transition-colors">
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-2xl transition-transform group-hover:scale-110"><ShoppingCart size={28} /></div>
               <div>
-                  <p className="text-2xl font-bold text-gray-800 dark:text-white">{outOfStockCount}</p>
-                  <p className="text-xs text-gray-500">Esgotados</p>
+                  <p className="text-3xl font-black text-gray-900 dark:text-white">{outOfStockCount}</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Esgotados</p>
               </div>
           </div>
       </div>
 
-      {/* Tabela */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-        {/* Barra de Busca */}
-        <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-            <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+      {/* Tabela Principal */}
+      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        {/* Barra de Filtro */}
+        <div className="p-6 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20">
+            <div className="relative max-w-md group">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-pink-500 transition-colors" size={20} />
                 <Input 
-                    placeholder="Buscar produto..." 
+                    placeholder="Filtrar por nome ou marca..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 bg-gray-50 dark:bg-gray-900"
+                    className="pl-11 h-11 bg-white dark:bg-gray-900 rounded-xl border-gray-200 focus:ring-2 focus:ring-pink-500"
                 />
             </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 dark:bg-gray-700/50 text-gray-500 font-medium">
-              <tr>
-                <th className="px-6 py-4">Produto</th>
-                <th className="px-6 py-4">Qtd. Atual</th>
-                <th className="px-6 py-4">Mínimo</th>
-                <th className="px-6 py-4">Valor Unit.</th>
-                <th className="px-6 py-4 text-right">Ações</th>
+            <thead>
+              <tr className="bg-gray-50/80 dark:bg-gray-700/50 text-gray-500 font-bold uppercase text-[10px] tracking-widest">
+                <th className="px-8 py-5">Identificação do Produto</th>
+                <th className="px-6 py-5 text-center">Quantidade</th>
+                <th className="px-6 py-5 text-center">Nível de Alerta</th>
+                <th className="px-6 py-5">Preço Médio</th>
+                <th className="px-8 py-5 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {filtered.map((item) => {
-                  // Lógica de Status
-                  let statusColor = "text-gray-700";
-                  let bgClass = "";
-                  if (item.quantity === 0) {
-                      statusColor = "text-red-600 font-bold";
-                      bgClass = "bg-red-50 dark:bg-red-900/20";
-                  } else if (item.quantity <= item.minimum_quantity) {
-                      statusColor = "text-yellow-600 font-bold";
-                      bgClass = "bg-yellow-50 dark:bg-yellow-900/20";
-                  }
+                  const isCritical = item.quantity === 0;
+                  const isLow = item.quantity <= item.minimum_quantity && item.quantity > 0;
 
                   return (
-                    <tr key={item.id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${bgClass}`}>
-                        <td className="px-6 py-4">
-                            <p className="font-semibold text-gray-800 dark:text-white">{item.name}</p>
-                            <p className="text-xs text-gray-500">{item.description || '-'}</p>
+                    <tr key={item.id} className={`hover:bg-gray-50/80 dark:hover:bg-gray-700/30 transition-colors ${isCritical ? 'bg-red-50/30' : ''}`}>
+                        <td className="px-8 py-5">
+                            <div className="flex flex-col">
+                                <span className="font-bold text-gray-800 dark:text-white text-base">{item.name}</span>
+                                <span className="text-xs text-gray-500 italic">{item.description || 'Sem descrição'}</span>
+                            </div>
                         </td>
-                        <td className={`px-6 py-4 ${statusColor} text-lg`}>
-                            {item.quantity}
+                        <td className="px-6 py-5 text-center">
+                            <div className={`inline-flex items-center justify-center w-12 h-12 rounded-2xl font-black text-lg shadow-sm border
+                                ${isCritical ? 'bg-red-600 text-white border-red-700' : 
+                                  isLow ? 'bg-yellow-400 text-yellow-900 border-yellow-500' : 
+                                  'bg-white dark:bg-gray-900 text-gray-800 dark:text-white border-gray-200'}`}>
+                                {item.quantity}
+                            </div>
                         </td>
-                        <td className="px-6 py-4 text-gray-500">
-                            {item.minimum_quantity}
+                        <td className="px-6 py-5 text-center">
+                            <span className="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-500 font-medium">
+                                {item.minimum_quantity} unidades
+                            </span>
                         </td>
-                        <td className="px-6 py-4 text-gray-600 dark:text-gray-300">
+                        <td className="px-6 py-5 font-semibold text-gray-700 dark:text-gray-300">
                             {Number(item.unit_price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td className="px-8 py-5 text-right">
                             <div className="flex justify-end gap-2">
-                                {/* CORREÇÃO 2: size="sm" em vez de "icon" e classes para ajuste */}
                                 <Button 
                                   variant="ghost" 
                                   size="sm" 
                                   onClick={() => navigate(`/inventory/${item.id}/edit`)} 
-                                  className="h-8 w-8 p-0 text-blue-500 hover:bg-blue-50"
+                                  className="h-9 w-9 p-0 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"
                                 >
-                                    <Edit size={16} />
+                                    <Edit size={18} />
                                 </Button>
                                 <Button 
                                   variant="ghost" 
                                   size="sm" 
                                   onClick={() => handleDelete(item.id)} 
-                                  className="h-8 w-8 p-0 text-red-500 hover:bg-red-50"
+                                  className="h-9 w-9 p-0 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg"
                                 >
-                                    <Trash2 size={16} />
+                                    <Trash2 size={18} />
                                 </Button>
                             </div>
                         </td>
@@ -191,7 +220,11 @@ export function InventoryPage() {
         </div>
         
         {filtered.length === 0 && !loading && (
-            <div className="p-12 text-center text-gray-400">Nenhum produto encontrado.</div>
+            <div className="p-20 text-center flex flex-col items-center gap-4">
+                <Package size={48} className="text-gray-200" />
+                <p className="text-gray-500 font-medium text-lg">Nenhum insumo encontrado nesta categoria.</p>
+                <Button variant="outline" onClick={() => setSearchTerm('')} className="rounded-xl">Limpar filtros</Button>
+            </div>
         )}
       </div>
     </div>

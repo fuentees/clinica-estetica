@@ -8,9 +8,9 @@ import {
   Users, 
   Loader2, 
   MessageCircle, 
-  Mail,          
-  Pencil,        
-  Trash2,        
+  Mail,           
+  Pencil,         
+  Trash2,         
   Eye,
   MoreHorizontal,
   ChevronLeft,
@@ -28,7 +28,7 @@ interface Patient {
   cpf?: string;
   email?: string;
   phone?: string;
-  created_at: string;
+  createdAt: string; 
 }
 
 export function PatientsListPage() {
@@ -54,17 +54,34 @@ export function PatientsListPage() {
     setCurrentPage(1);
   }, [searchTerm, itemsPerPage]);
 
-  // --- FETCH DATA ---
+  // --- FETCH DATA (SaaS INTEGRADO) ---
   async function fetchPatients() {
     try {
       setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("clinicId")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile?.clinicId) {
+        toast.error("Erro: Usuário sem clínica vinculada.");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("patients")
         .select("*")
-        .order("created_at", { ascending: false });
+        .eq("clinicId", profile.clinicId) 
+        .order("createdAt", { ascending: false });
 
       if (error) throw error;
       setPatients(data || []);
+      
     } catch (error) {
       console.error(error);
       toast.error("Erro ao carregar lista de pacientes.");
@@ -85,7 +102,7 @@ export function PatientsListPage() {
       toast.success("Paciente removido com sucesso.");
     } catch (error) {
       console.error(error);
-      toast.error("Erro ao excluir. Verifique se há agendamentos vinculados.");
+      toast.error("Erro ao excluir. Verifique se há registros vinculados.");
     }
   };
 
@@ -170,17 +187,16 @@ export function PatientsListPage() {
                   <tr>
                     <td colSpan={3} className="p-16 text-center text-gray-400">
                       <div className="flex flex-col items-center justify-center gap-3">
-                         <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-full">
-                           <Users size={32} className="text-gray-300 dark:text-gray-500" />
-                         </div>
-                         <span className="font-medium">Nenhum paciente encontrado</span>
+                          <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-full">
+                            <Users size={32} className="text-gray-300 dark:text-gray-500" />
+                          </div>
+                          <span className="font-medium">Nenhum paciente encontrado</span>
                       </div>
                     </td>
                   </tr>
                 ) : (
                   currentPatients.map((patient) => {
                     const fullName = patient.name || "Sem Nome";
-                    const firstName = fullName.split(' ')[0];
                     const initials = fullName.substring(0, 2).toUpperCase();
                     
                     const phone = patient.phone || "";
@@ -197,11 +213,8 @@ export function PatientsListPage() {
                         onClick={() => navigate(`/patients/${patient.id}`)}
                         className="group hover:bg-pink-50/30 dark:hover:bg-gray-700/30 transition-colors cursor-pointer"
                       >
-                        
-                        {/* NOME E IDENTIFICAÇÃO */}
                         <td className="p-5 align-middle">
                           <div className="flex items-center gap-4">
-                            {/* Avatar com Gradiente */}
                             <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-pink-100 to-purple-100 dark:from-pink-900/30 dark:to-purple-900/30 text-pink-600 dark:text-pink-300 flex items-center justify-center font-bold text-sm shadow-sm border border-white dark:border-gray-600 group-hover:scale-110 transition-transform">
                                 {initials}
                             </div>
@@ -219,7 +232,6 @@ export function PatientsListPage() {
                           </div>
                         </td>
                         
-                        {/* CONTATOS (Badges) */}
                         <td className="p-5 align-middle">
                           <div className="flex flex-col gap-2 items-start">
                              {phone ? (
@@ -248,10 +260,8 @@ export function PatientsListPage() {
                           </div>
                         </td>
                         
-                        {/* AÇÕES */}
                         <td className="p-5 align-middle text-center">
                           <div className="flex items-center justify-center gap-2 relative">
-                            {/* Botão Prontuário (Desktop) */}
                             <button 
                               onClick={(e) => { e.stopPropagation(); navigate(`/patients/${patient.id}`); }}
                               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:text-pink-600 hover:border-pink-200 border border-gray-200 dark:border-gray-600 rounded-lg transition-all text-xs font-bold shadow-sm"
@@ -260,7 +270,6 @@ export function PatientsListPage() {
                               Prontuário
                             </button>
 
-                            {/* Menu Dropdown */}
                             <div className="relative">
                               <button 
                                 onClick={(e) => { 
@@ -283,7 +292,7 @@ export function PatientsListPage() {
                                   </button>
 
                                   <button 
-                                    onClick={(e) => { e.stopPropagation(); navigate(`/patients/new?id=${patient.id}`); }} // Assumindo rota de edição
+                                    onClick={(e) => { e.stopPropagation(); navigate(`/patients/${patient.id}/edit`); }}
                                     className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 font-medium"
                                   >
                                     <Pencil size={16} className="text-gray-400" /> Editar Dados

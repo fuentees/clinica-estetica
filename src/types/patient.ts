@@ -1,25 +1,40 @@
+// ✅ Interface principal do Paciente refletindo o Schema do Banco
 export interface Patient {
   id: string;
   profile_id: string;
-  first_name?: string; // ✅ Tornado opcional para evitar erro caso não venha da API
-  last_name?: string;  // ✅ Tornado opcional para evitar erro caso não venha da API
-  email?: string;      // ✅ Tornado opcional para evitar erro caso não venha da API
-  phone?: string;      // ✅ Tornado opcional para evitar erro caso não venha da API
+  
+  // Dados fundamentais da ficha clínica
   date_of_birth: string;
   cpf: string;
   address?: string | null;
   medical_history?: string | null;
   allergies?: string | null;
+  
+  // Metadados
   created_at: string;
   updated_at: string;
-  profiles?: { // ✅ Adicionado para suportar relacionamento com 'profiles'
+
+  /**
+   * ✅ Suporte ao Relacionamento com a tabela 'profiles'
+   * No Supabase, ao buscar o paciente, você fará algo como:
+   * .select('*, profiles:profile_id(*)')
+   */
+  profiles?: {
     first_name: string;
     last_name: string;
     email: string;
     phone: string;
+    avatar_url?: string | null; // Adicionado para suportar fotos de perfil
   };
+
+  // ✅ Getters virtuais (opcionais para facilitar a UI)
+  first_name?: string; 
+  last_name?: string;  
+  email?: string;      
+  phone?: string;      
 }
 
+// ✅ Interface para o Formulário de Cadastro/Edição
 export interface PatientFormData {
   first_name: string;
   last_name: string;
@@ -30,4 +45,13 @@ export interface PatientFormData {
   address: string;
   medical_history: string;
   allergies: string;
+}
+
+// ✅ Interface Útil para Listagens (Otimizada)
+export interface PatientListItem extends Pick<Patient, 'id' | 'cpf' | 'created_at'> {
+  profiles: {
+    first_name: string;
+    last_name: string;
+    phone: string;
+  }
 }

@@ -15,7 +15,12 @@ import {
   Flame,
   Calendar,
   Plus,
-  AlertTriangle // Adicionado
+  AlertTriangle,
+  ChevronRight,
+  TrendingUp,
+  X, // Adicionado para corrigir erro 2304
+  Zap, // Adicionado para corrigir erro 2304
+  History as HistoryIcon // Renomeado para corrigir erro 2786
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import {
@@ -41,32 +46,34 @@ const maskHeight = (value: string) => {
 // --- COMPONENTES VISUAIS PREMIUM ---
 const KpiCard = ({ label, value, sub, color, icon: Icon }: { label: string, value: string | number, sub: string, color: "blue" | "red" | "green" | "purple" | "orange", icon: any }) => {
     const styles = {
-        blue: "bg-blue-50 text-blue-700 border-blue-100",
-        red: "bg-rose-50 text-rose-700 border-rose-100",
-        green: "bg-emerald-50 text-emerald-700 border-emerald-100",
-        purple: "bg-purple-50 text-purple-700 border-purple-100",
-        orange: "bg-amber-50 text-amber-700 border-amber-100",
+        blue: "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-900/10 dark:border-blue-800",
+        red: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-900/10 dark:border-rose-800",
+        green: "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-800",
+        purple: "bg-purple-50 text-purple-700 border-purple-100 dark:bg-purple-900/10 dark:border-purple-800",
+        orange: "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/10 dark:border-amber-800",
     };
     
     return (
-        <div className={`p-5 rounded-2xl border ${styles[color]} flex flex-col shadow-sm relative overflow-hidden group hover:shadow-md transition-all`}>
-            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                <Icon size={48} />
+        <div className={`p-6 rounded-[2rem] border-2 ${styles[color]} flex flex-col shadow-sm relative overflow-hidden group hover:shadow-xl transition-all duration-500`}>
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 group-hover:opacity-20 transition-all">
+                <Icon size={64} />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-1">{label}</span>
-            <span className="text-3xl font-black tracking-tight z-10">{value}</span>
-            <span className="text-xs font-medium opacity-80 mt-1 z-10">{sub}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 mb-2">{label}</span>
+            <span className="text-4xl font-black tracking-tighter z-10 italic">{value}</span>
+            <span className="text-[10px] font-bold uppercase opacity-50 mt-2 z-10 flex items-center gap-1">
+              <TrendingUp size={12}/> {sub}
+            </span>
         </div>
     );
 };
 
 const MetricBox = ({ label, value, unit, color, icon: Icon }: any) => (
-    <div className="flex flex-col items-center justify-center p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-all group">
-        <div className={`p-2 rounded-full mb-2 bg-gray-50 group-hover:bg-${color.split('-')[1]}-50 transition-colors`}>
-            <Icon size={16} className={color}/>
+    <div className="flex flex-col items-center justify-center p-4 bg-gray-50 dark:bg-gray-900 rounded-[1.5rem] border border-gray-100 dark:border-gray-800 hover:border-pink-100 transition-all group shadow-inner">
+        <div className={`p-2 rounded-xl mb-2 bg-white dark:bg-gray-800 shadow-sm transition-colors`}>
+            <Icon size={14} className={color}/>
         </div>
-        <span className={`block font-bold text-lg ${color}`}>{value ?? '-'}<small className="text-xs text-gray-400 ml-0.5">{unit}</small></span>
-        <span className="text-[9px] uppercase text-gray-400 font-bold tracking-wider">{label}</span>
+        <span className={`block font-black text-xl tracking-tighter ${color}`}>{value ?? '-'}<small className="text-[10px] text-gray-400 ml-0.5 font-bold uppercase">{unit}</small></span>
+        <span className="text-[9px] uppercase text-gray-400 font-black tracking-widest text-center leading-tight mt-1">{label}</span>
     </div>
 );
 
@@ -80,7 +87,6 @@ export function PatientBioimpedancePage() {
 
   const { register, handleSubmit, watch, setValue, reset } = useForm();
 
-  // IMC Automático
   const peso = watch("peso");
   const altura = watch("altura");
 
@@ -104,7 +110,7 @@ export function PatientBioimpedancePage() {
   };
 
   useEffect(() => {
-    fetchHistory();
+    if (id) fetchHistory();
   }, [id]);
 
   async function fetchHistory() {
@@ -135,7 +141,6 @@ export function PatientBioimpedancePage() {
           cleanData.altura = parseFloat(String(cleanData.altura).replace(',', '.'));
       }
 
-      // Ajuste de nomes para bater com a tabela nova
       const payload = {
           patient_id: id,
           date: cleanData.data_avaliacao,
@@ -148,7 +153,6 @@ export function PatientBioimpedancePage() {
           visceral_fat_level: cleanData.gordura_visceral,
           metabolic_age: cleanData.idade_metabolica,
           basal_metabolic_rate: cleanData.metabolismo_basal,
-          // Perimetria
           cintura: cleanData.cintura,
           abdomen: cleanData.abdomen,
           quadril: cleanData.quadril,
@@ -157,101 +161,107 @@ export function PatientBioimpedancePage() {
       };
 
       const { error } = await supabase.from("bioimpedance_records").insert(payload);
-
       if (error) throw error;
       
-      toast.success("Medidas salvas com sucesso!");
+      toast.success("Métricas atualizadas!");
       reset({ data_avaliacao: new Date().toISOString().split('T')[0] });
       setShowForm(false);
       fetchHistory();
     } catch (err) {
-      toast.error("Erro ao salvar.");
+      toast.error("Erro ao processar salvamento.");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (itemId: string) => {
-    if (!confirm("Excluir esta avaliação permanentemente?")) return;
+    if (!confirm("Excluir este registro permanentemente?")) return;
     await supabase.from("bioimpedance_records").delete().eq("id", itemId);
     setHistory(history.filter(h => h.id !== itemId));
-    toast.success("Exame excluído.");
+    toast.success("Registro removido.");
   };
 
-  if (loading) return <div className="p-20 flex justify-center"><Loader2 className="animate-spin text-rose-600 w-10 h-10"/></div>;
+  if (loading) return (
+    <div className="h-screen flex flex-col items-center justify-center gap-4 bg-white dark:bg-gray-900">
+      <Loader2 className="animate-spin text-rose-600" size={40}/>
+      <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Carregando Métricas...</p>
+    </div>
+  );
 
   const hasData = history.length > 0;
   const latest = hasData ? history[history.length - 1] : null;
 
   return (
-    <div className="bg-gray-50/50 dark:bg-gray-900 min-h-screen font-sans animate-in fade-in duration-500">
+    <div className="max-w-[1600px] mx-auto p-6 space-y-8 animate-in fade-in duration-700">
       
-      {/* CABEÇALHO */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700">
-          <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                  <div className="p-3 bg-rose-100 rounded-xl"><Scale className="text-rose-600 w-8 h-8" /></div>
-                  Bioimpedância
-              </h1>
-              <p className="text-gray-500 mt-2 ml-16">Monitore a evolução corporal e métricas de saúde.</p>
+      <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-8">
+          <div className="flex items-center gap-6">
+              <div className="p-5 bg-rose-50 dark:bg-rose-900/20 rounded-[2rem] text-rose-600">
+                <Scale size={40} />
+              </div>
+              <div>
+                  <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase">Antropometria</h1>
+                  <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Gestão de evolução física e composição tecidual</p>
+              </div>
           </div>
           <Button 
             onClick={() => setShowForm(!showForm)} 
-            className={`px-6 py-3 rounded-xl shadow-lg transition-all transform hover:-translate-y-1 ${showForm ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
+            className={`h-14 px-8 rounded-2xl shadow-xl transition-all font-black uppercase tracking-widest ${
+              showForm ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-rose-600 text-white hover:bg-rose-700'
+            }`}
           >
-            {showForm ? <span className="flex items-center gap-2"><Trash2 size={18}/> Cancelar</span> : <span className="flex items-center gap-2"><Plus size={18}/> Novo Exame</span>}
+            {showForm ? <><X size={18} className="mr-2"/> Fechar</> : <><Plus size={18} className="mr-2"/> Novo Exame</>}
           </Button>
       </div>
 
-      {/* --- MODO FORMULÁRIO --- */}
       {showForm ? (
-         <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 animate-in slide-in-from-top-4">
-             <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+         <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 p-10 rounded-[3rem] shadow-2xl border border-gray-100 dark:border-gray-700 animate-in zoom-in-95 duration-300">
+             <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
                 
-                {/* Seção 1: Dados Gerais */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="col-span-1">
-                        <label className="text-xs font-bold text-gray-400 uppercase ml-1 mb-1 block">Data da Avaliação</label>
-                        <div className="relative">
-                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
-                            <input type="date" {...register("data_avaliacao")} defaultValue={new Date().toISOString().split('T')[0]} className="w-full pl-10 pr-4 py-3 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-gray-700 font-medium" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 mb-2 block">Data da Coleta</label>
+                        <input type="date" {...register("data_avaliacao")} defaultValue={new Date().toISOString().split('T')[0]} className="w-full h-12 px-5 bg-gray-50 dark:bg-gray-900 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-rose-500 font-bold" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 mb-2 block">Peso Corporal (kg)</label>
+                        <input type="number" step="0.1" {...register("peso")} className="w-full h-12 px-5 bg-gray-50 dark:bg-gray-900 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-rose-500 font-black text-lg italic" placeholder="00.0" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 mb-2 block">Altura (m)</label>
+                        <input type="text" {...register("altura")} onChange={handleHeightChange} className="w-full h-12 px-5 bg-gray-50 dark:bg-gray-900 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-rose-500 font-black text-lg italic" placeholder="1.00" maxLength={4} />
+                    </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-rose-500 to-purple-600 p-6 rounded-[2.5rem] shadow-lg flex justify-between items-center text-white">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-white/20 rounded-2xl"><Activity size={24}/></div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Índice de Massa Corporal</span>
+                          <p className="text-xs font-bold leading-none mt-1">Calculado automaticamente</p>
                         </div>
                     </div>
-                    <div className="col-span-1">
-                        <label className="text-xs font-bold text-gray-400 uppercase ml-1 mb-1 block">Peso (kg)</label>
-                        <input type="number" step="0.1" {...register("peso")} className="w-full px-4 py-3 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-gray-800 font-bold text-lg" placeholder="0.0" />
-                    </div>
-                    <div className="col-span-1">
-                        <label className="text-xs font-bold text-gray-400 uppercase ml-1 mb-1 block">Altura (m)</label>
-                        <input type="text" {...register("altura")} onChange={handleHeightChange} className="w-full px-4 py-3 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-gray-800 font-bold text-lg" placeholder="1.70" maxLength={4} />
-                    </div>
+                    <input readOnly {...register("imc")} className="w-32 text-right text-4xl font-black bg-transparent outline-none italic tracking-tighter" placeholder="--" />
                 </div>
 
-                {/* IMC Calculado (Visual) */}
-                <div className="bg-gradient-to-r from-rose-50 to-purple-50 p-4 rounded-xl border border-rose-100 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                        <Activity className="text-rose-500" />
-                        <span className="text-sm font-bold text-rose-800">IMC Calculado Automaticamente</span>
-                    </div>
-                    <input readOnly {...register("imc")} className="w-24 text-right text-2xl font-black text-purple-700 bg-transparent outline-none" placeholder="--" />
-                </div>
-
-                {/* Seção 2: Composição */}
-                <div className="pt-6 border-t border-gray-100">
-                    <h3 className="text-sm font-bold text-gray-800 uppercase mb-4 flex items-center gap-2"><Scale size={16} className="text-purple-500"/> Composição Corporal</h3>
+                <div className="pt-6 border-t border-gray-100 dark:border-gray-700">
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2 italic">
+                      <BarChart3 size={16} className="text-rose-500"/> Composição Bioelétrica
+                    </h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <InputModern label="% Gordura" register={register} name="gordura_percentual" icon={Flame} color="text-red-500" />
-                        <InputModern label="Músculo (kg)" register={register} name="massa_muscular_kg" icon={Activity} color="text-green-500" />
+                        <InputModern label="% Gordura" register={register} name="gordura_percentual" icon={Flame} color="text-rose-500" />
+                        <InputModern label="Músculo (kg)" register={register} name="massa_muscular_kg" icon={Activity} color="text-emerald-500" />
                         <InputModern label="% Água" register={register} name="agua_corporal" icon={Droplets} color="text-blue-500" />
-                        <InputModern label="Visceral" register={register} name="gordura_visceral" icon={AlertTriangle} color="text-orange-500" />
+                        <InputModern label="Nível Visceral" register={register} name="gordura_visceral" icon={AlertTriangle} color="text-amber-500" />
                         <InputModern label="Idade Metab." register={register} name="idade_metabolica" icon={Calendar} color="text-gray-500" />
-                        <InputModern label="Basal (Kcal)" register={register} name="metabolismo_basal" icon={Flame} color="text-purple-500" />
+                        <InputModern label="TMB (Kcal)" register={register} name="metabolismo_basal" icon={Zap} color="text-purple-500" />
                     </div>
                 </div>
 
-                {/* Seção 3: Perimetria */}
-                <div className="pt-6 border-t border-gray-100">
-                    <h3 className="text-sm font-bold text-gray-800 uppercase mb-4 flex items-center gap-2"><Ruler size={16} className="text-blue-500"/> Perimetria (cm)</h3>
+                <div className="pt-6 border-t border-gray-100 dark:border-gray-700">
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-2 italic">
+                      <Ruler size={16} className="text-blue-500"/> Perimetria Clínica (cm)
+                    </h3>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         <InputSimple label="Cintura" register={register} name="cintura" />
                         <InputSimple label="Abdômen" register={register} name="abdomen" />
@@ -261,110 +271,101 @@ export function PatientBioimpedancePage() {
                     </div>
                 </div>
 
-                <Button type="submit" disabled={saving} className="w-full bg-rose-600 hover:bg-rose-700 text-white h-14 rounded-2xl text-lg font-bold shadow-xl shadow-rose-200 transition-all transform hover:-translate-y-1">
-                    {saving ? <Loader2 className="animate-spin mr-2"/> : <Save className="mr-2"/>} Salvar Avaliação
+                <Button type="submit" disabled={saving} className="w-full h-16 bg-gray-900 hover:bg-black text-white rounded-[2rem] text-sm font-black uppercase tracking-[0.2em] shadow-2xl transition-all transform hover:-translate-y-1">
+                    {saving ? <Loader2 className="animate-spin mr-2"/> : <Save className="mr-2" size={20}/>} Finalizar e Salvar
                 </Button>
              </form>
          </div>
       ) : (
-        /* --- MODO DASHBOARD --- */
         <>
             {!hasData ? (
-                <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-200">
-                    <div className="bg-gray-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Scale size={32} className="text-gray-300"/>
+                <div className="text-center py-32 bg-white dark:bg-gray-800 rounded-[3rem] border-2 border-dashed border-gray-100 dark:border-gray-700">
+                    <div className="bg-gray-50 dark:bg-gray-900 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <Scale size={48} className="text-gray-200"/>
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900">Nenhum exame encontrado</h3>
-                    <p className="text-gray-500 mt-2">Clique em "Novo Exame" para começar o acompanhamento.</p>
+                    <h3 className="text-2xl font-black text-gray-900 dark:text-white italic tracking-tighter uppercase">Nenhuma Análise Registrada</h3>
+                    <p className="text-gray-500 font-bold uppercase text-[10px] tracking-widest mt-4">Inicie o acompanhamento corporal deste paciente.</p>
                 </div>
             ) : (
-                <div className="space-y-8">
+                <div className="space-y-10 animate-in fade-in duration-1000">
                     
-                    {/* 1. KPIs DESTAQUE */}
-                    {latest && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-in slide-in-from-bottom-4">
-                            <KpiCard label="Peso Atual" value={`${latest.weight} kg`} sub="Última pesagem" color="blue" icon={Scale} />
-                            <KpiCard label="% Gordura" value={`${latest.body_fat_percent || '-'}%`} sub="Corporal" color="red" icon={Flame} />
-                            <KpiCard label="Massa Muscular" value={`${latest.muscle_mass_kg || '-'} kg`} sub="Esquelética" color="green" icon={Activity} />
-                            <KpiCard label="IMC" value={`${latest.bmi || '-'}`} sub="Índice de Massa" color="purple" icon={Activity} />
-                        </div>
-                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <KpiCard label="Peso Atual" value={`${latest.weight}kg`} sub="Estabilidade Corporal" color="blue" icon={Scale} />
+                        <KpiCard label="Gordura" value={`${latest.body_fat_percent || '-'}%`} sub="Nível de Adiposidade" color="red" icon={Flame} />
+                        <KpiCard label="Massa Magra" value={`${latest.muscle_mass_kg || '-'}kg`} sub="Tônus Muscular" color="green" icon={Activity} />
+                        <KpiCard label="IMC" value={`${latest.bmi || '-'}`} sub="Enquadramento Saúde" color="purple" icon={Activity} />
+                    </div>
 
-                    {/* 2. GRÁFICO PREMIUM */}
-                    <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700">
-                        <h3 className="font-bold text-lg text-gray-800 dark:text-white mb-8 flex items-center gap-2">
-                             <BarChart3 className="text-rose-500"/> Evolução da Composição Corporal
+                    <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden relative">
+                        <div className="absolute top-0 right-0 p-8 opacity-5"><BarChart3 size={120}/></div>
+                        <h3 className="font-black text-xl text-gray-900 dark:text-white mb-10 flex items-center gap-3 italic tracking-tighter uppercase">
+                             <TrendingUp className="text-rose-500" size={28}/> Curva de Evolução
                         </h3>
-                        <div className="h-80 w-full">
+                        <div className="h-[400px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={history} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                     <defs>
                                         <linearGradient id="colorGordura" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.2}/>
-                                            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
                                         </linearGradient>
                                         <linearGradient id="colorMusculo" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.2}/>
-                                            <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                                    <XAxis 
-                                        dataKey="date" 
-                                        tickFormatter={(d) => new Date(d).toLocaleDateString("pt-BR", { day: '2-digit', month: 'short' })} 
-                                        stroke="#9ca3af"
-                                        fontSize={12}
-                                        tickMargin={10}
-                                        axisLine={false}
-                                        tickLine={false}
-                                    />
-                                    <YAxis stroke="#9ca3af" fontSize={12} axisLine={false} tickLine={false} />
-                                    <Tooltip 
-                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} 
-                                        labelFormatter={(l) => new Date(l).toLocaleDateString("pt-BR")} 
-                                    />
-                                    <Legend verticalAlign="top" height={36} iconType="circle"/>
-                                    <Area type="monotone" dataKey="body_fat_percent" name="% Gordura" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorGordura)" />
-                                    <Area type="monotone" dataKey="muscle_mass_kg" name="Músculo (kg)" stroke="#22c55e" strokeWidth={3} fillOpacity={1} fill="url(#colorMusculo)" />
+                                    <XAxis dataKey="date" tickFormatter={(d) => new Date(d).toLocaleDateString("pt-BR", { day: '2-digit', month: 'short' })} stroke="#9ca3af" fontSize={10} tickMargin={15} axisLine={false} tickLine={false} />
+                                    <YAxis stroke="#9ca3af" fontSize={10} axisLine={false} tickLine={false} />
+                                    <Tooltip contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.1)', padding: '20px' }} labelFormatter={(l) => new Date(l).toLocaleDateString("pt-BR", { dateStyle: 'full' })} />
+                                    <Legend verticalAlign="top" height={50} align="right" iconType="circle" iconSize={8}/>
+                                    <Area type="monotone" dataKey="body_fat_percent" name="% Gordura" stroke="#f43f5e" strokeWidth={4} fillOpacity={1} fill="url(#colorGordura)" />
+                                    <Area type="monotone" dataKey="muscle_mass_kg" name="Músculo (kg)" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorMusculo)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
                     </div>
 
-                    {/* 3. HISTÓRICO EM CARDS */}
-                    <div className="space-y-4">
-                        <h3 className="font-bold text-gray-500 text-sm uppercase tracking-wider ml-2">Histórico Detalhado</h3>
-                        <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-3 ml-4">
+                          <HistoryIcon size={18} className="text-gray-400"/> {/* Corrigido de History para HistoryIcon */}
+                          <h3 className="font-black text-gray-400 text-xs uppercase tracking-[0.3em]">Linha do Tempo</h3>
+                        </div>
+                        <div className="grid grid-cols-1 gap-6">
                             {history.slice().reverse().map((r) => (
-                                <div key={r.id} className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all group relative">
+                                <div key={r.id} className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 hover:shadow-2xl hover:border-pink-100 transition-all duration-500 group relative">
                                     
-                                    <button 
-                                        onClick={() => handleDelete(r.id)} 
-                                        className="absolute top-6 right-6 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2 bg-gray-50 rounded-lg hover:bg-red-50"
-                                    >
-                                        <Trash2 size={18}/>
+                                    <button onClick={() => handleDelete(r.id)} className="absolute top-8 right-8 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-3 bg-gray-50 dark:bg-gray-900 rounded-2xl">
+                                        <Trash2 size={20}/>
                                     </button>
 
-                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                        <div className="flex items-center gap-4 min-w-[200px]">
-                                            <div className="p-3 bg-gray-50 rounded-xl">
-                                                <Calendar className="text-gray-400 w-6 h-6"/>
+                                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-10">
+                                        <div className="flex items-center gap-6 min-w-[280px]">
+                                            <div className="w-16 h-16 bg-gray-50 dark:bg-gray-900 rounded-3xl flex items-center justify-center text-gray-400 group-hover:text-pink-500 transition-colors">
+                                                <Calendar size={28}/>
                                             </div>
                                             <div>
-                                                <p className="text-lg font-bold text-gray-900 dark:text-white capitalize">
-                                                    {new Date(r.date).toLocaleDateString("pt-BR", { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+                                                <p className="text-xl font-black text-gray-900 dark:text-white capitalize italic tracking-tighter">
+                                                    {new Date(r.date).toLocaleDateString("pt-BR", { day: 'numeric', month: 'long', year: 'numeric' })}
                                                 </p>
-                                                <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded">IMC: {r.bmi}</span>
+                                                <div className="flex gap-2 mt-1">
+                                                  <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md uppercase tracking-widest italic">IMC: {r.bmi}</span>
+                                                  <span className="text-[9px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md uppercase tracking-widest italic">{r.weight}kg</span>
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <div className="flex-1 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                                            <MetricBox label="% Gordura" value={r.body_fat_percent} unit="%" color="text-red-500" icon={Flame} />
-                                            <MetricBox label="Músculo" value={r.muscle_mass_kg} unit="kg" color="text-green-500" icon={Activity} />
-                                            <MetricBox label="Visceral" value={r.visceral_fat_level} unit="" color="text-orange-500" icon={AlertTriangle} />
-                                            <MetricBox label="Água" value={r.body_water_percent} unit="%" color="text-blue-500" icon={Droplets} />
+                                        <div className="flex-1 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                            <MetricBox label="% Gordura" value={r.body_fat_percent} unit="%" color="text-rose-500" icon={Flame} />
+                                            <MetricBox label="Músculo" value={r.muscle_mass_kg} unit="kg" color="text-emerald-500" icon={Activity} />
+                                            <MetricBox label="Visceral" value={r.visceral_fat_level} unit="lvl" color="text-amber-500" icon={AlertTriangle} />
+                                            <MetricBox label="H2O Corp." value={r.body_water_percent} unit="%" color="text-blue-500" icon={Droplets} />
                                             <MetricBox label="Cintura" value={r.cintura} unit="cm" color="text-purple-500" icon={Ruler} />
                                             <MetricBox label="Abdômen" value={r.abdomen} unit="cm" color="text-purple-500" icon={Ruler} />
+                                        </div>
+                                        
+                                        <div className="xl:block hidden text-gray-100 dark:text-gray-800">
+                                           <ChevronRight size={40}/>
                                         </div>
                                     </div>
                                 </div>
@@ -379,19 +380,21 @@ export function PatientBioimpedancePage() {
   );
 }
 
-// --- SUB-COMPONENTES PARA FORMULÁRIO ---
 const InputModern = ({ label, register, name, icon: Icon, color }: any) => (
-    <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 focus-within:ring-2 focus-within:ring-rose-500 focus-within:bg-white transition-all">
-        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 flex items-center gap-1">
-            <Icon size={12} className={color.replace('text-', 'text-opacity-50 ')}/> {label}
+    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl border-2 border-transparent focus-within:border-rose-100 focus-within:bg-white dark:focus-within:bg-gray-800 transition-all shadow-inner">
+        <label className="text-[9px] font-black text-gray-400 uppercase mb-2 flex items-center gap-2 tracking-widest">
+            <Icon size={14} className={color}/> {label}
         </label>
-        <input type="number" step="0.1" {...register(name)} className="w-full bg-transparent outline-none font-bold text-gray-800 text-lg placeholder-gray-300" placeholder="-" />
+        <input type="number" step="0.1" {...register(name)} className="w-full bg-transparent outline-none font-black text-gray-900 dark:text-white text-2xl italic tracking-tighter placeholder-gray-200" placeholder="0.0" />
     </div>
 );
 
 const InputSimple = ({ label, register, name }: any) => (
-    <div className="bg-white p-3 rounded-xl border border-gray-200">
-        <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{label}</label>
-        <input type="number" step="0.1" {...register(name)} className="w-full bg-transparent outline-none font-bold text-gray-800" placeholder="cm" />
+    <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border-2 border-gray-100 dark:border-gray-700 shadow-sm hover:border-blue-100 transition-all">
+        <label className="text-[9px] font-black text-gray-400 uppercase block mb-2 tracking-widest">{label}</label>
+        <div className="flex items-baseline gap-1">
+          <input type="number" step="0.1" {...register(name)} className="w-full bg-transparent outline-none font-black text-gray-900 dark:text-white text-xl italic" placeholder="00" />
+          <span className="text-[10px] font-bold text-gray-300 uppercase">cm</span>
+        </div>
     </div>
 );

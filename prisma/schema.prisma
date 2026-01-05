@@ -9,93 +9,127 @@ datasource db {
 }
 
 // ==========================================
-// 1. CLÍNICAS
+// 1. CLÍNICAS (SaaS)
 // ==========================================
 model Clinic {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name          String
-  slug          String   @unique
-  isActive      Boolean  @default(true)
-  
-  logoUrl       String?  @map("logo_url")
-  primaryColor  String?  @map("primary_color")
-  
-  cnpj          String?
-  phone         String?
-  email         String?
-  website       String?
-  
-  cep           String?
-  rua           String?
-  numero        String?
-  bairro        String?
-  cidade        String?
-  estado        String?
-  complemento   String?
-  address       String? 
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name     String
+  slug     String  @unique
+  isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  logoUrl      String? @map("logo_url")
+  primaryColor String? @map("primary_color")
 
-  profiles     Profile[]
-  services     Service[]
-  patients     Patient[]
-  appointments Appointment[]
-  auditLogs    AuditLog[]
-  settings     SystemSetting[]
-  terms        Term[]
-  anamneses    Anamnesis[]
+  // Dados Cadastrais
+  cnpj    String?
+  phone   String?
+  email   String?
+  website String?
+
+  // Endereço Completo
+  cep         String?
+  rua         String?
+  numero      String?
+  bairro      String?
+  cidade      String?
+  estado      String?
+  complemento String?
+  address     String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  profiles        Profile[]
+  patients        Patient[]
+  services        Service[]
+  procedures      Procedure[]
+  appointments    Appointment[]
+  budgets         Budget[]
+  transactions    Transaction[]
+  anamneses       Anamnesis[]
+  evolutions      EvolutionRecord[]
+  injectablePlans InjectablePlan[]
+  settings        SystemSetting[]
+  terms           Term[]
+  auditLogs       AuditLog[]
 
   @@map("clinics")
 }
 
 // ==========================================
-// 2. PERFIS E PERMISSÕES
+// 2. PERFIS (USUÁRIOS) - CORRIGIDO
 // ==========================================
 model Profile {
-  id            String    @id @db.Uuid
-  email         String    
-  fullName      String    @map("full_name")
-  firstName     String?   @map("first_name")
-  lastName      String?   @map("last_name")
-  avatarUrl     String?
-  phone         String?
+  id        String  @id @db.Uuid
+  email     String
   
-  clinicId      String?   @db.Uuid
-  clinic        Clinic?   @relation(fields: [clinicId], references: [id])
+  // Nomes
+  fullName  String?  @map("full_name")
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
   
-  role          String    @default("paciente") 
-  roleId        String?
-  assignedRole  Role?     @relation(fields: [roleId], references: [id])
-  
-  isActive      Boolean   @default(true)
-  
-  auditLogs             AuditLog[]
-  appointments          Appointment[] 
-  serviceProfessionals  ServiceProfessional[]
-  conductedAnamneses    Anamnesis[]
+  avatarUrl String? @map("avatar_url")
+  phone     String?
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now()) @updatedAt
+  // Detalhes Profissionais
+  formacao           String? 
+  registrationNumber String? @map("registration_number")
+  bio                String? 
+
+  // Configurações de Trabalho (Usando String para facilitar o "09:00")
+  // Se o banco estiver como Time, o db push vai converter para Text, o que é melhor pro seu form
+  startTime      String?   @default("09:00") @map("start_time") 
+  endTime        String?   @default("18:00") @map("end_time")
+  
+  agendaColor    String?   @default("#db2777") @map("agenda_color")
+  commissionRate Decimal?  @default(0) @db.Decimal(5, 2) @map("commission_rate")
+  workingDays    String[]  @default(["Mon", "Tue", "Wed", "Thu", "Fri"]) @map("working_days")
+  signatureData  String?   @map("signature_data")
+
+  // Relacionamento com a Clínica
+  clinicId String? @db.Uuid
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
+
+  // Permissões e Status
+  role     String  @default("paciente")
+  roleId   String?
+  assignedRole Role?   @relation(fields: [roleId], references: [id])
+
+  isActive Boolean @default(true) @map("is_active")
+
+  // Logs
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Atividades
+  appointments         Appointment[]
+  conductedAnamneses   Anamnesis[]
+  conductedEvolutions  EvolutionRecord[]
+  createdBudgets       Budget[]
+  serviceProfessionals ServiceProfessional[]
+  auditLogs            AuditLog[]
 
   @@map("profiles")
 }
 
 model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique 
+  id          String           @id @default(uuid())
+  name        String           @unique
   description String?
   profiles    Profile[]
   permissions RolePermission[]
+
   @@map("roles")
 }
 
 model Permission {
-  id          String   @id @default(uuid())
-  resource    String   
-  action      String   
+  id          String           @id @default(uuid())
+  resource    String
+  action      String
   description String?
   roles       RolePermission[]
+
   @@unique([resource, action])
   @@map("permissions")
 }
@@ -106,222 +140,357 @@ model RolePermission {
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permissionId String
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
   @@unique([roleId, permissionId])
   @@map("role_permissions")
 }
 
 // ==========================================
-// 3. PACIENTES (ATUALIZADO COM LEGAL & IA)
+// 3. PACIENTES
 // ==========================================
 model Patient {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId  String   @db.Uuid
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId String @db.Uuid
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
 
-  name      String
-  email     String?
-  cpf       String?
-  phone     String
-  rg        String?
-  date_of_birth String? 
-  idade         Int?
-  profissao     String?
-  sexo          String?
-  estado_civil  String?
+  name          String
+  email         String?
+  cpf           String?
+  phone         String
+  date_of_birth String?
+  avatar_url    String?
 
-  // Endereço
-  cep       String?
-  rua       String?
-  numero    String?
-  bairro    String?
-  cidade    String?
-  estado    String?
-  address   String? 
+  rg           String?
+  idade        Int?
+  profissao    String?
+  sexo         String?
+  estado_civil String?
 
-  // ✅ NOVOS CAMPOS: JURÍDICO & CONSENTIMENTO (LGPD)
-  termo_aceito    Boolean @default(false)
-  autoriza_foto   Boolean @default(false)
-  autoriza_midia  Boolean @default(false)
-  
-  // ✅ ARMAZENAMENTO DA ASSINATURA DIGITAL (BASE64) E METADADOS
-  procedimentos_detalhes_json Json? @map("procedimentos_detalhes_json")
+  cep     String?
+  rua     String?
+  numero  String?
+  bairro  String?
+  cidade  String?
+  estado  String?
+  address String?
 
-  // RELACIONAMENTOS
-  consents      PatientTerm[]
-  appointments  Appointment[]
-  anamneses     Anamnesis[]
-  aiAnalyses    AnamnesisAIAnalysis[] // Histórico de IA
-  reminders     AppointmentReminder[] // Fila de Notificações
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  termo_aceito              Boolean @default(false)
+  autoriza_foto             Boolean @default(false)
+  autoriza_midia            Boolean @default(false)
+  procedimentos_detalhes_json Json?   @map("procedimentos_detalhes_json")
+
+  peso             Decimal? @db.Decimal(10, 2)
+  altura           Decimal? @db.Decimal(10, 2)
+  imc              Decimal? @db.Decimal(10, 2)
+  pressao_arterial String?
+
+  satisfacao_imagem_corporal Decimal?
+  preferencia_plano          String?
+  plano_inicial              String?  @db.Text
+  numero_sessoes_estimado    Decimal?
+  intervalo_sessoes          String?
+  prioridade_regioes         String?
+  red_flags_profissional     String?  @db.Text
+
+  anamnese_body_mapping Json?
+  facial_dados          Json?
+  corporal_dados        Json?
+
+  consents        PatientTerm[]
+  appointments    Appointment[]
+  anamneses       Anamnesis[]
+  evolutions      EvolutionRecord[]
+  budgets         Budget[]
+  transactions    Transaction[]
+  injectablePlans InjectablePlan[]
+  aiAnalyses      AnamnesisAIAnalysis[]
+  reminders       AppointmentReminder[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("patients")
 }
 
 // ==========================================
-// 4. MÓDULO DE IA: ANÁLISES CLÍNICAS
+// 4. MÓDULOS CLÍNICOS
 // ==========================================
+model Anamnesis {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String  @db.Uuid
+  clinic         Clinic  @relation(fields: [clinicId], references: [id])
+  patientId      String  @db.Uuid
+  patient        Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  professionalId String  @db.Uuid
+  professional   Profile @relation(fields: [professionalId], references: [id])
+
+  mainComplaint    String? @db.Text
+  complaintDetails String? @db.Text
+
+  facialData       Json?
+  bodyData         Json?
+  capilarData      Json?
+  lifestyleData    Json?
+  bioimpedanceData Json?
+  visualMapData    Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("anamneses")
+}
+
+model EvolutionRecord {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String  @db.Uuid
+  clinic         Clinic  @relation(fields: [clinicId], references: [id])
+  patientId      String  @db.Uuid
+  patient        Patient @relation(fields: [patientId], references: [id])
+  professionalId String  @db.Uuid
+  professional   Profile @relation(fields: [professionalId], references: [id])
+
+  date        DateTime @default(now())
+  subject     String
+  description String   @db.Text
+
+  photos      Json?
+  attachments Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("evolution_records")
+}
+
+model Appointment {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId String @db.Uuid
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  start_time DateTime @map("startAt")
+  end_time   DateTime @map("endAt")
+
+  status       String
+  service_type String?
+  notes        String?
+
+  patientId      String  @db.Uuid
+  patient        Patient @relation(fields: [patientId], references: [id])
+  professionalId String  @db.Uuid
+  professional   Profile @relation(fields: [professionalId], references: [id])
+
+  serviceId String?  @db.Uuid
+  service   Service? @relation(fields: [serviceId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([clinicId, start_time])
+  @@map("appointments")
+}
+
+model Procedure {
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId String? @db.Uuid
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
+
+  name        String
+  category    String
+  price       Decimal @db.Decimal(10, 2)
+  description String?
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("procedures")
+}
+
+model Budget {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String  @db.Uuid
+  clinic         Clinic  @relation(fields: [clinicId], references: [id])
+  patientId      String  @db.Uuid
+  patient        Patient @relation(fields: [patientId], references: [id])
+  professionalId String  @db.Uuid
+  professional   Profile @relation(fields: [professionalId], references: [id])
+
+  items    Json
+  subtotal Decimal @db.Decimal(10, 2)
+  discount Decimal @default(0) @db.Decimal(10, 2)
+  total    Decimal @db.Decimal(10, 2)
+
+  status      String    @default("pending")
+  valid_until DateTime?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("budgets")
+}
+
+model Transaction {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String   @db.Uuid
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  patientId String?  @db.Uuid
+  patient   Patient? @relation(fields: [patientId], references: [id])
+
+  type           String
+  category       String?
+  description    String
+  amount         Decimal @db.Decimal(10, 2)
+  payment_method String?
+
+  due_date DateTime
+  paid_at  DateTime?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("transactions")
+}
+
+model InjectablePlan {
+  id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId String? @db.Uuid
+  clinic   Clinic? @relation(fields: [clinicId], references: [id])
+
+  patientId String  @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  date     DateTime @default(now())
+  products Json?
+  areas    Json?
+  notes    String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("injectable_plans")
+}
+
 model AnamnesisAIAnalysis {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  patientId        String   @db.Uuid @map("patient_id")
-  patient          Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  
-  anamnesis_data   Json     // Input enviado para o AnamnesisAIService
-  ai_suggestions   String?  @db.Text
-  risk_factors     Json?    // Lista de SafetyAlerts (DANGER, WARNING)
-  suggested_treatments Json? // Protocolos sugeridos pela IA
-  confidence_score Int      @default(0)
-  status           String   @default("completed") // completed, flagged, rejected
-  
-  createdAt        DateTime @default(now()) @map("created_at")
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  anamnesis_data       Json
+  ai_suggestions       String? @db.Text
+  risk_factors         Json?
+  suggested_treatments Json?
+  confidence_score     Int     @default(0)
+  status               String  @default("completed")
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("anamnesis_ai_analysis")
 }
 
-// ==========================================
-// 5. MÓDULO DE NOTIFICAÇÕES: LEMBRETES
-// ==========================================
 model AppointmentReminder {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  appointment_id String    @db.Uuid
-  patient_id     String    @db.Uuid
-  patient        Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  
-  to             String    // Celular ou Email
-  status         String    @default("pending") // pending, sent, failed, processing
-  retry_count    Int       @default(0)
-  error_message  String?
-  scheduled_for  DateTime
-  sent_at        DateTime?
-  
-  createdAt      DateTime  @default(now()) @map("created_at")
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  appointment_id String @db.Uuid
+
+  patient_id String  @db.Uuid
+  patient    Patient @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+
+  to            String
+  status        String   @default("pending")
+  retry_count   Int      @default(0)
+  error_message String?
+  scheduled_for DateTime
+  sent_at       DateTime?
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("appointment_reminders")
 }
 
-// ==========================================
-// 6. ANAMNESE E AGENDAMENTOS
-// ==========================================
-model Anamnesis {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId        String   @db.Uuid
-  clinic          Clinic   @relation(fields: [clinicId], references: [id])
-  patientId       String   @db.Uuid
-  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  professionalId  String   @db.Uuid
-  professional    Profile  @relation(fields: [professionalId], references: [id])
+model Service {
+  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId      String                @db.Uuid
+  clinic        Clinic                @relation(fields: [clinicId], references: [id])
+  name          String
+  price         Decimal               @db.Decimal(10, 2)
+  duration      Int
+  isActive      Boolean               @default(true)
+  professionals ServiceProfessional[]
+  appointments  Appointment[]
 
-  mainComplaint    String   @db.Text 
-  complaintDetails String?  @db.Text 
-
-  lifestyleData    Json?    
-  facialData       Json?    
-  bodyData         Json?    
-  capilarData      Json?    
-  visualMapData    Json?    
-
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @default(now()) @updatedAt
-
-  @@index([clinicId])
-  @@index([patientId])
-  @@map("anamneses")
+  @@map("services")
 }
 
-model Appointment {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId        String   @db.Uuid
-  clinic          Clinic   @relation(fields: [clinicId], references: [id])
-  startAt         DateTime
-  endAt           DateTime
-  status          String   
-  patientId       String   @db.Uuid
-  patient         Patient  @relation(fields: [patientId], references: [id])
-  serviceId       String   @db.Uuid
-  service         Service  @relation(fields: [serviceId], references: [id])
-  professionalId  String   @db.Uuid
-  professional    Profile  @relation(fields: [professionalId], references: [id])
-  notes           String?
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
+model ServiceProfessional {
+  id        String  @id @default(uuid())
+  serviceId String  @db.Uuid
+  service   Service @relation(fields: [serviceId], references: [id])
+  profileId String  @db.Uuid
+  profile   Profile @relation(fields: [profileId], references: [id])
 
-  @@index([clinicId, startAt, endAt])
-  @@index([professionalId, startAt])
-  @@map("appointments")
+  @@unique([serviceId, profileId])
+  @@map("service_professionals")
 }
 
-// ==========================================
-// 7. FINANCEIRO E AUDITORIA
-// ==========================================
+model Term {
+  id         String        @id @default(uuid())
+  clinicId   String        @db.Uuid
+  clinic     Clinic        @relation(fields: [clinicId], references: [id])
+  type       String
+  title      String
+  content    String        @db.Text
+  version    String
+  isActive   Boolean       @default(true)
+  acceptedBy PatientTerm[]
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@map("terms")
+}
+
+model PatientTerm {
+  id         String   @id @default(uuid())
+  patientId  String   @db.Uuid
+  patient    Patient  @relation(fields: [patientId], references: [id])
+  termId     String
+  term       Term     @relation(fields: [termId], references: [id])
+  acceptedAt DateTime @default(now())
+
+  @@map("patient_terms")
+}
+
+model SystemSetting {
+  key      String
+  value    String
+  clinicId String @db.Uuid
+  clinic   Clinic @relation(fields: [clinicId], references: [id])
+
+  @@id([clinicId, key])
+  @@map("system_settings")
+}
+
 model AuditLog {
   id        String   @id @default(uuid())
   clinicId  String   @db.Uuid
   clinic    Clinic   @relation(fields: [clinicId], references: [id])
   profileId String?  @db.Uuid
   profile   Profile? @relation(fields: [profileId], references: [id])
-  action    String   
-  entity    String   
+  action    String
+  entity    String
   entityId  String?
-  severity  String   @default("INFO") 
-  createdAt DateTime @default(now())
+  severity  String   @default("INFO")
+  createdAt DateTime @default(now()) @map("created_at")
+
   @@index([clinicId])
   @@map("audit_logs")
 }
 
-model Service {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId    String   @db.Uuid
-  clinic      Clinic   @relation(fields: [clinicId], references: [id])
-  name        String
-  price       Decimal  @db.Decimal(10, 2)
-  duration    Int      
-  isActive    Boolean  @default(true)
-  professionals ServiceProfessional[]
-  appointments  Appointment[]
-  @@map("services")
-}
+model ProfessionalAvailabilityException {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  professionalId String  @map("professional_id") @db.Uuid
+  
+  start_date    String  @map("start_date")
+  end_date      String  @map("end_date")
+  start_time    String? @map("start_time")
+  end_time      String? @map("end_time")
+  is_full_day   Boolean @default(true) @map("is_full_day")
+  reason        String?
 
-model ServiceProfessional {
-  id              String   @id @default(uuid())
-  serviceId       String   @db.Uuid
-  service         Service  @relation(fields: [serviceId], references: [id])
-  profileId       String   @db.Uuid
-  profile         Profile  @relation(fields: [profileId], references: [id])
-  @@unique([serviceId, profileId])
-  @@map("service_professionals")
-}
+  created_at DateTime @default(now())
 
-model Term {
-  id        String   @id @default(uuid())
-  clinicId  String   @db.Uuid
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
-  type      String   
-  title     String
-  content   String   @db.Text
-  version   String   
-  isActive  Boolean  @default(true)
-  acceptedBy PatientTerm[]
-  createdAt DateTime @default(now())
-  @@map("terms")
-}
-
-model PatientTerm {
-  id        String   @id @default(uuid())
-  patientId String   @db.Uuid
-  patient   Patient  @relation(fields: [patientId], references: [id])
-  termId    String
-  term      Term     @relation(fields: [termId], references: [id])
-  acceptedAt DateTime @default(now())
-  @@map("patient_terms")
-}
-
-model SystemSetting {
-  key       String
-  value     String   
-  clinicId  String   @db.Uuid
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
-  @@id([clinicId, key])
-  @@map("system_settings")
+  @@map("professional_availability_exceptions")
 }

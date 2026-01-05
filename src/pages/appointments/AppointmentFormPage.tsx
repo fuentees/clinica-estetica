@@ -9,7 +9,7 @@ import { Input } from '../../components/ui/input';
 import { toast } from 'react-hot-toast';
 import { 
   Loader2, ArrowLeft, Calendar as CalendarIcon, Clock, 
-  Package, CheckCircle2, User, Sparkles, CreditCard, AlertTriangle, DoorOpen 
+  Package, CheckCircle2, User, Sparkles, CreditCard, AlertTriangle, DoorOpen, Stethoscope 
 } from 'lucide-react'; 
 import { addMinutes, format, parseISO } from 'date-fns';
 
@@ -37,7 +37,6 @@ interface Professional {
   id: string;
   firstName: string;
   lastName?: string;
-  formacao?: string;
   role: string;
   fullName?: string;
 }
@@ -100,7 +99,7 @@ export function AppointmentFormPage() {
   useEffect(() => {
       if (preSelectedProfId) setValue('professionalId', preSelectedProfId);
       if (preSelectedDate) setValue('date', initialDate);
-  }, [preSelectedProfId, preSelectedDate, setValue]);
+  }, [preSelectedProfId, preSelectedDate, setValue, initialDate]);
 
   // --- CARREGAMENTO INICIAL ---
   useEffect(() => {
@@ -111,6 +110,7 @@ export function AppointmentFormPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Usuário não logado");
 
+        // 1. Pega o Profile para descobrir a Clínica
         const { data: profile } = await supabase
           .from('profiles')
           .select('clinicId')
@@ -120,6 +120,8 @@ export function AppointmentFormPage() {
         if (!profile?.clinicId) throw new Error("Usuário sem clínica vinculada");
         setClinicId(profile.clinicId);
         
+        console.log("--- INICIANDO LOAD PARA CLINICA:", profile.clinicId, "---");
+
         // 2. Pacientes
         const { data: patients, error: patError } = await supabase
             .from('patients')
@@ -127,33 +129,37 @@ export function AppointmentFormPage() {
             .eq('clinicId', profile.clinicId)
             .order('name', { ascending: true });
         
-        if (patError) throw patError;
+        if (patError) console.error("Erro Pacientes:", patError);
         setPatientsList(patients || []);
 
-        // 3. Serviços
+        // 3. Serviços (Tratamentos)
+        // OBS: Removi o filtro .eq('isActive', true) temporariamente para teste. 
+        // Se seus serviços não aparecem, verifique se a coluna isActive existe e é true.
         const { data: services, error: servError } = await supabase
             .from('services')
             .select('id, name, duration, price')
             .eq('clinicId', profile.clinicId)
-            .eq('isActive', true)
             .order('name');
         
-        if (servError) throw servError;
+        if (servError) console.error("Erro Serviços:", servError);
+        console.log("Serviços Encontrados:", services); // DEBUG
         setServicesList(services || []);
 
         // 4. Profissionais
+        // ATENÇÃO: Verifique se no banco o 'role' é exatamente 'profissional' ou 'admin'
         const { data: professionals, error: profError } = await supabase
             .from('profiles')
             .select('id, firstName, lastName, fullName, role') 
             .eq('clinicId', profile.clinicId)
-            .in('role', ['profissional', 'admin']); 
+            .in('role', ['profissional', 'admin', 'doutor', 'esteticista']); // Adicionei mais roles por garantia
         
-        if (profError) throw profError;
+        if (profError) console.error("Erro Profissionais:", profError);
+        console.log("Profissionais Encontrados:", professionals); // DEBUG
         setProfessionalsList(professionals || []);
 
       } catch (error: any) {
-        console.error("ERRO DE CARREGAMENTO:", error);
-        toast.error("Erro ao carregar dados iniciais."); 
+        console.error("ERRO CRÍTICO:", error);
+        toast.error("Erro ao carregar dados. Verifique o console."); 
       } finally {
         setLoading(false);
       }
@@ -161,11 +167,10 @@ export function AppointmentFormPage() {
     loadData();
   }, []);
 
-  // --- BUSCA PACOTES (CORRIGIDO AQUI) ---
+  // --- BUSCA PACOTES ---
   useEffect(() => {
     if (selectedPatientId) {
         async function fetchPackages() {
-            // Tenta buscar pacotes. Se a tabela não existir, o 'error' será capturado e ignorado.
             const { data, error } = await supabase
               .from("patient_packages")
               .select("*")
@@ -178,8 +183,6 @@ export function AppointmentFormPage() {
                 setUsePackageId(null);
             }
         }
-        
-        // AQUI ESTAVA O ERRO: A função estava comentada. Agora está ativa.
         fetchPackages(); 
     } else {
         setActivePackages([]);
@@ -202,7 +205,6 @@ export function AppointmentFormPage() {
     
     try {
       const startDateTime = new Date(`${data.date}T${data.time}`);
-      
       const durationMinutes = selectedService?.duration || 60;
       const endDateTime = addMinutes(startDateTime, durationMinutes);
 
@@ -219,10 +221,13 @@ export function AppointmentFormPage() {
 
       if (error) throw error;
 
+      // Desconta do pacote se selecionado
       if (usePackageId) {
           const pkg = activePackages.find(p => p.id === usePackageId);
           if (pkg) {
-              await supabase.from("patient_packages").update({ used_sessions: pkg.used_sessions + 1 }).eq("id", pkg.id);
+              await supabase.from("patient_packages")
+                .update({ used_sessions: pkg.used_sessions + 1 })
+                .eq("id", pkg.id);
               toast.success(`1 Sessão descontada do pacote!`);
           }
       }
@@ -243,7 +248,7 @@ export function AppointmentFormPage() {
     }
   };
 
-  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-pink-600 w-10 h-10" /></div>;
+  if (loading) return <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900"><Loader2 className="animate-spin text-pink-600 w-10 h-10" /></div>;
 
   return (
     <div className="max-w-[1400px] mx-auto p-4 md:p-8 min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -273,12 +278,13 @@ export function AppointmentFormPage() {
                         <div className="md:col-span-2">
                             <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Nome do Paciente</label>
                             {patientsList.length === 0 ? (
-                                <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-lg text-yellow-800 text-sm">
-                                    Nenhum paciente cadastrado nesta clínica. Cadastre um paciente antes de agendar.
+                                <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-lg text-yellow-800 text-sm flex items-center gap-2">
+                                    <AlertTriangle size={16}/>
+                                    Nenhum paciente cadastrado. Cadastre um paciente antes de agendar.
                                 </div>
                             ) : (
-                                <select {...register('patientId')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 transition-all">
-                                    <option value="">Selecione...</option>
+                                <select {...register('patientId')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 transition-all cursor-pointer">
+                                    <option value="">Selecione o paciente...</option>
                                     {patientsList.map(p => (
                                         <option key={p.id} value={p.id}>
                                             {p.name} {p.cpf ? `(CPF: ${p.cpf})` : ''}
@@ -299,25 +305,34 @@ export function AppointmentFormPage() {
                         <div className="text-center p-6 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-900/50">
                             <AlertTriangle className="mx-auto text-orange-500 mb-2" size={24} />
                             <p className="text-sm font-bold text-orange-700 dark:text-orange-300">Nenhum profissional encontrado.</p>
+                            <p className="text-xs text-orange-600 mt-1">Verifique se existem usuários com permissão "profissional" vinculados a esta clínica.</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                             {professionalsList.map(p => (
-                                <label key={p.id} className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all hover:shadow-md flex flex-col items-center text-center gap-2 ${selectedProfessionalId === p.id ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20' : 'border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900'}`}>
-                                    <input type="radio" value={p.id} {...register('professionalId')} className="absolute opacity-0 w-full h-full cursor-pointer" />
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${selectedProfessionalId === p.id ? 'bg-pink-500' : 'bg-gray-400'}`}>
-                                        {p.firstName ? p.firstName[0] : '?'}
+                                <label key={p.id} className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all hover:shadow-md flex flex-col items-center text-center gap-3 ${selectedProfessionalId === p.id ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 shadow-md ring-1 ring-pink-500' : 'border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 hover:border-pink-200'}`}>
+                                    <input type="radio" value={p.id} {...register('professionalId')} className="absolute opacity-0 w-full h-full cursor-pointer left-0 top-0" />
+                                    
+                                    {/* Avatar Placeholder */}
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg transition-colors ${selectedProfessionalId === p.id ? 'bg-pink-500' : 'bg-gray-400 dark:bg-gray-600'}`}>
+                                        {p.firstName ? p.firstName[0].toUpperCase() : '?'}
                                     </div>
-                                    <div>
-                                        <span className="block font-bold text-sm text-gray-800 dark:text-white">{p.firstName}</span>
-                                        <span className="block text-[10px] uppercase text-gray-500">{p.role}</span>
+                                    
+                                    <div className="w-full">
+                                        <span className="block font-bold text-sm text-gray-800 dark:text-white truncate">{p.firstName} {p.lastName}</span>
+                                        <span className="block text-[10px] uppercase font-semibold text-gray-500 mt-1 tracking-wide">{p.role}</span>
                                     </div>
-                                    {selectedProfessionalId === p.id && <div className="absolute top-2 right-2 text-pink-500"><CheckCircle2 size={16}/></div>}
+                                    
+                                    {selectedProfessionalId === p.id && (
+                                        <div className="absolute top-2 right-2 text-pink-500 animate-in zoom-in duration-200">
+                                            <CheckCircle2 size={18} fill="currentColor" className="text-white"/>
+                                        </div>
+                                    )}
                                 </label>
                             ))}
                         </div>
                     )}
-                    {errors.professionalId && <span className="text-xs text-red-500 mt-2 block">{errors.professionalId.message}</span>}
+                    {errors.professionalId && <span className="text-xs text-red-500 mt-2 block font-medium">{errors.professionalId.message}</span>}
                 </section>
 
                 {/* 3. SERVIÇO & DATA & SALA */}
@@ -325,16 +340,16 @@ export function AppointmentFormPage() {
                     <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-800 dark:text-white"><Clock size={18} className="text-blue-600"/> Detalhes da Sessão</h2>
                     <div className="grid md:grid-cols-2 gap-6">
                         <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Serviço / Procedimento</label>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block flex items-center gap-1"><Stethoscope size={12}/> Tratamento / Serviço</label>
                             {servicesList.length === 0 ? (
-                                <div className="p-3 border rounded-xl bg-gray-50 text-gray-500 text-sm">
-                                    Nenhum serviço cadastrado. Vá em Serviços para criar.
+                                <div className="p-3 border rounded-xl bg-gray-50 text-gray-500 text-sm border-gray-200">
+                                    Nenhum serviço cadastrado.
                                 </div>
                             ) : (
-                                <select {...register('serviceId')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500">
-                                    <option value="">Selecione...</option>
+                                <select {...register('serviceId')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
+                                    <option value="">Selecione o procedimento...</option>
                                     {servicesList.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name} ({s.duration} min)</option>
+                                        <option key={s.id} value={s.id}>{s.name} • {s.duration} min • R$ {s.price}</option>
                                     ))}
                                 </select>
                             )}
@@ -373,7 +388,7 @@ export function AppointmentFormPage() {
 
                         <div className="md:col-span-2">
                             <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Observações (Opcional)</label>
-                            <textarea {...register('notes')} rows={3} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 resize-none" placeholder="Ex: Preparar material X..."></textarea>
+                            <textarea {...register('notes')} rows={3} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 resize-none" placeholder="Ex: Paciente tem sensibilidade..."></textarea>
                         </div>
                     </div>
                 </section>
@@ -390,7 +405,7 @@ export function AppointmentFormPage() {
                 <div className="space-y-4 mb-6">
                     <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-500">Paciente</span>
-                        <span className="text-sm font-bold text-gray-800 dark:text-white text-right">
+                        <span className="text-sm font-bold text-gray-800 dark:text-white text-right truncate max-w-[150px]">
                             {selectedPatient ? selectedPatient.name : '-'}
                         </span>
                     </div>
@@ -407,7 +422,7 @@ export function AppointmentFormPage() {
                         </span>
                     </div>
                     <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700">
-                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">Serviço</p>
+                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">Serviço Selecionado</p>
                         <p className="text-base font-bold text-pink-600">{selectedService?.name || 'Nenhum selecionado'}</p>
                     </div>
                 </div>
@@ -425,7 +440,7 @@ export function AppointmentFormPage() {
                                         <input type="radio" name="payment_method" checked={usePackageId === pkg.id} onChange={() => setUsePackageId(pkg.id)} className="text-green-600 focus:ring-green-500 w-4 h-4"/>
                                         <div>
                                             <span className="block text-sm font-bold text-gray-800 dark:text-white">{pkg.title}</span>
-                                            <span className="text-xs text-gray-500">Saldo: {pkg.total_sessions - pkg.used_sessions} sessões</span>
+                                            <span className="text-xs text-gray-500">Disponível: {pkg.total_sessions - pkg.used_sessions} sessões</span>
                                         </div>
                                     </div>
                                     <Package size={18} className="text-green-600"/>
@@ -438,7 +453,7 @@ export function AppointmentFormPage() {
                                     <input type="radio" name="payment_method" checked={usePackageId === null} onChange={() => setUsePackageId(null)} className="text-blue-600 focus:ring-blue-500 w-4 h-4"/>
                                     <div>
                                         <span className="block text-sm font-bold text-gray-800 dark:text-white">Pagamento Avulso</span>
-                                        <span className="text-xs text-gray-500">Valor da sessão única</span>
+                                        <span className="text-xs text-gray-500">Sessão única</span>
                                     </div>
                                 </div>
                                 <span className="text-sm font-bold text-blue-600">

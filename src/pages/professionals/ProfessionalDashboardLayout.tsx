@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Outlet, useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { Outlet, useParams, useNavigate, useLocation, Link, useOutletContext } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
   Loader2, 
@@ -17,17 +17,17 @@ import {
   XCircle
 } from "lucide-react";
 
-// --- TIPAGEM (INTEGRAL) ---
+// --- TIPAGEM ---
 interface Professional {
   id: string;
-  first_name: string;
-  last_name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   role: string;
   formacao?: string;
-  registration_number?: string;
-  avatar_url?: string;
-  is_active: boolean;
+  registrationNumber?: string;
+  avatarUrl?: string;
+  isActive: boolean;
 }
 
 export function ProfessionalDashboardLayout() {
@@ -51,7 +51,10 @@ export function ProfessionalDashboardLayout() {
           .single();
 
         if (error) throw error;
-        setProfessional(data);
+        
+        // O Supabase retorna snake_case (first_name), mas nossa interface espera camelCase (firstName).
+        // Não tem problema, trataremos isso na leitura das variáveis abaixo.
+        setProfessional(data as unknown as Professional); 
       } catch (error) {
         console.error("Erro ao carregar perfil profissional:", error);
         navigate("/professionals");
@@ -73,9 +76,24 @@ export function ProfessionalDashboardLayout() {
 
   if (!professional) return null;
 
-  const initials = (professional.first_name?.[0] || "") + (professional.last_name?.[0] || "");
-  const fullName = `${professional.first_name} ${professional.last_name}`;
+  // --- TRATAMENTO DE DADOS (CORREÇÃO DOS ERROS DE TS) ---
+  // Utilizamos 'as any' para acessar propriedades snake_case vindas do banco
+  // sem que o TypeScript reclame que a interface não possui essas chaves.
+  const raw = professional as any;
+
+  const pName = professional.firstName || raw.first_name || "";
+  const pLast = professional.lastName || raw.last_name || "";
   
+  // Garante que é string para evitar erro no [0]
+  const initials = ((pName?.[0] || "") + (pLast?.[0] || "")).toUpperCase();
+  const fullName = `${pName} ${pLast}`.trim() || "Profissional Sem Nome";
+  
+  // Garante que é string ou undefined para evitar erro no src da imagem
+  const avatar = professional.avatarUrl || raw.avatar_url || undefined;
+  
+  const isActive = professional.isActive ?? raw.is_active ?? false;
+  const regNumber = professional.registrationNumber || raw.registration_number;
+
   const roleLabels: Record<string, string> = {
     'admin': 'Gestor Geral',
     'profissional': 'Especialista Técnico',
@@ -115,15 +133,15 @@ export function ProfessionalDashboardLayout() {
             <div className="relative group">
               <div className="w-28 h-28 md:w-32 md:h-32 rounded-[2.5rem] p-1.5 bg-gradient-to-tr from-pink-100 to-rose-100 dark:from-pink-900/30 dark:to-rose-900/30 shadow-xl group-hover:rotate-3 transition-transform">
                 <div className="w-full h-full rounded-[2rem] bg-white dark:bg-gray-900 flex items-center justify-center overflow-hidden border-4 border-white dark:border-gray-800">
-                  {professional.avatar_url ? (
-                    <img src={professional.avatar_url} alt={fullName} className="w-full h-full object-cover"/>
+                  {avatar ? (
+                    <img src={avatar} alt={fullName} className="w-full h-full object-cover"/>
                   ) : (
                     <span className="text-4xl font-black text-pink-600 italic tracking-tighter uppercase">{initials}</span>
                   )}
                 </div>
               </div>
-              <div className={`absolute -bottom-2 -right-2 p-1.5 rounded-2xl border-4 border-white dark:border-gray-900 shadow-lg ${professional.is_active ? 'bg-emerald-500' : 'bg-gray-400'}`}>
-                {professional.is_active ? <CheckCircle2 size={16} className="text-white"/> : <XCircle size={16} className="text-white"/>}
+              <div className={`absolute -bottom-2 -right-2 p-1.5 rounded-2xl border-4 border-white dark:border-gray-900 shadow-lg ${isActive ? 'bg-emerald-500' : 'bg-gray-400'}`}>
+                {isActive ? <CheckCircle2 size={16} className="text-white"/> : <XCircle size={16} className="text-white"/>}
               </div>
             </div>
 
@@ -146,11 +164,11 @@ export function ProfessionalDashboardLayout() {
                   </div>
                 )}
 
-                {professional.registration_number && (
+                {regNumber && (
                   <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-inner">
                     <Shield size={14} className="text-blue-500" />
                     <span className="font-mono text-xs font-black text-gray-700 dark:text-gray-300">
-                      ID: {professional.registration_number}
+                      ID: {regNumber}
                     </span>
                   </div>
                 )}
@@ -194,9 +212,15 @@ export function ProfessionalDashboardLayout() {
       {/* --- RENDERIZAÇÃO DO CONTEÚDO (PÁGINAS FILHAS) --- */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto p-8">
         <div className="bg-white dark:bg-gray-900 p-8 rounded-[3rem] border border-gray-100 dark:border-gray-800 shadow-sm min-h-[600px]">
+           {/* Passamos o objeto professional via context para as rotas filhas */}
            <Outlet context={{ professional }} /> 
         </div>
       </div>
     </div>
   );
+}
+
+// Hook auxiliar para facilitar uso nas páginas filhas
+export function useProfessionalContext() {
+  return useOutletContext<{ professional: Professional }>();
 }

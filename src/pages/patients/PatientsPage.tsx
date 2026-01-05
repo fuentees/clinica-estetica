@@ -13,8 +13,8 @@ import {
   Loader2, 
   UserPlus, 
   Filter,
-  Users // Adicionado para corrigir erro 2304
-} from 'lucide-react'; // Plus removido para corrigir erro 6133
+  Users
+} from 'lucide-react';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { format } from 'date-fns';
@@ -37,6 +37,7 @@ export function PatientsPage() {
   async function fetchPatients() {
     try {
       setLoading(true);
+      
       const { data, error } = await supabase
         .from('patients')
         .select(`
@@ -45,16 +46,20 @@ export function PatientsPage() {
           date_of_birth,
           name,
           phone,
-          email
+          email,
+          created_at,
+          avatar_url,
+          clinicId
         `)
-        .eq('clinicId', profile?.clinicId)
+        // MANTIDO clinicId (CamelCase) para não quebrar seu banco
+        .eq('clinicId', profile?.clinicId) 
         .order('name', { ascending: true });
 
       if (error) throw error;
       setPatients(data || []);
-    } catch (error) {
-      console.error('Erro ao buscar pacientes:', error);
-      toast.error('Erro ao carregar lista de pacientes.');
+    } catch (error: any) {
+      console.error('Erro detalhado:', error);
+      toast.error(`Erro ao carregar: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -75,9 +80,9 @@ export function PatientsPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700">
+    <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700 pb-20">
       
-      {/* HEADER PREMIUM */}
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
         <div>
           <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase flex items-center gap-3">
@@ -92,7 +97,7 @@ export function PatientsPage() {
         </Link>
       </div>
 
-      {/* BARRA DE BUSCA E FILTROS */}
+      {/* BARRA DE BUSCA */}
       <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="relative w-full md:max-w-xl group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-pink-500 transition-colors" size={20} />
@@ -109,12 +114,12 @@ export function PatientsPage() {
         </div>
       </div>
 
-      {/* TABELA DE PACIENTES */}
+      {/* TABELA */}
       <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         {loading ? (
           <div className="py-40 flex flex-col items-center justify-center gap-4">
             <Loader2 className="animate-spin text-pink-600" size={48} />
-            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Sincronizando Base de Dados...</p>
+            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Carregando Pacientes...</p>
           </div>
         ) : filteredPatients.length === 0 ? (
           <div className="py-40 text-center flex flex-col items-center gap-4">
@@ -122,15 +127,22 @@ export function PatientsPage() {
               <Search size={64} />
             </div>
             <p className="text-gray-500 font-black uppercase text-xs tracking-widest">Nenhum paciente localizado</p>
+            
+            {/* CORREÇÃO DO BOTÃO LINK -> GHOST */}
+            {searchTerm && (
+                <Button variant="ghost" onClick={() => setSearchTerm('')} className="text-pink-500 h-auto p-0 hover:bg-transparent font-bold">
+                    Limpar filtro
+                </Button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto min-h-[400px]">
             <table className="w-full text-left border-collapse">
               <thead className="bg-gray-50/50 dark:bg-gray-900/50 text-gray-400 border-b border-gray-100 dark:border-gray-700">
                 <tr>
-                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Paciente & Identificação</th>
-                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Contatos</th>
-                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-right">Ações Técnicas</th>
+                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Paciente</th>
+                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Contato</th>
+                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
@@ -141,8 +153,12 @@ export function PatientsPage() {
                     <tr key={patient.id} className="group hover:bg-pink-50/30 dark:hover:bg-gray-900/40 transition-all cursor-pointer" onClick={() => navigate(`/patients/${patient.id}`)}>
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-5">
-                          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-pink-100 to-purple-100 dark:from-pink-900/20 dark:to-purple-900/20 text-pink-600 font-black text-sm flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform italic border border-white dark:border-gray-700">
-                            {initials}
+                          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-pink-100 to-purple-100 dark:from-pink-900/20 dark:to-purple-900/20 text-pink-600 font-black text-sm flex items-center justify-center shadow-inner overflow-hidden">
+                            {patient.avatar_url ? (
+                                <img src={patient.avatar_url} alt={patient.name} className="w-full h-full object-cover"/>
+                            ) : (
+                                initials
+                            )}
                           </div>
                           <div>
                             <p className="font-black text-gray-900 dark:text-white text-base tracking-tighter italic uppercase group-hover:text-pink-600 transition-colors">
@@ -150,7 +166,7 @@ export function PatientsPage() {
                             </p>
                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-1.5">
                               <Calendar size={12} className="text-pink-300"/> 
-                              {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'dd/MM/yyyy') : 'Nascimento não informado'}
+                              {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'dd/MM/yyyy') : '-'}
                             </p>
                           </div>
                         </div>
@@ -171,22 +187,20 @@ export function PatientsPage() {
                       <td className="px-8 py-6 text-right">
                         <div className="flex justify-end gap-2 items-center" onClick={(e) => e.stopPropagation()}>
                           
-                          {/* Atalhos Rápidos */}
                           <Link to={`/appointments/new?patientId=${patient.id}`}> 
-                            <Button variant="ghost" size="sm" className="text-gray-300 hover:text-blue-500 h-10 w-10 p-0 rounded-xl hover:bg-blue-50" title="Agendar Consulta">
+                            <Button variant="ghost" size="sm" className="text-gray-300 hover:text-blue-500 h-10 w-10 p-0 rounded-xl hover:bg-blue-50">
                               <CalendarPlus size={20} />
                             </Button>
                           </Link>
                           
                           <Link to={`/financial/${patient.id}`}> 
-                            <Button variant="ghost" size="sm" className="text-gray-300 hover:text-emerald-500 h-10 w-10 p-0 rounded-xl hover:bg-emerald-50" title="Financeiro">
+                            <Button variant="ghost" size="sm" className="text-gray-300 hover:text-emerald-500 h-10 w-10 p-0 rounded-xl hover:bg-emerald-50">
                               <DollarSign size={20} />
                             </Button>
                           </Link>
 
                           <div className="w-px h-6 bg-gray-100 dark:bg-gray-700 mx-2"></div>
 
-                          {/* Ações Técnicas com Labels */}
                           <Link to={`/patients/${patient.id}/anamnesis`}>
                             <Button variant="outline" className="h-10 px-4 rounded-xl text-blue-600 border-blue-100 hover:bg-blue-50 font-black uppercase text-[9px] tracking-widest">
                               <ClipboardList size={14} className="mr-2" /> Anamnese
@@ -200,7 +214,7 @@ export function PatientsPage() {
                           </Link>
 
                           <Link to={`/patients/${patient.id}/edit`}>
-                            <Button variant="ghost" className="h-10 w-10 p-0 rounded-xl text-gray-300 hover:text-gray-900" title="Editar Cadastro">
+                            <Button variant="ghost" className="h-10 w-10 p-0 rounded-xl text-gray-300 hover:text-gray-900">
                               <UserCog size={20} />
                             </Button>
                           </Link>

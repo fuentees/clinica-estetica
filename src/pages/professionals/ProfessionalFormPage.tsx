@@ -10,7 +10,7 @@ import { toast } from "react-hot-toast";
 import { 
   ArrowLeft, Loader2, User, Briefcase, Mail, Phone, 
   Percent, Award, CheckCircle2, Camera, Shield, Clock, Calendar,
-  PenTool, Eraser, Sparkles
+  PenTool, Eraser, Sparkles, AlertTriangle
 } from "lucide-react";
 
 // --- CONFIGURAÇÕES ---
@@ -42,23 +42,34 @@ const isValidUUID = (uuid: string | undefined) => {
     return regex.test(uuid);
 };
 
-// --- SCHEMA ---
+// --- SCHEMA CORRIGIDO (ACEITA NULL) ---
+// Helper para aceitar string, null ou undefined e virar string vazia
+const nullableString = z.union([z.string(), z.null(), z.undefined()]).transform(val => val || "");
+
 const professionalSchema = z.object({
   first_name: z.string().min(2, "Nome obrigatório"),
   last_name: z.string().min(2, "Sobrenome obrigatório"),
-  email: z.string().email("E-mail inválido").optional().or(z.literal('')),
-  phone: z.string().optional(),
-  role: z.enum(["admin", "profissional", "recepcionista"]),
-  formacao: z.string().optional(),
-  registration_number: z.string().optional(),
-  agenda_color: z.string().optional(),
-  commission_rate: z.coerce.number().min(0).max(100).optional(),
+  
+  // Email aceita vazio OU email válido
+  email: z.string().trim().email("E-mail inválido").optional().or(z.literal('')),
+  
+  // Campos que podem vir null do banco:
+  phone: nullableString,
+  role: nullableString,
+  formacao: nullableString,
+  registration_number: nullableString,
+  agenda_color: nullableString.transform(val => val || "#db2777"),
+  
+  commission_rate: z.union([z.string(), z.number(), z.null(), z.undefined()])
+    .transform((val) => Number(val) || 0),
+
   working_days: z.array(z.string()).optional(),
-  start_time: z.string().optional(),
-  end_time: z.string().optional(),
-  is_active: z.boolean().optional(),
-  avatar_url: z.string().optional(),
-  signature_data: z.string().optional(),
+  start_time: nullableString,
+  end_time: nullableString,
+  is_active: z.boolean().optional().default(true),
+  
+  avatar_url: nullableString,
+  signature_data: nullableString,
 });
 
 type ProfessionalFormData = z.infer<typeof professionalSchema>;
@@ -70,7 +81,9 @@ const defaultValues: Partial<ProfessionalFormData> = {
     working_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
     start_time: '09:00',
     end_time: '18:00',
-    is_active: true
+    is_active: true,
+    formacao: "",
+    registration_number: ""
 };
 
 export function ProfessionalFormPage() {
@@ -78,11 +91,12 @@ export function ProfessionalFormPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isNew, setIsNew] = useState(true);
+  
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<ProfessionalFormData>({
     resolver: zodResolver(professionalSchema),
@@ -92,6 +106,8 @@ export function ProfessionalFormPage() {
   const watchRole = watch("role");
   const watchFirstName = watch("first_name");
   const watchFormacao = watch("formacao");
+  
+  // Lógica: Se for Profissional (inclui esteticista, médico, etc) mostra campos técnicos
   const isMedicalStaff = watchRole === "profissional"; 
   const councilLabel = watchFormacao ? (COUNCIL_MAP[watchFormacao] || "Registro") : "Especialidade";
   const initials = (watchFirstName?.[0] || 'U').toUpperCase();
@@ -110,20 +126,42 @@ export function ProfessionalFormPage() {
       setLoading(true);
       try {
           const { data, error } = await supabase.from("profiles").select("*").eq("id", profId).single();
-          if (error) {
-              if (error.code !== 'PGRST116') toast.error("Erro ao buscar profissional.");
-              navigate("/professionals");
-          } else if (data) {
+          if (error) throw error;
+          
+          if (data) {
               const cleanStart = data.start_time?.slice(0, 5) || '09:00';
               const cleanEnd = data.end_time?.slice(0, 5) || '18:00';
-              reset({ ...data, start_time: cleanStart, end_time: cleanEnd });
+              
+              // Importante: Tratamos nulls aqui também para garantir
+              reset({ 
+                  ...data, 
+                  first_name: data.first_name || "",
+                  last_name: data.last_name || "",
+                  email: data.email || "",
+                  phone: data.phone || "",
+                  formacao: data.formacao || "",
+                  registration_number: data.registration_number || "",
+                  signature_data: data.signature_data || "",
+                  avatar_url: data.avatar_url || "",
+                  start_time: cleanStart, 
+                  end_time: cleanEnd,
+                  role: data.role || "profissional",
+                  commission_rate: Number(data.commission_rate) || 0
+              });
+
               if (data.avatar_url) setAvatarPreview(data.avatar_url);
               if (data.signature_data) setSignaturePreview(data.signature_data);
           }
-      } catch (error) { console.error(error); } 
-      finally { setLoading(false); }
+      } catch (error) { 
+          console.error(error);
+          toast.error("Erro ao carregar dados.");
+          navigate("/professionals");
+      } finally { 
+          setLoading(false); 
+      }
   }
   
+  // --- AUXILIARES (Assinatura e Avatar) ---
   const startDrawing = (e: any) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -178,16 +216,35 @@ export function ProfessionalFormPage() {
         const file = e.target.files[0];
         const previewUrl = URL.createObjectURL(file);
         setAvatarPreview(previewUrl);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setValue("avatar_url", reader.result as string);
+        };
+        reader.readAsDataURL(file);
     }
   };
 
+  // --- SUBMIT ---
   const onSubmit = async (data: ProfessionalFormData) => {
     try {
+        const cleanData = { ...data };
+        
+        // Se não for profissional técnico, limpamos os dados médicos
+        if (!isMedicalStaff) {
+            cleanData.formacao = "";
+            cleanData.registration_number = "";
+            cleanData.commission_rate = 0;
+            cleanData.working_days = [];
+            cleanData.signature_data = "";
+        }
+
         const payload = {
-            ...data,
-            working_days: data.working_days || [], 
+            ...cleanData,
+            working_days: cleanData.working_days || [], 
             updated_at: new Date().toISOString(),
+            full_name: `${cleanData.first_name} ${cleanData.last_name}`.trim(),
         };
+
         if (isNew) {
             const { error } = await supabase.from("profiles").insert(payload);
             if (error) throw error;
@@ -198,26 +255,27 @@ export function ProfessionalFormPage() {
             toast.success("Dados atualizados!");
         }
         navigate("/professionals");
+
     } catch (error: any) {
-        toast.error(`Erro ao salvar: ${error.message}`);
+        console.error("ERRO AO SALVAR:", error);
+        toast.error(`Erro: ${error.message}`);
     }
   };
-  
-  if (loading) return (
-    <div className="flex h-screen flex-col items-center justify-center gap-4">
-        <Loader2 className="animate-spin text-pink-600 w-12 h-12" />
-        <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">Sincronizando Perfil...</p>
-    </div>
-  );
 
-  const inputClassName = "w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500 transition-all text-sm";
+  const onError = (errors: any) => {
+      console.log("ERROS DE ZOD:", errors);
+      toast.error("Verifique os campos obrigatórios.");
+  };
+  
+  if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-pink-600 w-10" /></div>;
+
+  const inputClassName = "w-full h-12 px-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-pink-500 transition-all text-sm font-medium";
   const labelClassName = "text-xs font-bold text-gray-500 uppercase mb-1.5 block";
   const cardClassName = "bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden";
 
   return (
-    <div className="max-w-[1400px] mx-auto animate-in fade-in duration-700">
+    <div className="max-w-[1400px] mx-auto animate-in fade-in duration-700 pb-20">
         
-        {/* CABEÇALHO */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
             <div className="flex items-center gap-6">
                 <Button variant="ghost" onClick={() => navigate("/professionals")} className="bg-gray-50 hover:bg-gray-100 dark:bg-gray-900 rounded-2xl h-14 w-14 p-0 shadow-inner transition-all">
@@ -233,12 +291,13 @@ export function ProfessionalFormPage() {
             </div>
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={handleSubmit(onSubmit, onError)} className="space-y-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
                 {/* COLUNA ESQUERDA (8/12) */}
                 <div className="lg:col-span-8 space-y-8">
                     
+                    {/* CARD 1: DADOS CADASTRAIS */}
                     <div className={cardClassName}>
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-600 to-purple-600"></div>
                         <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
@@ -248,13 +307,11 @@ export function ProfessionalFormPage() {
                         <div className="flex flex-col md:flex-row gap-10">
                             <div className="flex flex-col items-center gap-4">
                                 <div className="relative group w-36 h-36 rounded-[2.5rem] p-1 bg-gradient-to-tr from-pink-500 to-purple-600 shadow-xl">
-                                    <div className="w-full h-full rounded-[2.2rem] bg-white dark:bg-gray-900 border-4 border-white dark:border-gray-800 flex items-center justify-center overflow-hidden transition-transform group-hover:scale-[0.98]">
+                                    <div className="w-full h-full rounded-[2.2rem] bg-white dark:bg-gray-900 border-4 border-white dark:border-gray-800 flex items-center justify-center overflow-hidden">
                                         {avatarPreview ? (
                                             <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover"/>
                                         ) : (
-                                            <span className="text-5xl font-black text-pink-600 italic uppercase">
-                                                {initials}
-                                            </span>
+                                            <span className="text-5xl font-black text-pink-600 italic uppercase">{initials}</span>
                                         )}
                                     </div>
                                     <label className="absolute -bottom-2 -right-2 w-12 h-12 bg-gray-900 text-white rounded-2xl flex items-center justify-center cursor-pointer shadow-2xl hover:scale-110 transition-all border-4 border-white dark:border-gray-800">
@@ -267,65 +324,67 @@ export function ProfessionalFormPage() {
 
                             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-1.5">
-                                    <label className={labelClassName}>Nome</label>
-                                    <Input {...register("first_name")} className="h-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="Ana" />
-                                    {errors.first_name && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1">{errors.first_name.message}</p>}
+                                    <label className={labelClassName}>Nome <span className="text-pink-500">*</span></label>
+                                    <Input {...register("first_name")} className={inputClassName} placeholder="Ex: Ana" />
+                                    {errors.first_name && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1 flex items-center gap-1"><AlertTriangle size={10}/> {errors.first_name.message}</p>}
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className={labelClassName}>Sobrenome</label>
-                                    <Input {...register("last_name")} className="h-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="Silva" />
-                                    {errors.last_name && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1">{errors.last_name.message}</p>}
+                                    <label className={labelClassName}>Sobrenome <span className="text-pink-500">*</span></label>
+                                    <Input {...register("last_name")} className={inputClassName} placeholder="Ex: Silva" />
+                                    {errors.last_name && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1 flex items-center gap-1"><AlertTriangle size={10}/> {errors.last_name.message}</p>}
                                 </div>
                                 <div className="md:col-span-2 space-y-1.5">
                                     <label className={labelClassName}>Email Corporativo</label>
                                     <div className="relative">
                                         <Mail size={18} className="absolute left-4 top-3.5 text-gray-400"/>
-                                        <Input {...register("email")} className="h-12 pl-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="ana.silva@clinica.com" />
+                                        <Input {...register("email")} className={`${inputClassName} pl-12`} placeholder="ana.silva@clinica.com" />
                                     </div>
-                                    {errors.email && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1">{errors.email.message}</p>}
+                                    {errors.email && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1 flex items-center gap-1"><AlertTriangle size={10}/> {errors.email.message}</p>}
                                 </div>
                                 <div className="md:col-span-2 space-y-1.5">
-                                    <label className={labelClassName}>WhatsApp Profissional</label>
+                                    <label className={labelClassName}>WhatsApp</label>
                                     <div className="relative">
                                         <Phone size={18} className="absolute left-4 top-3.5 text-gray-400"/>
-                                        <Input {...register("phone")} className="h-12 pl-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="(11) 99999-9999" />
+                                        <Input {...register("phone")} className={`${inputClassName} pl-12`} placeholder="(11) 99999-9999" />
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
+                    {/* CARD 2: ATUAÇÃO PROFISSIONAL */}
                     <div className={cardClassName}>
                         <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
-                            <Briefcase size={18} className="text-purple-600"/> Atuação Profissional
+                            <Briefcase size={18} className="text-purple-600"/> Função
                         </h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-1.5">
-                                <label className={labelClassName}>Permissão no Sistema</label>
-                                <select {...register("role")} className="w-full h-12 px-4 rounded-xl border-0 bg-gray-50 dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none">
-                                    <option value="profissional">👨‍⚕️ Especialista Técnico</option>
+                                <label className={labelClassName}>Permissão</label>
+                                <select {...register("role")} className={inputClassName}>
+                                    <option value="profissional">👨‍⚕️ Profissional / Especialista</option>
                                     <option value="recepcionista">📅 Recepcionista / Front Desk</option>
                                     <option value="admin">⚙️ Administrador do Sistema</option>
                                 </select>
                             </div>
 
+                            {/* CAMPOS ESPECÍFICOS DE SAÚDE */}
                             {isMedicalStaff && (
                                 <>
                                     <div className="space-y-1.5">
-                                        <label className={labelClassName}>Formação Principal</label>
+                                        <label className={labelClassName}>Formação</label>
                                         <div className="relative">
                                             <Award size={18} className="absolute left-4 top-3.5 text-gray-400 pointer-events-none"/>
-                                            <select {...register("formacao")} className="w-full h-12 pl-12 rounded-xl border-0 bg-gray-50 dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none">
+                                            <select {...register("formacao")} className={`${inputClassName} pl-12`}>
                                                 <option value="">Selecione...</option>
                                                 {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
                                             </select>
                                         </div>
                                     </div>
                                     <div className="md:col-span-2 space-y-1.5">
-                                        <label className={labelClassName}>Número do Registro Profissional ({councilLabel})</label>
+                                        <label className={labelClassName}>Registro Profissional ({councilLabel})</label>
                                         <div className="relative">
                                             <Shield size={18} className="absolute left-4 top-3.5 text-gray-400"/>
-                                            <Input {...register("registration_number")} className="h-12 pl-12 rounded-xl font-bold bg-gray-50 border-0 focus:ring-2 focus:ring-pink-500" placeholder="000.000-00" />
+                                            <Input {...register("registration_number")} className={`${inputClassName} pl-12`} placeholder="000.000-00" />
                                         </div>
                                     </div>
                                 </>
@@ -333,6 +392,7 @@ export function ProfessionalFormPage() {
                         </div>
                     </div>
 
+                    {/* CARD 3: ASSINATURA */}
                     {isMedicalStaff && (
                         <div className={cardClassName}>
                             <div className="flex justify-between items-center mb-8">
@@ -364,6 +424,7 @@ export function ProfessionalFormPage() {
                 {/* COLUNA DIREITA (4/12) */}
                 <div className="lg:col-span-4 space-y-8">
                     
+                    {/* CARD 4: AGENDA E COMISSÃO */}
                     {isMedicalStaff && (
                         <div className={cardClassName}>
                             <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
@@ -402,7 +463,7 @@ export function ProfessionalFormPage() {
 
                             <div className="grid grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <label className={labelClassName}>Cor na Agenda</label>
+                                    <label className={labelClassName}>Cor</label>
                                     <div className="flex items-center gap-3">
                                         <div className="relative overflow-hidden w-12 h-12 rounded-2xl shadow-xl">
                                             <input type="color" {...register("agenda_color")} className="absolute -top-4 -left-4 w-24 h-24 cursor-pointer border-0 p-0" />
@@ -414,13 +475,14 @@ export function ProfessionalFormPage() {
                                     <label className={labelClassName}>Comissão (%)</label>
                                     <div className="relative">
                                         <Percent size={14} className="absolute left-3 top-3.5 text-gray-400"/>
-                                        <Input type="number" {...register("commission_rate")} className="h-12 pl-10 font-black italic text-purple-600 bg-gray-50 border-0 rounded-xl" />
+                                        <Input type="number" {...register("commission_rate")} className={`${inputClassName} pl-10 font-black italic text-purple-600`} />
                                     </div>
                                 </div>
                             </div>
                         </div>
                     )}
                     
+                    {/* BOTÃO SALVAR E STATUS */}
                     <div className="space-y-4">
                         {!isNew && (
                             <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 flex items-center justify-between shadow-sm">

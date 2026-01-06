@@ -7,10 +7,10 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
-import { Loader2, ArrowLeft, User, MapPin, Briefcase, Calendar } from "lucide-react";
+import { Loader2, ArrowLeft, User, MapPin } from "lucide-react";
 
 // =========================================
-// SCHEMA DE VALIDAÇÃO (INTEGRAL)
+// SCHEMA DE VALIDAÇÃO
 // =========================================
 const patientSchema = z.object({
   first_name: z.string().min(1, "Nome é obrigatório"),
@@ -35,7 +35,7 @@ const patientSchema = z.object({
 type PatientFormData = z.infer<typeof patientSchema>;
 
 // =========================================
-// HELPERS DE MÁSCARA (MANTIDOS)
+// HELPERS DE MÁSCARA
 // =========================================
 const maskCPF = (value: string) => {
   return value
@@ -179,18 +179,22 @@ export function PatientFormPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Sessão expirada.");
 
+      // Busca o clinicId corretamente (usando aspas se necessário no select, mas aqui no insert usamos o objeto)
       const { data: profile } = await supabase
         .from("profiles")
-        .select("clinicId")
+        .select(`"clinicId"`) // Aspas duplas caso o banco esteja sensível
         .eq("id", user.id)
         .single();
 
-      if (!profile?.clinicId) {
+      // Ajuste para ler clinicId independente do formato (camel ou snake)
+      const userClinicId = profile?.clinicId || (profile as any)?.clinic_id;
+
+      if (!userClinicId) {
         throw new Error("Usuário sem clínica vinculada.");
       }
 
       const patientDataToSave = {
-        clinicId: profile.clinicId,
+        clinicId: userClinicId, // ID da clínica garantido
         name: fullName, 
         email: data.email || null,
         phone: data.phone,
@@ -207,7 +211,7 @@ export function PatientFormPage() {
         cidade: data.cidade,
         estado: data.estado,
         address: fullAddress,
-        updatedAt: new Date().toISOString(), 
+        // REMOVIDO: updatedAt: new Date().toISOString(), <-- ISSO CAUSAVA O ERRO
       };
 
       if (isEditing) {
@@ -221,6 +225,7 @@ export function PatientFormPage() {
         navigate("/patients");
       }
     } catch (error: any) {
+      console.error(error);
       toast.error(`Erro: ${error.message || "Falha ao salvar"}`);
     }
   };
@@ -350,7 +355,7 @@ export function PatientFormPage() {
 }
 
 // =========================================
-// SUB-COMPONENTES (MANTIDOS E REVISADOS)
+// SUB-COMPONENTES
 // =========================================
 interface InputWithLabelProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;

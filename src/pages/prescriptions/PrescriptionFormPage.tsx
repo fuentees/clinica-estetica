@@ -4,7 +4,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
 import { 
-  ArrowLeft, Save, Plus, Trash2, Search, User, Stethoscope, Loader2, Printer, X 
+  ArrowLeft, Save, Plus, Trash2, Stethoscope, Loader2, Printer, X 
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
@@ -28,6 +28,7 @@ export function PrescriptionFormPage() {
   const [initializing, setInitializing] = useState(true);
   const [patientsList, setPatientsList] = useState<any[]>([]);
   const [professionalsList, setProfessionalsList] = useState<any[]>([]);
+  const [clinicId, setClinicId] = useState<string | null>(null);
 
   const {
     register,
@@ -64,14 +65,29 @@ export function PrescriptionFormPage() {
       try {
         setInitializing(true);
 
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Usuário não autenticado");
+
+        // 1. Pega ClinicID
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("clinicId")
+            .eq("id", user.id)
+            .single();
+
+        if (!profile?.clinicId) throw new Error("Sem clínica vinculada");
+        setClinicId(profile.clinicId);
+
+        // 2. Carrega Listas
         const [patsRes, profsRes] = await Promise.all([
-          supabase.from("patients").select("*").order("name", { ascending: true }),
-          supabase.from("profiles").select("*"), 
+          supabase.from("patients").select("*").eq("clinicId", profile.clinicId).order("name", { ascending: true }),
+          supabase.from("profiles").select("*").eq("clinicId", profile.clinicId), 
         ]);
 
         setPatientsList(patsRes.data || []);
         setProfessionalsList(profsRes.data || []);
 
+        // 3. Edição
         if (editId) {
           const { data: pres } = await supabase
             .from("prescriptions")
@@ -81,21 +97,16 @@ export function PrescriptionFormPage() {
 
           if (pres) {
             reset({
-              patient_id: pres.patient_id,
-              professional_id: pres.professional_id,
-              date: pres.date || pres.created_at?.split("T")[0],
+              patient_id: pres.patientId,       
+              professional_id: pres.professionalId,
+              date: pres.date ? new Date(pres.date).toISOString().split("T")[0] : "",
               title: pres.notes,
               treatments: pres.medications || [],
             });
           }
         } else {
-          const { data: userData } = await supabase.auth.getUser();
-          const user = userData?.user;
-
-          if (user) {
-            const prof = profsRes.data?.find((p: any) => p.id === user.id);
-            if (prof) setValue("professional_id", prof.id);
-          }
+          const prof = profsRes.data?.find((p: any) => p.id === user.id);
+          if (prof) setValue("professional_id", prof.id);
         }
       } catch (err) {
         toast.error("Erro ao sincronizar dados da clínica.");
@@ -109,7 +120,7 @@ export function PrescriptionFormPage() {
   }, [editId, reset, setValue]);
 
   // ---------------------------
-  // SALVAR RECEITA (蛇形命名法 COMPATIBLE)
+  // SALVAR RECEITA
   // ---------------------------
   const onSubmit = async (data: PrescriptionForm) => {
     try {
@@ -117,13 +128,15 @@ export function PrescriptionFormPage() {
 
       if (!data.patient_id) return toast.error("Selecione um paciente.");
       if (!data.professional_id) return toast.error("Selecione um profissional.");
+      if (!clinicId) return toast.error("Erro de identificação da clínica.");
 
       const payload = {
-        patient_id: data.patient_id,
-        professional_id: data.professional_id,
+        clinicId: clinicId,
+        patientId: data.patient_id,
+        professionalId: data.professional_id,
         notes: data.title,
         medications: data.treatments,
-        created_at: new Date().toISOString(),
+        date: new Date(data.date).toISOString(),
       };
 
       if (editId) {
@@ -137,13 +150,14 @@ export function PrescriptionFormPage() {
         navigate("/prescriptions");
       }
     } catch (err: any) {
+      console.error(err);
       toast.error("Erro ao salvar: " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- HELPERS (ESTÉTICA E JURÍDICO) ---
+  // --- HELPERS ---
   const getProfessionalDetails = (id: string) => {
     if (!id) return null;
     return professionalsList.find((x) => x.id === id);
@@ -168,7 +182,7 @@ export function PrescriptionFormPage() {
   };
 
   // -----------------------------------------------------
-  // LOGICA DE IMPRESSÃO (A4 READY)
+  // LOGICA DE IMPRESSÃO (AJUSTADA: ASSINATURA + FONTE)
   // -----------------------------------------------------
   const handlePrint = () => {
     const content = document.getElementById("print-area")?.innerHTML;
@@ -188,12 +202,20 @@ export function PrescriptionFormPage() {
             body { background: white !important; padding: 20mm; font-family: 'Inter', sans-serif; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             .print-hidden { display: none !important; }
+            
+            /* --- AJUSTES DA ASSINATURA --- */
             .signature-img-print {
                 max-height: 80px; 
                 display: block; 
-                margin: 0 auto -10px auto; 
+                margin: 0 auto 10px auto; /* Margem positiva para afastar da linha */
                 position: relative; 
                 z-index: 10;
+                transform: translateY(-5px); /* Ajuste fino para subir */
+            }
+
+            /* --- AJUSTES DO NOME DO PACIENTE --- */
+            .patient-name-print {
+                font-size: 14px !important; /* Fonte reduzida conforme solicitado */
             }
           </style>
         </head>
@@ -288,7 +310,7 @@ export function PrescriptionFormPage() {
           {/* LISTA DE TRATAMENTOS DINÂMICA */}
           <div className="space-y-8">
             <h2 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] flex items-center gap-3">
-              <Stethoscope size={16} className="text-pink-600" /> Itens da Prescrição
+              <Stethoscope size={14} className="text-pink-600" /> Itens da Prescrição
             </h2>
             {treatmentFields.map((field, index) => (
               <div key={field.id} className="p-8 bg-white dark:bg-gray-800 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 relative shadow-lg animate-in slide-in-from-bottom-4 duration-500">
@@ -339,7 +361,7 @@ export function PrescriptionFormPage() {
             {/* Logo/Nome Clínica */}
             <div className="border-b-4 border-pink-600 pb-8 mb-10 flex justify-between items-end">
               <div>
-                <h2 className="text-4xl font-black italic tracking-tighter text-gray-900 uppercase">Clínica <span className="text-pink-600">Estética</span></h2>
+                <h2 className="text-4xl font-black italic tracking-tighter text-gray-900 uppercase">VF <span className="text-pink-600"> Clinic</span></h2>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">Health & Visual Excellence</p>
               </div>
               <div className="text-right">
@@ -350,8 +372,10 @@ export function PrescriptionFormPage() {
 
             {/* Cabeçalho Paciente */}
             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 mb-12">
-              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-2">Destinatário</p>
-              <p className="text-2xl font-black text-gray-900 italic tracking-tighter uppercase">{getPatientName(watchedValues.patient_id)}</p>
+              {/* Mudado de Destinatário para Paciente */}
+              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-2">Paciente</p>
+              {/* Classe nova para impressão reduzir a fonte */}
+              <p className="text-2xl font-black text-gray-900 italic tracking-tighter uppercase patient-name-print">{getPatientName(watchedValues.patient_id)}</p>
             </div>
 
             <div className="text-center mb-16">
@@ -380,7 +404,7 @@ export function PrescriptionFormPage() {
 
                   {t.observations && (
                     <div className="bg-gray-50/50 p-4 rounded-xl border border-gray-100 text-sm font-medium leading-relaxed italic text-gray-500">
-                       {t.observations}
+                        {t.observations}
                     </div>
                   )}
                 </div>
@@ -390,9 +414,10 @@ export function PrescriptionFormPage() {
 
           {/* ASSINATURA AUTOMÁTICA */}
           <div className="mt-20 text-center">
-            {profDetails?.signature_url ? (
+            {profDetails?.signature_data ? (
                <div className="flex justify-center -mb-6 relative z-10">
-                  <img src={profDetails.signature_url} className="h-24 object-contain signature-img-print" alt="Assinatura" />
+                  {/* Classe para impressão ajustar posição */}
+                  <img src={profDetails.signature_data} className="h-24 object-contain signature-img-print" alt="Assinatura" />
                </div>
             ) : (
                <div className="h-16"></div>

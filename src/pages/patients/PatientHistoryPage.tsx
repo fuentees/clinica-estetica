@@ -18,20 +18,21 @@ import {
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
-// Tipagem do Tratamento (Integral)
+// Tipagem atualizada para bater com o Schema (EvolutionRecord)
 interface Treatment {
   id: string;
-  data_procedimento: string;
-  tipo_procedimento: string;
-  descricao: string;
-  produtos_usados: string;
-  proxima_sessao: string;
+  date: string;          
+  subject: string;       
+  description: string;   
+  attachments: {
+    products?: string;
+    nextSession?: string;
+  };
   created_at: string;
 }
 
-// Helper para cores das tags (Integral)
 const getProcedureColor = (type: string) => {
-    const t = type.toLowerCase();
+    const t = (type || "").toLowerCase();
     if (t.includes("botox") || t.includes("toxina")) return "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400";
     if (t.includes("preenchimento") || t.includes("bioestimulador")) return "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400";
     if (t.includes("laser") || t.includes("lavieen")) return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400";
@@ -45,8 +46,9 @@ export function PatientEvolutionPage() {
   const [loading, setLoading] = useState(true);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [clinicId, setClinicId] = useState<string | null>(null);
+  const [profId, setProfId] = useState<string | null>(null);
   
-  // Form States (Todos os campos mantidos)
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newType, setNewType] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -60,14 +62,37 @@ export function PatientEvolutionPage() {
 
   async function fetchData() {
     try {
+      setLoading(true);
+      
+      // Busca dados do usuário logado para segurança
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('id, clinicId').eq('id', user.id).single();
+        if (profile) {
+          setClinicId(profile.clinicId);
+          setProfId(profile.id);
+        }
+      }
+
+      // Busca na tabela evolution_records conforme o Schema
       const { data: hist, error } = await supabase
-        .from("treatments")
+        .from("evolution_records")
         .select("*")
-        .eq("patient_id", id)
-        .order("data_procedimento", { ascending: false });
+        .eq("patientId", id)
+        .order("date", { ascending: false });
 
       if (error) throw error;
-      setTreatments(hist || []);
+
+      const formatted = (hist || []).map((item: any) => ({
+        id: item.id,
+        date: item.date,
+        subject: item.subject,
+        description: item.description,
+        attachments: item.attachments || {},
+        created_at: item.created_at || item.createdAt
+      }));
+
+      setTreatments(formatted);
     } catch (error) {
       console.error(error);
     } finally {
@@ -78,16 +103,21 @@ export function PatientEvolutionPage() {
   const handleAddTreatment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newType) return toast.error("Informe o tipo de procedimento.");
+    if (!clinicId || !profId) return toast.error("Sua sessão expirou. Recarregue a página.");
 
     setIsSaving(true);
     try {
-      const { error } = await supabase.from("treatments").insert({
-        patient_id: id,
-        data_procedimento: newDate,
-        tipo_procedimento: newType,
-        descricao: newDesc,
-        produtos_usados: newProducts,
-        proxima_sessao: nextSession || null
+      const { error } = await supabase.from("evolution_records").insert({
+        clinicId: clinicId,
+        patientId: id,
+        professionalId: profId,
+        date: new Date(newDate).toISOString(),
+        subject: newType,
+        description: newDesc,
+        attachments: {
+          products: newProducts,
+          nextSession: nextSession
+        }
       });
 
       if (error) throw error;
@@ -95,8 +125,8 @@ export function PatientEvolutionPage() {
       toast.success("Evolução registrada!");
       setNewType(""); setNewDesc(""); setNewProducts(""); setNextSession("");
       fetchData();
-    } catch (error) {
-      toast.error("Erro ao salvar.");
+    } catch (error: any) {
+      toast.error("Erro ao salvar: " + error.message);
     } finally {
       setIsSaving(false);
     }
@@ -105,7 +135,7 @@ export function PatientEvolutionPage() {
   const handleDelete = async (treatmentId: string) => {
     if (!confirm("Tem certeza que deseja apagar este registro?")) return;
     try {
-      await supabase.from("treatments").delete().eq("id", treatmentId);
+      await supabase.from("evolution_records").delete().eq("id", treatmentId);
       toast.success("Registro apagado.");
       setTreatments(treatments.filter(t => t.id !== treatmentId));
     } catch (error) {
@@ -114,8 +144,8 @@ export function PatientEvolutionPage() {
   };
 
   const filteredTreatments = treatments.filter(t => 
-    t.tipo_procedimento.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+    t.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) return (
@@ -129,7 +159,7 @@ export function PatientEvolutionPage() {
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 animate-in fade-in duration-700">
       <Toaster position="top-right" />
 
-      {/* --- ESQUERDA: FORMULÁRIO (4/12 da tela) --- */}
+      {/* --- ESQUERDA: FORMULÁRIO --- */}
       <div className="lg:col-span-4">
         <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-xl shadow-pink-100/20 dark:shadow-none border border-gray-100 dark:border-gray-700 sticky top-24">
           <div className="flex items-center gap-3 mb-8">
@@ -214,10 +244,8 @@ export function PatientEvolutionPage() {
         </div>
       </div>
 
-      {/* --- DIREITA: HISTÓRICO (8/12 da tela) --- */}
+      {/* --- DIREITA: HISTÓRICO --- */}
       <div className="lg:col-span-8 space-y-6">
-        
-        {/* Barra de Pesquisa e Header Local */}
         <div className="flex flex-col sm:flex-row justify-between items-center bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm gap-4">
             <h2 className="text-xl font-black text-gray-900 dark:text-white flex items-center gap-3 italic uppercase tracking-tighter">
               <History className="text-pink-600" /> Linha do Tempo
@@ -251,14 +279,14 @@ export function PatientEvolutionPage() {
                     <div className="space-y-1">
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-1.5">
                             <Calendar size={12} className="text-pink-500"/> 
-                            {new Date(item.data_procedimento).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            {new Date(item.date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
                         </span>
                         <div className="flex items-center gap-3">
                             <h3 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">
-                                {item.tipo_procedimento}
+                                {item.subject}
                             </h3>
-                            <span className={`text-[9px] px-3 py-1 rounded-lg border font-black uppercase tracking-widest ${getProcedureColor(item.tipo_procedimento)}`}>
-                                {item.tipo_procedimento.split(' ')[0]}
+                            <span className={`text-[9px] px-3 py-1 rounded-lg border font-black uppercase tracking-widest ${getProcedureColor(item.subject)}`}>
+                                {item.subject.split(' ')[0]}
                             </span>
                         </div>
                     </div>
@@ -274,22 +302,22 @@ export function PatientEvolutionPage() {
                     <div className="bg-gray-50 dark:bg-gray-900/50 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 relative overflow-hidden">
                       <div className="absolute top-0 right-0 p-4 opacity-5 text-gray-400"><FileText size={80}/></div>
                       <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line relative z-10">
-                        {item.descricao || "Nenhuma nota clínica registrada para esta sessão."}
+                        {item.description || "Nenhuma nota clínica registrada para esta sessão."}
                       </p>
                     </div>
 
                     <div className="flex flex-wrap gap-4 pt-2">
-                        {item.produtos_usados && (
+                        {item.attachments?.products && (
                             <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 px-4 py-2.5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
                                 <Syringe size={14} className="text-blue-500" />
-                                <span className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-tighter italic">Rastreabilidade: {item.produtos_usados}</span>
+                                <span className="text-[10px] font-black text-blue-700 dark:text-blue-400 uppercase tracking-tighter italic">Rastreabilidade: {item.attachments.products}</span>
                             </div>
                         )}
-                        {item.proxima_sessao && (
+                        {item.attachments?.nextSession && (
                             <div className="flex items-center gap-2 bg-orange-50 dark:bg-orange-900/20 px-4 py-2.5 rounded-full border border-orange-100 dark:border-orange-900/30">
                                 <Clock size={14} className="text-orange-500" />
                                 <span className="text-[10px] font-black text-orange-700 dark:text-orange-400 uppercase tracking-tighter">
-                                  Próxima Sessão: {new Date(item.proxima_sessao).toLocaleDateString('pt-BR')}
+                                  Próxima Sessão: {new Date(item.attachments.nextSession).toLocaleDateString('pt-BR')}
                                 </span>
                             </div>
                         )}

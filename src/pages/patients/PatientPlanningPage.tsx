@@ -40,20 +40,31 @@ export function PatientPlanningPage() {
   const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("todos");
+  const [clinicId, setClinicId] = useState<string | null>(null);
   
   // Estado do Orçamento
   const [selectedItems, setSelectedItems] = useState<BudgetItem[]>([]);
   const [discount, setDiscount] = useState<number>(0);
   const [saving, setSaving] = useState(false);
 
-  // 1. CARREGAR PROCEDIMENTOS DO BANCO
+  // 1. CARREGAR PROCEDIMENTOS E DADOS DA CLÍNICA
   useEffect(() => {
-    async function fetchProcedures() {
+    async function initPage() {
       try {
+        setLoading(true);
+        
+        // Identificar Clínica do Usuário
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+            if (profile) setClinicId(profile.clinicId);
+        }
+
+        // Buscar Procedimentos
         const { data, error } = await supabase
           .from('procedures')
           .select('*')
-          .eq('active', true) // Apenas procedimentos ativos
+          .eq('active', true) 
           .order('name');
 
         if (error) throw error;
@@ -61,7 +72,7 @@ export function PatientPlanningPage() {
         if (data && data.length > 0) {
           setProcedures(data);
         } else {
-          // DADOS DE FALLBACK (CASO A TABELA ESTEJA VAZIA PARA TESTE)
+          // DADOS DE FALLBACK (PARA TESTE IMEDIATO)
           setProcedures([
              { id: '1', name: 'Toxina Botulínica (3 Regiões)', category: 'toxina', price: 1200 },
              { id: '2', name: 'Preenchimento Labial (1ml)', category: 'preenchedor', price: 1500 },
@@ -73,25 +84,23 @@ export function PatientPlanningPage() {
           ]);
         }
       } catch (err) {
-        console.error("Erro ao buscar procedimentos:", err);
+        console.error("Erro ao carregar:", err);
         toast.error("Erro ao carregar catálogo.");
       } finally {
         setLoading(false);
       }
     }
-    fetchProcedures();
+    initPage();
   }, []);
 
   // 2. LÓGICA DO CARRINHO
   const addItem = (proc: Procedure) => {
     const existing = selectedItems.find(i => i.id === proc.id);
     if (existing) {
-      // Se já existe, aumenta a quantidade
       setSelectedItems(selectedItems.map(i => 
         i.id === proc.id ? { ...i, qty: i.qty + 1 } : i
       ));
     } else {
-      // Se não, adiciona novo
       setSelectedItems([...selectedItems, { ...proc, qty: 1, internalId: crypto.randomUUID() }]);
     }
   };
@@ -112,7 +121,7 @@ export function PatientPlanningPage() {
 
   // Cálculos
   const subtotal = selectedItems.reduce((acc, item) => acc + (item.price * item.qty), 0);
-  const total = subtotal - discount;
+  const total = Math.max(0, subtotal - discount);
 
   // Filtros
   const filteredProcedures = procedures.filter(p => {
@@ -121,27 +130,30 @@ export function PatientPlanningPage() {
     return matchesSearch && matchesCategory;
   });
 
-  // Salvar Orçamento
+  // 3. SALVAR ORÇAMENTO (ALINHADO COM SCHEMA PRISMA)
   const handleSaveBudget = async () => {
      if(selectedItems.length === 0) return toast.error("O orçamento está vazio.");
+     if(!clinicId) return toast.error("Clínica não identificada.");
      
      setSaving(true);
      try {
-        // Exemplo de salvamento (crie a tabela 'budgets' depois se precisar)
-        const { error } = await supabase.from('treatment_budgets').insert({
-            patient_id: patientId,
-            items: selectedItems,
+        const { error } = await supabase.from('treatment_plans').insert({
+            clinicId: clinicId,
+            patientId: patientId, // CamelCase conforme Prisma
+            notes: `Orçamento gerado via painel de planejamento`,
+            items: selectedItems, // JSON com os itens
             subtotal,
             discount,
             total,
             status: 'pending',
-            created_at: new Date().toISOString()
+            date: new Date().toISOString()
         });
         
         if (error) throw error;
-        toast.success("Orçamento salvo com sucesso!");
-        // Opcional: Gerar PDF aqui
-     } catch (e) {
+        toast.success("Proposta gerada com sucesso!");
+        setSelectedItems([]);
+        setDiscount(0);
+     } catch (e: any) {
         console.error(e);
         toast.error("Erro ao salvar orçamento.");
      } finally {
@@ -169,15 +181,17 @@ export function PatientPlanningPage() {
     { id: 'corporal', label: 'Corporais' },
   ];
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-500"/></div>;
+  if (loading) return <div className="p-10 h-96 flex flex-col items-center justify-center gap-4">
+      <Loader2 className="animate-spin text-pink-500 w-10 h-10"/>
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Carregando Catálogo...</p>
+  </div>;
 
   return (
     <div className="h-[calc(100vh-140px)] flex flex-col xl:flex-row gap-6 animate-in fade-in duration-500">
       
-      {/* --- COLUNA ESQUERDA: CATÁLOGO (Scrollável) --- */}
+      {/* --- COLUNA ESQUERDA: CATÁLOGO --- */}
       <div className="flex-1 flex flex-col gap-6 h-full overflow-hidden">
          
-         {/* Barra de Busca e Filtros */}
          <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm shrink-0">
              <div className="relative mb-6">
                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
@@ -207,7 +221,6 @@ export function PatientPlanningPage() {
              </div>
          </div>
 
-         {/* Grid de Procedimentos */}
          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
                 {filteredProcedures.map((proc) => (
@@ -234,21 +247,13 @@ export function PatientPlanningPage() {
                       <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-wider">{proc.category}</p>
                    </button>
                 ))}
-                
-                {filteredProcedures.length === 0 && (
-                   <div className="col-span-full flex flex-col items-center justify-center py-20 text-gray-400 opacity-50">
-                      <Search size={48} className="mb-4"/>
-                      <p className="font-bold">Nenhum procedimento encontrado.</p>
-                   </div>
-                )}
              </div>
          </div>
       </div>
 
-      {/* --- COLUNA DIREITA: O CONTRATO (Sticky/Fixo) --- */}
+      {/* --- COLUNA DIREITA: O CONTRATO --- */}
       <div className="xl:w-[450px] shrink-0 flex flex-col h-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] shadow-xl overflow-hidden relative">
           
-          {/* Header do Orçamento */}
           <div className="p-6 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
              <div className="flex items-center gap-3 mb-1">
                 <FileText className="text-pink-500" size={20}/>
@@ -257,21 +262,20 @@ export function PatientPlanningPage() {
              <p className="text-xs text-gray-500 pl-8">Adicione itens para compor a proposta</p>
           </div>
 
-          {/* Lista de Itens Selecionados */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
              {selectedItems.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-300 space-y-4">
+                <div className="h-full flex flex-col items-center justify-center text-gray-300 space-y-4 opacity-40">
                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
                       <ShoppingBag size={24}/>
                    </div>
-                   <p className="text-xs font-bold uppercase tracking-widest text-center">O orçamento está vazio</p>
+                   <p className="text-[10px] font-black uppercase tracking-widest text-center">Selecione procedimentos</p>
                 </div>
              ) : (
                 selectedItems.map((item) => (
                    <div key={item.internalId} className="group flex items-center justify-between animate-in slide-in-from-right-4">
                       <div className="flex-1">
                          <p className="text-xs font-bold text-gray-900 dark:text-white line-clamp-1">{item.name}</p>
-                         <p className="text-[10px] text-gray-400">R$ {item.price.toLocaleString('pt-BR')} un.</p>
+                         <p className="text-[10px] text-gray-400 font-bold">R$ {item.price.toLocaleString('pt-BR')} un.</p>
                       </div>
                       
                       <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 rounded-lg p-1 border border-gray-100 dark:border-gray-700">
@@ -292,27 +296,26 @@ export function PatientPlanningPage() {
              )}
           </div>
 
-          {/* Rodapé de Totais */}
           <div className="p-6 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700 space-y-4">
              <div className="space-y-2">
-                <div className="flex justify-between text-xs text-gray-500 font-medium">
+                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-widest">
                    <span>Subtotal</span>
                    <span>R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                 </div>
                 
-                <div className="flex justify-between items-center text-xs text-emerald-600 font-bold">
+                <div className="flex justify-between items-center text-[10px] text-emerald-600 font-black uppercase tracking-widest">
                    <span className="flex items-center gap-1"><Tag size={12}/> Desconto (R$)</span>
                    <input 
                       type="number" 
                       value={discount}
                       onChange={(e) => setDiscount(Number(e.target.value))}
-                      className="w-20 text-right bg-white border border-emerald-100 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-500"
+                      className="w-20 text-right bg-white border border-emerald-100 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-500 font-bold"
                    />
                 </div>
 
                 <div className="pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-end">
-                   <span className="text-sm font-black text-gray-900 dark:text-white uppercase">Total Final</span>
-                   <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter">
+                   <span className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">Total Final</span>
+                   <span className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter italic">
                       R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                    </span>
                 </div>
@@ -321,9 +324,9 @@ export function PatientPlanningPage() {
              <Button 
                 onClick={handleSaveBudget}
                 disabled={saving || selectedItems.length === 0}
-                className="w-full h-14 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase tracking-widest shadow-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                className="w-full h-14 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
              >
-                {saving ? <Loader2 className="animate-spin"/> : <FileText size={18} className="text-pink-500"/>}
+                {saving ? <Loader2 className="animate-spin"/> : <Sparkles size={18} className="text-pink-500"/>}
                 Gerar Proposta
              </Button>
           </div>

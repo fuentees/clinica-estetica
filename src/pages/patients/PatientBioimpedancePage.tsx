@@ -18,9 +18,9 @@ import {
   AlertTriangle,
   ChevronRight,
   TrendingUp,
-  X, // Adicionado para corrigir erro 2304
-  Zap, // Adicionado para corrigir erro 2304
-  History as HistoryIcon // Renomeado para corrigir erro 2786
+  X, 
+  Zap, 
+  History as HistoryIcon 
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import {
@@ -118,7 +118,7 @@ export function PatientBioimpedancePage() {
       const { data, error } = await supabase
         .from("bioimpedance_records")
         .select("*")
-        .eq("patient_id", id)
+        .eq("patient_id", id) // Se der erro, troque por .eq("patientId", id)
         .order("date", { ascending: true });
 
       if (error) throw error;
@@ -141,6 +141,7 @@ export function PatientBioimpedancePage() {
           cleanData.altura = parseFloat(String(cleanData.altura).replace(',', '.'));
       }
 
+      // Payload mapeado para snake_case (padrão banco)
       const payload = {
           patient_id: id,
           date: cleanData.data_avaliacao,
@@ -328,7 +329,7 @@ export function PatientBioimpedancePage() {
 
                     <div className="space-y-6">
                         <div className="flex items-center gap-3 ml-4">
-                          <HistoryIcon size={18} className="text-gray-400"/> {/* Corrigido de History para HistoryIcon */}
+                          <HistoryIcon size={18} className="text-gray-400"/>
                           <h3 className="font-black text-gray-400 text-xs uppercase tracking-[0.3em]">Linha do Tempo</h3>
                         </div>
                         <div className="grid grid-cols-1 gap-6">
@@ -340,33 +341,33 @@ export function PatientBioimpedancePage() {
                                     </button>
 
                                     <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-10">
-                                        <div className="flex items-center gap-6 min-w-[280px]">
-                                            <div className="w-16 h-16 bg-gray-50 dark:bg-gray-900 rounded-3xl flex items-center justify-center text-gray-400 group-hover:text-pink-500 transition-colors">
-                                                <Calendar size={28}/>
-                                            </div>
-                                            <div>
-                                                <p className="text-xl font-black text-gray-900 dark:text-white capitalize italic tracking-tighter">
-                                                    {new Date(r.date).toLocaleDateString("pt-BR", { day: 'numeric', month: 'long', year: 'numeric' })}
-                                                </p>
-                                                <div className="flex gap-2 mt-1">
-                                                  <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md uppercase tracking-widest italic">IMC: {r.bmi}</span>
-                                                  <span className="text-[9px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md uppercase tracking-widest italic">{r.weight}kg</span>
+                                            <div className="flex items-center gap-6 min-w-[280px]">
+                                                <div className="w-16 h-16 bg-gray-50 dark:bg-gray-900 rounded-3xl flex items-center justify-center text-gray-400 group-hover:text-pink-500 transition-colors">
+                                                    <Calendar size={28}/>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xl font-black text-gray-900 dark:text-white capitalize italic tracking-tighter">
+                                                        {new Date(r.date).toLocaleDateString("pt-BR", { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                    </p>
+                                                    <div className="flex gap-2 mt-1">
+                                                      <span className="text-[9px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md uppercase tracking-widest italic">IMC: {r.bmi}</span>
+                                                      <span className="text-[9px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md uppercase tracking-widest italic">{r.weight}kg</span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
 
-                                        <div className="flex-1 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                                            <MetricBox label="% Gordura" value={r.body_fat_percent} unit="%" color="text-rose-500" icon={Flame} />
-                                            <MetricBox label="Músculo" value={r.muscle_mass_kg} unit="kg" color="text-emerald-500" icon={Activity} />
-                                            <MetricBox label="Visceral" value={r.visceral_fat_level} unit="lvl" color="text-amber-500" icon={AlertTriangle} />
-                                            <MetricBox label="H2O Corp." value={r.body_water_percent} unit="%" color="text-blue-500" icon={Droplets} />
-                                            <MetricBox label="Cintura" value={r.cintura} unit="cm" color="text-purple-500" icon={Ruler} />
-                                            <MetricBox label="Abdômen" value={r.abdomen} unit="cm" color="text-purple-500" icon={Ruler} />
-                                        </div>
-                                        
-                                        <div className="xl:block hidden text-gray-100 dark:text-gray-800">
-                                           <ChevronRight size={40}/>
-                                        </div>
+                                            <div className="flex-1 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                                <MetricBox label="% Gordura" value={r.body_fat_percent} unit="%" color="text-rose-500" icon={Flame} />
+                                                <MetricBox label="Músculo" value={r.muscle_mass_kg} unit="kg" color="text-emerald-500" icon={Activity} />
+                                                <MetricBox label="Visceral" value={r.visceral_fat_level} unit="lvl" color="text-amber-500" icon={AlertTriangle} />
+                                                <MetricBox label="H2O Corp." value={r.body_water_percent} unit="%" color="text-blue-500" icon={Droplets} />
+                                                <MetricBox label="Cintura" value={r.cintura} unit="cm" color="text-purple-500" icon={Ruler} />
+                                                <MetricBox label="Abdômen" value={r.abdomen} unit="cm" color="text-purple-500" icon={Ruler} />
+                                            </div>
+                                            
+                                            <div className="xl:block hidden text-gray-100 dark:text-gray-800">
+                                               <ChevronRight size={40}/>
+                                            </div>
                                     </div>
                                 </div>
                             ))}

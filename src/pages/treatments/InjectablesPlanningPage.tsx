@@ -4,15 +4,15 @@ import { supabase } from '../../lib/supabase';
 import { 
   Brain, Syringe, AlertTriangle, Save, ArrowLeft, 
   Sparkles, Loader2, Camera, FileText, Zap, Droplets,
-  ScanFace, Pill, Activity
+  ScanFace
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { toast } from 'react-hot-toast';
 
-// Chave da API (Inserida pelo ambiente ou manual)
-const apiKey = ""; 
+// ⚠️ COLOQUE SUA CHAVE AQUI OU EM UMA VARIÁVEL DE AMBIENTE (.env)
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
 
-// Tipagem do Resultado da IA (Unificado)
+// Tipagem do Resultado da IA
 interface AIPlanResult {
   analise_tipo: 'Ficha' | 'Foto' | 'Mista';
   botox: Record<string, number>;
@@ -55,15 +55,17 @@ export function InjectablesPlanningPage() {
 
   async function fetchPatient() {
     try {
+      // ✅ CORREÇÃO: Buscamos apenas os dados do paciente (não precisa de join complexo com profiles aqui)
       const { data, error } = await supabase
         .from('patients')
-        .select(`*, profiles:profile_id (*)`)
+        .select('*')
         .eq('id', id)
         .single();
 
       if (error) throw error;
       setPatient(data);
     } catch (error) {
+      console.error(error);
       toast.error("Erro ao carregar dados do prontuário.");
     } finally {
       setLoading(false);
@@ -72,23 +74,23 @@ export function InjectablesPlanningPage() {
 
   // --- 1. IA CLÍNICA (Apenas Ficha) ---
   const handleAnalyzeAnamnesis = async () => {
+    if (!apiKey) return toast.error("Chave de API do Gemini não configurada.");
     setProcessing(true);
     try {
         const prompt = `
         Aja como um Especialista em Dermatologia e Estética. Analise os dados clínicos deste paciente e sugira um protocolo completo.
         
         DADOS CLÍNICOS:
-        - Idade: ${patient.idade}
-        - Queixa: ${patient.queixa_principal}
-        - Pele: Fototipo ${patient.fototipo}, Biotipo ${patient.biotipo_cutaneo}
-        - Histórico: ${patient.doencas_cronicas}
-        - Medicamentos: ${patient.lista_medicacoes}
+        - Idade: ${patient.idade || 'Não informado'}
+        - Queixa: ${patient.queixa_principal || 'Não informada'}
+        - Pele: Fototipo ${patient.facial_fitzpatrick || 'ND'}, Biotipo ${patient.biotipo_cutaneo || 'ND'}
+        - Histórico: ${patient.doencas_cronicas || 'Nenhum'}
+        - Medicamentos: ${patient.lista_medicacoes || 'Nenhum'}
         - Gestante/Lactante: ${patient.gestante || patient.lactante ? 'Sim' : 'Não'}
-        - Roacutan: ${patient.uso_isotretinoina ? 'Sim' : 'Não'}
-        - Alergias: ${patient.alergias_medicamentosas}
+        - Alergias: ${patient.alergias_medicamentosas || 'Nenhuma'}
 
         TAREFA:
-        Retorne JSON estrito com sugestões de tratamentos seguros.
+        Retorne APENAS um JSON estrito (sem markdown) com sugestões de tratamentos seguros.
         SCHEMA JSON:
         {
           "analise_tipo": "Ficha",
@@ -110,13 +112,19 @@ export function InjectablesPlanningPage() {
         });
 
         const data = await response.json();
+        
+        if (data.error) throw new Error(data.error.message);
+
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        // Limpeza garantida do JSON
         const cleanJson = textResponse.replace(/```json|```/g, '').trim();
+        
         setAiData(JSON.parse(cleanJson));
         toast.success("Análise Clínica Concluída!");
 
-    } catch (error) {
-        toast.error("Falha na comunicação com a IA.");
+    } catch (error: any) {
+        console.error(error);
+        toast.error("Falha na IA: " + error.message);
     } finally {
         setProcessing(false);
     }
@@ -124,6 +132,7 @@ export function InjectablesPlanningPage() {
 
   // --- 2. IA MISTA (VISÃO + CLÍNICA) ---
   const handleAnalyzePhoto = async () => {
+    if (!apiKey) return toast.error("Chave de API do Gemini não configurada.");
     if (!analysisImage) return toast.error("Carregue uma foto para análise visual.");
     setProcessing(true);
     
@@ -131,7 +140,7 @@ export function InjectablesPlanningPage() {
         const prompt = `Analise a foto e a ficha deste paciente de ${patient.idade} anos. 
         Queixa: ${patient.queixa_principal}. 
         Contraindicações: ${patient.gestante ? 'GESTANTE' : 'Nenhuma'}. 
-        Gere protocolo JSON de harmonização e skin quality.`;
+        Gere protocolo JSON estrito (mesmo schema anterior) de harmonização e skin quality.`;
 
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
@@ -147,13 +156,16 @@ export function InjectablesPlanningPage() {
         });
 
         const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
         const cleanJson = textResponse.replace(/```json|```/g, '').trim();
+        
         setAiData(JSON.parse(cleanJson));
         toast.success("Análise Visual e Clínica Completa!");
 
-    } catch (error) {
-        toast.error("Erro na análise de visão computacional.");
+    } catch (error: any) {
+        toast.error("Erro na análise: " + error.message);
     } finally {
         setProcessing(false);
     }
@@ -173,20 +185,33 @@ export function InjectablesPlanningPage() {
 
   const handleSavePlan = async () => {
      try {
+        // 1. Pega usuário atual para o 'created_by' e 'clinicId'
         const { data: { user } } = await supabase.auth.getUser();
-        const { error } = await supabase.from('injectables_plans').insert({
-            patient_id: id,
+        if (!user) throw new Error("Usuário não autenticado");
+
+        // 2. Busca o clinicId do usuário logado
+        const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+        if (!profile?.clinicId) throw new Error("Clínica não identificada");
+
+        // 3. Salva no banco (usando snake_case conforme Prisma @map)
+        const { error } = await supabase.from('injectable_plans').insert({
+            patientId: id,
+            clinicId: profile.clinicId,
+            created_by: user.id,
             toxina_unidades: manualPlan.toxina,
             preenchimento: manualPlan.preenchimento,
             recomendacao_ia: aiData,
             observacoes: manualPlan.observacoes,
-            created_by: user?.id
         });
+
         if (error) throw error;
         toast.success("Plano de Tratamento Arquivado!");
-        navigate(`/patients/${id}/history`);
-     } catch (e) {
-        toast.error("Erro ao salvar protocolo.");
+        
+        // Navega de volta para o prontuário
+        navigate(`/patients/${id}/treatment-plans`); // Ajuste a rota conforme seu app
+     } catch (e: any) {
+        console.error(e);
+        toast.error("Erro ao salvar: " + e.message);
      }
   };
 
@@ -198,15 +223,16 @@ export function InjectablesPlanningPage() {
       {/* HEADER */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-6">
-          <Button variant="ghost" onClick={() => navigate(`/patients/${id}/history`)} className="h-14 w-14 rounded-2xl bg-gray-50 hover:bg-gray-100 shadow-inner p-0">
+          <Button variant="ghost" onClick={() => navigate(-1)} className="h-14 w-14 rounded-2xl bg-gray-50 hover:bg-gray-100 shadow-inner p-0">
             <ArrowLeft size={24} />
           </Button>
           <div>
             <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic flex items-center gap-3">
               <Brain className="text-purple-600" /> Inteligência Clínica
             </h1>
+            {/* ✅ CORREÇÃO: patient.name em vez de patient.profiles... */}
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">
-              Planejamento Assistido para {patient?.profiles?.first_name} {patient?.profiles?.last_name}
+              Planejamento Assistido para {patient?.name || "Paciente"}
             </p>
           </div>
         </div>

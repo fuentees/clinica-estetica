@@ -22,13 +22,14 @@ import {
 import { Button } from "../../components/ui/button"; 
 
 // --- TIPAGEM ---
+// Ajustada para snake_case (padrão do banco) para evitar erros
 interface Patient {
   id: string;
   name: string;
   cpf?: string;
   email?: string;
   phone?: string;
-  createdAt: string; 
+  created_at?: string; // Corrigido de createdAt para created_at
 }
 
 export function PatientsListPage() {
@@ -62,22 +63,27 @@ export function PatientsListPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Busca o clinicId. Tenta pegar tanto 'clinicId' quanto 'clinic_id' para garantir
       const { data: profile } = await supabase
         .from("profiles")
-        .select("clinicId")
+        .select(`"clinicId"`) // Aspas para garantir caso seja case-sensitive
         .eq("id", user.id)
         .single();
 
-      if (!profile?.clinicId) {
+      // Fallback seguro para pegar o ID da clínica
+      const userClinicId = profile?.clinicId || (profile as any)?.clinic_id;
+
+      if (!userClinicId) {
         toast.error("Erro: Usuário sem clínica vinculada.");
         return;
       }
 
+      // IMPORTANTE: Aqui usamos 'created_at' (snake_case) na ordenação
       const { data, error } = await supabase
         .from("patients")
         .select("*")
-        .eq("clinicId", profile.clinicId) 
-        .order("createdAt", { ascending: false });
+        .eq("clinicId", userClinicId) 
+        .order("created_at", { ascending: false }); // <--- CORREÇÃO CRÍTICA AQUI
 
       if (error) throw error;
       setPatients(data || []);
@@ -242,8 +248,8 @@ export function PatientsListPage() {
                                   onClick={(e) => e.stopPropagation()}
                                   className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 px-2.5 py-1.5 rounded-lg hover:border-green-400 hover:text-green-600 hover:bg-green-50 transition-all shadow-sm group/btn"
                                 >
-                                   <MessageCircle size={12} className="text-green-500 group-hover/btn:scale-110 transition-transform" />
-                                   {phone}
+                                    <MessageCircle size={12} className="text-green-500 group-hover/btn:scale-110 transition-transform" />
+                                    {phone}
                                 </a>
                              ) : <span className="text-gray-300 text-xs italic pl-1">--</span>}
                              

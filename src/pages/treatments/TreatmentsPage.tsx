@@ -15,15 +15,17 @@ export function TreatmentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    fetchTreatments();
+    fetchServices();
   }, []);
 
-  async function fetchTreatments() {
+  async function fetchServices() {
     try {
       setLoading(true);
+      // ✅ CORREÇÃO 1: Nome da tabela no banco é 'services' (conforme Prisma)
       const { data, error } = await supabase
-        .from('treatments')
+        .from('services') 
         .select('*')
+        .eq('isActive', true) // Opcional: trazer apenas ativos
         .order('name');
 
       if (error) throw error;
@@ -37,12 +39,14 @@ export function TreatmentsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Atenção: A remoção deste serviço é permanente e pode afetar relatórios históricos. Deseja continuar?')) return;
+    if (!confirm('Tem certeza que deseja remover este serviço?')) return;
     try {
-      const { error } = await supabase.from('treatments').delete().eq('id', id);
+      // ✅ CORREÇÃO 2: Deletar da tabela 'services'
+      const { error } = await supabase.from('services').delete().eq('id', id);
+      
       if (error) throw error;
       toast.success('Serviço removido do catálogo.');
-      fetchTreatments();
+      fetchServices();
     } catch (error) {
       toast.error('Erro ao remover o serviço.');
     }
@@ -52,13 +56,10 @@ export function TreatmentsPage() {
     t.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Helper para formatar a duração (Postgres Interval para String amigável)
+  // Helper para formatar a duração
   const formatDuration = (duration: any) => {
     if (!duration) return '--';
-    return String(duration)
-      .replace(/:00$/, '') // Remove segundos
-      .replace('00:', '')  // Remove horas se for zero
-      + ' min';
+    return String(duration) + ' min';
   };
 
   return (
@@ -74,7 +75,9 @@ export function TreatmentsPage() {
             Gerencie os protocolos, preços e tempos médios de cada procedimento.
           </p>
         </div>
-        <Link to="/treatments/new">
+        
+        {/* ✅ CORREÇÃO 3: Link agora aponta para /services/new */}
+        <Link to="/services/new">
           <Button className="bg-pink-600 hover:bg-pink-700 text-white flex items-center gap-2 shadow-lg shadow-pink-200 dark:shadow-none transition-all hover:scale-105 active:scale-95">
             <Plus size={18} /> Criar Novo Serviço
           </Button>
@@ -114,7 +117,21 @@ export function TreatmentsPage() {
                        <p className="text-gray-400 text-xs mt-2 font-bold uppercase tracking-widest">Sincronizando Catálogo...</p>
                     </td>
                   </tr>
-                ) : filtered.map((item) => (
+                ) : filtered.length === 0 ? (
+                   <tr>
+                     <td colSpan={4} className="py-20 text-center">
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-full text-gray-200">
+                                <Search size={32} />
+                            </div>
+                            <p className="text-gray-400 font-bold uppercase text-xs tracking-widest italic">
+                                Nenhum serviço encontrado.
+                            </p>
+                        </div>
+                     </td>
+                   </tr>
+                ) : (
+                  filtered.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -123,7 +140,7 @@ export function TreatmentsPage() {
                         </div>
                         <div>
                             <p className="font-bold text-gray-800 dark:text-white group-hover:text-pink-600 transition-colors">{item.name}</p>
-                            <p className="text-xs text-gray-400 line-clamp-1">{item.description || 'Nenhum detalhamento inserido'}</p>
+                            <p className="text-xs text-gray-400 line-clamp-1">{item.description || 'S/ Descrição'}</p>
                         </div>
                       </div>
                     </td>
@@ -145,7 +162,8 @@ export function TreatmentsPage() {
                           variant="ghost" 
                           size="sm" 
                           className="hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
-                          onClick={() => navigate(`/treatments/${item.id}/edit`)}
+                          // ✅ CORREÇÃO 4: Link de edição corrigido para /services/...
+                          onClick={() => navigate(`/services/${item.id}/edit`)}
                         >
                             <Edit size={18} />
                         </Button>
@@ -160,21 +178,10 @@ export function TreatmentsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
         </div>
-        
-        {filtered.length === 0 && !loading && (
-            <div className="p-20 text-center flex flex-col items-center gap-4">
-                <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-full text-gray-200">
-                    <Search size={48} />
-                </div>
-                <p className="text-gray-400 font-bold uppercase text-xs tracking-widest italic">
-                    Nenhum serviço localizado com os termos informados.
-                </p>
-            </div>
-        )}
       </div>
     </div>
   );

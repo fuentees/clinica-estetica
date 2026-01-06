@@ -31,7 +31,6 @@ export function InventoryFormPage() {
     defaultValues: { quantity: 0, minimum_quantity: 5, unit_price: 0 }
   });
 
-  // 1. Carrega o contexto da clínica e os dados do produto (se for edição)
   useEffect(() => {
     async function loadData() {
       try {
@@ -52,12 +51,12 @@ export function InventoryFormPage() {
               .from('inventory')
               .select('*')
               .eq('id', id)
-              .eq('clinicId', profile.clinicId) // Segurança: garante que o item é da clínica
+              .eq('clinicId', profile.clinicId) 
               .single();
 
             if (!error && item) {
               setValue('name', item.name);
-              setValue('description', item.description);
+              setValue('description', item.description || '');
               setValue('quantity', item.quantity);
               setValue('minimum_quantity', item.minimum_quantity);
               setValue('unit_price', item.unit_price);
@@ -71,7 +70,6 @@ export function InventoryFormPage() {
     loadData();
   }, [id, isEditing, setValue]);
 
-  // 2. Salva ou Atualiza garantindo o vínculo com a clínica
   const onSubmit = async (data: FormData) => {
     if (!clinicId) {
       toast.error("Erro de identificação da clínica.");
@@ -82,7 +80,7 @@ export function InventoryFormPage() {
     try {
       const payload = { 
         ...data, 
-        clinicId: clinicId // Vincula obrigatoriamente à clínica logada
+        clinicId: clinicId 
       };
       
       if (isEditing) {
@@ -90,7 +88,7 @@ export function InventoryFormPage() {
           .from('inventory')
           .update(payload)
           .eq('id', id)
-          .eq('clinicId', clinicId); // Segurança extra no update
+          .eq('clinicId', clinicId);
         
         if (error) throw error;
         toast.success("Estoque atualizado!");
@@ -131,7 +129,6 @@ export function InventoryFormPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 space-y-6 relative overflow-hidden">
-            {/* Detalhe visual de linha no topo */}
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-pink-500"></div>
             
             <div className="space-y-2">
@@ -139,7 +136,7 @@ export function InventoryFormPage() {
                 <Input 
                   {...register("name")} 
                   placeholder="Ex: Toxina Botulínica (Frasco 100U)" 
-                  className="rounded-xl h-11 focus:ring-2 focus:ring-pink-500 transition-all"
+                  className="rounded-xl h-11 focus:ring-2 focus:ring-pink-500 transition-all font-medium"
                 />
                 {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
             </div>
@@ -159,7 +156,7 @@ export function InventoryFormPage() {
                     <Input 
                       type="number" 
                       {...register("quantity")} 
-                      className="font-bold rounded-xl h-11 border-blue-100 bg-blue-50/30" 
+                      className="font-bold rounded-xl h-11 border-blue-100 bg-blue-50/30 dark:bg-blue-900/10" 
                     />
                 </div>
                 <div className="space-y-2">
@@ -167,7 +164,7 @@ export function InventoryFormPage() {
                     <Input 
                       type="number" 
                       {...register("minimum_quantity")} 
-                      className="rounded-xl h-11 border-orange-100 bg-orange-50/30"
+                      className="rounded-xl h-11 border-orange-100 bg-orange-50/30 dark:bg-orange-900/10"
                     />
                     <p className="text-[10px] text-gray-400 font-medium">Alerta de estoque baixo</p>
                 </div>
@@ -177,7 +174,7 @@ export function InventoryFormPage() {
                       type="number" 
                       step="0.01" 
                       {...register("unit_price")} 
-                      className="rounded-xl h-11 border-green-100 bg-green-50/30"
+                      className="rounded-xl h-11 border-green-100 bg-green-50/30 dark:bg-green-900/10"
                     />
                 </div>
             </div>
@@ -186,7 +183,7 @@ export function InventoryFormPage() {
                 <Button 
                   type="submit" 
                   disabled={isLoading} 
-                  className="bg-pink-600 hover:bg-pink-700 text-white w-full h-12 rounded-xl shadow-lg shadow-pink-200 dark:shadow-none transition-transform hover:scale-[1.01]"
+                  className="bg-pink-600 hover:bg-pink-700 text-white w-full h-12 rounded-xl shadow-lg shadow-pink-200 dark:shadow-none transition-transform hover:scale-[1.01] font-bold"
                 >
                     {isLoading ? <Loader2 className="animate-spin mr-2" /> : <Save size={18} className="mr-2" />}
                     {isEditing ? "Salvar Alterações" : "Cadastrar no Estoque"}
@@ -195,7 +192,7 @@ export function InventoryFormPage() {
                   type="button"
                   variant="ghost"
                   onClick={() => navigate('/inventory')}
-                  className="w-full h-12 rounded-xl text-gray-500"
+                  className="w-full h-12 rounded-xl text-gray-500 font-medium"
                 >
                   Cancelar
                 </Button>

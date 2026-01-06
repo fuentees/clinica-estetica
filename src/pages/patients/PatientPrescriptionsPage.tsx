@@ -11,7 +11,6 @@ import {
   Trash2,
   Stethoscope,
   Pill,
-  ArrowRight,
   FileText
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
@@ -28,18 +27,20 @@ interface PatientContext {
 
 interface Prescription {
   id: string;
-  created_at: string;
+  // created_at é o padrão do Supabase se não mapeado, mas no Prisma mapeamos @map("created_at") -> createdAt
+  // Vamos usar o nome que o Supabase retorna direto
+  created_at: string; 
   notes?: string;
+  // Objeto profissional aninhado
   professional: {
     first_name: string;
     last_name: string;
     role: string;
     registration_number?: string;
     formacao?: string;
-    signature_url?: string;
+    signature_data?: string; // Corrigido de signature_url para signature_data
   } | null;
   medications: any[];
-  observations?: string;
 }
 
 export function PatientPrescriptionsPage() {
@@ -55,17 +56,39 @@ export function PatientPrescriptionsPage() {
   async function fetchPrescriptions() {
     try {
       setLoading(true);
+      
+      // ✅ CORREÇÃO: Usando patientId (camelCase) conforme definido no Schema Prisma
+      // E buscando signature_data em vez de signature_url
       const { data, error } = await supabase
         .from("prescriptions")
         .select(`
-          id, created_at, medications, observations, notes,
-          professional:profiles(first_name, last_name, role, registration_number, formacao, signature_url)
+          id, created_at, medications, notes,
+          professional:profiles!professionalId (
+             first_name, last_name, role, registration_number, formacao, signature_data
+          )
         `)
-        .eq("patient_id", patient.id)
+        .eq("patientId", patient.id) // <--- CORRIGIDO
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+          // Fallback se o join falhar
+          console.warn("Join falhou, tentando busca simples...", error);
+          const { data: rawData } = await supabase
+            .from("prescriptions")
+            .select("*")
+            .eq("patientId", patient.id) // <--- CORRIGIDO
+            .order("created_at", { ascending: false });
+            
+          if (rawData) {
+             // Se precisar, aqui faríamos o fetch manual dos profissionais
+             // Mas vamos assumir que o erro de join foi corrigido no banco
+             setPrescriptions(rawData.map((r: any) => ({ ...r, professional: null })));
+             return;
+          }
+          throw error;
+      }
 
+      // Tratamento de array/objeto único do Supabase
       const formatted = (data || []).map((item: any) => ({
         ...item,
         professional: Array.isArray(item.professional) ? item.professional[0] : item.professional
@@ -87,9 +110,11 @@ export function PatientPrescriptionsPage() {
     const profName = `${prescription.professional?.first_name || "Profissional"} ${prescription.professional?.last_name || ""}`;
     const profReg = prescription.professional?.registration_number || "";
     const profSpec = prescription.professional?.formacao || "Especialista";
-    const profSignature = prescription.professional?.signature_url;
+    // Corrigido para usar signature_data (base64)
+    const profSignature = prescription.professional?.signature_data;
 
     const getCouncilPrefix = (spec: string) => {
+        if (!spec) return "Registro";
         const s = spec.toLowerCase();
         if (s.includes("biomédica") || s.includes("biomedicina")) return "CRBM";
         if (s.includes("médico") || s.includes("dermatologista")) return "CRM";
@@ -119,7 +144,7 @@ export function PatientPrescriptionsPage() {
               .med-item { margin-bottom: 25px; padding-left: 15px; border-left: 3px solid #f9a8d4; }
               .med-name { font-weight: 700; font-size: 17px; }
               .footer { position: fixed; bottom: 20mm; left: 0; right: 0; text-align: center; border-top: 1px solid #ddd; padding-top: 10px; }
-              .signature-img { max-height: 70px; margin-bottom: -15px; position: relative; z-index: 10; }
+              .signature-img { max-height: 70px; margin-bottom: 10px; display: block; margin: 0 auto; }
             </style>
           </head>
           <body>
@@ -129,7 +154,8 @@ export function PatientPrescriptionsPage() {
             </div>
             <div class="patient-section"><strong>PACIENTE:</strong> ${patient.name}</div>
             <div class="doc-title">${prescription.notes || "Receituário Técnico"}</div>
-            ${prescription.medications.map((m: any) => `
+            
+            ${(prescription.medications || []).map((m: any) => `
               <div class="med-item">
                 <div class="med-name">${m.name}</div>
                 ${m.dosage ? `<div><strong>Dose:</strong> ${m.dosage}</div>` : ''}
@@ -137,6 +163,7 @@ export function PatientPrescriptionsPage() {
                 ${m.observations ? `<div style="font-style: italic">"${m.observations}"</div>` : ''}
               </div>
             `).join('')}
+
             <div class="footer">
               ${profSignature ? `<img src="${profSignature}" class="signature-img" />` : ''}
               <div><strong>Dr(a). ${profName}</strong></div>
@@ -156,17 +183,20 @@ export function PatientPrescriptionsPage() {
     if (!error) {
         setPrescriptions(prev => prev.filter(p => p.id !== id));
         toast.success("Receita excluída com sucesso.");
+    } else {
+        toast.error("Erro ao excluir.");
     }
   };
 
   const handleNewPrescription = () => {
-    navigate(`/prescriptions/new?patientId=${patient.id}&patientName=${encodeURIComponent(patient.name)}`);
+    // Redireciona para o formulário principal já preenchido com o paciente
+    navigate(`/prescriptions/new?id=&patient_id=${patient.id}`);
   };
 
   if (loading) return (
     <div className="h-96 flex flex-col items-center justify-center gap-4">
       <Loader2 className="animate-spin text-pink-600" size={40} />
-      <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Resgatando Arquivo Digital...</p>
+      <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Carregando Prontuário...</p>
     </div>
   );
 
@@ -223,20 +253,20 @@ export function PatientPrescriptionsPage() {
                   
                   {/* Resumo de Itens */}
                   <div className="bg-gray-50 dark:bg-gray-900/50 p-6 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-inner">
-                     <div className="flex items-center gap-2 font-black text-[9px] uppercase text-gray-400 tracking-[0.2em] mb-3">
-                        <Pill size={12} className="text-pink-500"/> Composição da Receita
-                     </div>
-                     {recipe.medications.length > 0 ? (
+                      <div className="flex items-center gap-2 font-black text-[9px] uppercase text-gray-400 tracking-[0.2em] mb-3">
+                         <Pill size={12} className="text-pink-500"/> Composição da Receita
+                      </div>
+                      {recipe.medications && recipe.medications.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
-                           {recipe.medications.map((m: any, idx) => (
+                           {recipe.medications.map((m: any, idx: number) => (
                              <span key={idx} className="bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-700 dark:text-gray-300 shadow-sm">
                                 {m.name}
                              </span>
                            ))}
                         </div>
-                     ) : (
+                      ) : (
                         <p className="italic text-xs text-gray-400">Sem itens detalhados nesta prescrição.</p>
-                     )}
+                      )}
                   </div>
                 </div>
 

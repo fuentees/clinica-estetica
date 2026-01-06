@@ -23,7 +23,7 @@ import { Button } from "../../components/ui/button";
 // --- MOTOR DE HOMECARE INTELIGENTE (ORIGINAL INTEGRAL) ---
 function generateHomecare(data: ComprehensiveAnamnesisData) {
   const routine = { morning: [] as string[], night: [] as string[], actives: [] as string[] };
-  const queixas = (data.queixa_principal || []).join(' ').toLowerCase();
+  const queixas = (Array.isArray(data.queixa_principal) ? data.queixa_principal.join(' ') : (data.queixa_principal || '')).toLowerCase();
 
   // 1. Limpeza Baseada no Biotipo
   if (data.biotipo_cutaneo === 'Oleosa' || data.facial_acne_grau) {
@@ -45,7 +45,9 @@ function generateHomecare(data: ComprehensiveAnamnesisData) {
     routine.actives.push("Vitamina C", "Ác. Tranexâmico");
   }
   
-  if (queixas.includes('rugas') || queixas.includes('envelhecimento') || data.class_glogau === 'III') {
+  // Ajuste seguro para class_glogau (caso venha undefined)
+  const glogau = (data as any).class_glogau || ''; 
+  if (queixas.includes('rugas') || queixas.includes('envelhecimento') || glogau === 'III') {
     routine.morning.push("Sérum de Peptídeos Tensores");
     if (!data.gestante) {
       routine.night.push("Retinol 0.3% ou Ácido Glicólico");
@@ -85,16 +87,27 @@ export function PatientAIAnalysisPage() {
   async function runFullAnalysis() {
     try {
       setLoading(true);
+      
+      // 1. Busca Paciente
       const { data: patient, error: patientError } = await supabase.from("patients").select("*").eq("id", id).single();
       if (patientError) throw patientError;
-      setPatientName(patient.first_name + " " + (patient.last_name || ""));
+      setPatientName(patient.name || patient.first_name + " " + (patient.last_name || ""));
 
-      const { data: plans } = await supabase.from("injectable_plans").select("*").eq("patient_id", id).order("date", { ascending: false }).limit(1);
+      // 2. Busca Último Plano (ATUALIZADO PARA NOVO SCHEMA)
+      // Nota: No novo schema, a coluna é 'patientId' (camelCase) por padrão se não houver @map
+      // Se der erro de coluna, troque 'patientId' por 'patient_id' aqui.
+      const { data: plans } = await supabase
+        .from("injectable_plans")
+        .select("*")
+        .eq("patientId", id) 
+        .order("date", { ascending: false })
+        .limit(1);
+        
       const latestPlan = plans?.[0] || null;
 
       const strToArray = (s: any) => (typeof s === 'string' ? s.split("; ").filter(Boolean) : (Array.isArray(s) ? s : []));
 
-      // Objeto integral com todos os seus campos para análise da IA
+      // 3. Constrói Objeto para IA
       const constructedData: ComprehensiveAnamnesisData = {
         ...patient,
         doencas_cronicas: strToArray(patient.doencas_cronicas),
@@ -108,13 +121,22 @@ export function PatientAIAnalysisPage() {
         uso_retinoide: patient.uso_retinoide,
         biotipo_cutaneo: patient.biotipo_cutaneo,
         facial_fitzpatrick: patient.facial_fitzpatrick,
-        current_plan: latestPlan ? { products: latestPlan.products, areas: latestPlan.areas } : undefined
+        
+        // ATUALIZAÇÃO AQUI: Mapeando os novos campos do banco para o contexto da IA
+        current_plan: latestPlan ? { 
+            toxina: latestPlan.toxina_unidades, // Novo campo
+            preenchimento: latestPlan.preenchimento, // Novo campo
+            date: latestPlan.date 
+        } : undefined
       };
 
       setFullData(constructedData);
+      
+      // 4. Executa Análise
       const result = await AnamnesisAIService.analyzeAnamnesis(id!, constructedData);
       setAnalysis(result);
       setHomecare(generateHomecare(constructedData));
+      
     } catch (e) { 
       console.error("Erro na análise clínica:", e); 
     } finally { 
@@ -143,7 +165,7 @@ export function PatientAIAnalysisPage() {
   return (
     <div className="max-w-[1600px] mx-auto p-6 space-y-8 animate-in fade-in duration-700">
       
-      {/* 1. HEADER (DADOS ORIGINAIS INTEGRADOS) */}
+      {/* 1. HEADER */}
       <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-8 relative overflow-hidden">
         <div className="flex items-center gap-6 relative z-10">
           <div className="w-20 h-20 bg-gradient-to-br from-pink-500 to-purple-600 rounded-[2rem] flex items-center justify-center text-white shadow-lg">
@@ -156,7 +178,7 @@ export function PatientAIAnalysisPage() {
             </div>
             <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tighter italic">{patientName}</h1>
             
-            {/* Informações Clínicas do fullData (Aproveitando campos originais) */}
+            {/* Informações Clínicas */}
             <div className="flex flex-wrap items-center gap-3 mt-3">
               {fullData?.biotipo_cutaneo && (
                 <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900 px-3 py-1 rounded-lg border border-gray-100 dark:border-gray-700">
@@ -164,7 +186,6 @@ export function PatientAIAnalysisPage() {
                   <span className="text-[10px] font-black text-gray-500 uppercase tracking-tight">Pele {fullData.biotipo_cutaneo}</span>
                 </div>
               )}
-              {/* Casting para evitar erro de propriedade inexistente no TS */}
               {(fullData as any)?.facial_fitzpatrick && (
                 <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900 px-3 py-1 rounded-lg border border-gray-100 dark:border-gray-700">
                   <Sun size={12} className="text-amber-500"/>

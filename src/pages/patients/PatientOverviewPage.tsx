@@ -59,16 +59,16 @@ export default function PatientOverviewPage() {
     totalSessions: 0
   });
 
-  // --- CARREGAR DADOS INTEGRAL ---
+  // --- CARREGAR DADOS ---
   async function loadOverview() {
     if (!patient?.id) return;
     try {
-      // 1. Query Relacional (Appointments + Profiles)
+      // 1. Query Relacional (Ajustada para o Schema Prisma)
       const { data: appts, error } = await supabase
         .from("appointments")
         .select(`
           id, start_time, status, notes,
-          professional:profiles(first_name, last_name, role, formacao, avatar_url)
+          professional:profiles!professional_id (first_name, last_name, role, formacao, avatar_url)
         `)
         .eq("patient_id", patient.id)
         .order("start_time", { ascending: false });
@@ -83,15 +83,15 @@ export default function PatientOverviewPage() {
         professional: Array.isArray(item.professional) ? item.professional[0] : item.professional
       }));
 
-      // 2. Busca Bioimpedância (Último Registro)
+      // 2. Busca Bioimpedância (Usando patientId camelCase do Schema Prisma)
       const { data: bio } = await supabase
-        .from("bioimpedance_records") // Ajustado para bater com seu componente de bio
+        .from("bioimpedance_records") 
         .select("*")
-        .eq("patient_id", patient.id)
+        .eq("patientId", patient.id) // Ajustado para patientId (Prisma Default)
         .order("date", { ascending: false })
         .limit(1);
 
-      const completedCount = appointments.filter(a => a.status === 'concluido').length;
+      const completedCount = appointments.filter(a => a.status === 'completed' || a.status === 'concluido').length;
 
       setData({
           appointments: appointments,
@@ -111,7 +111,7 @@ export default function PatientOverviewPage() {
 
   const handleCancelAppointment = async (apptId: string) => {
       if (!window.confirm("Deseja realmente cancelar este agendamento?")) return;
-      await supabase.from('appointments').update({ status: 'cancelado' }).eq('id', apptId);
+      await supabase.from('appointments').update({ status: 'canceled' }).eq('id', apptId);
       toast.success("Agendamento cancelado.");
       loadOverview();
   };
@@ -128,8 +128,11 @@ export default function PatientOverviewPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'completed':
       case 'concluido': return 'text-emerald-700 bg-emerald-50 border-emerald-100';
+      case 'canceled':
       case 'cancelado': return 'text-rose-700 bg-rose-50 border-rose-100';
+      case 'no_show':
       case 'falta': return 'text-amber-700 bg-amber-50 border-amber-100';
       default: return 'text-pink-700 bg-pink-50 border-pink-100';
     }
@@ -147,7 +150,7 @@ export default function PatientOverviewPage() {
 
   // Agenda Futura
   const nextAppointments = data.appointments
-    .filter((a) => new Date(a.start_time) >= now && a.status !== 'cancelado')
+    .filter((a) => new Date(a.start_time) >= now && a.status !== 'canceled' && a.status !== 'cancelado')
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   // Histórico Passado
@@ -157,10 +160,10 @@ export default function PatientOverviewPage() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in duration-700">
       
-      {/* COLUNA PRINCIPAL (LIVRO DE VISITAS E MÉTRICAS) */}
+      {/* COLUNA PRINCIPAL */}
       <div className="lg:col-span-2 space-y-8">
           
-          {/* 1. KPIs DE PERFORMANCE CORPORAL */}
+          {/* 1. KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="relative overflow-hidden p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 group">
                 <div className="absolute -right-4 -top-4 p-8 opacity-5 group-hover:scale-110 transition-transform italic font-black text-8xl text-pink-500">#</div>
@@ -187,7 +190,7 @@ export default function PatientOverviewPage() {
                 {bio ? (
                     <>
                         <h3 className="text-5xl font-black text-gray-900 dark:text-white italic tracking-tighter">
-                            {bio.weight} <span className="text-xl text-gray-300">kg</span>
+                            {Number(bio.weight).toFixed(1)} <span className="text-xl text-gray-300">kg</span>
                         </h3>
                         <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-2 flex items-center gap-1">
                            <ShieldCheck size={12}/> Última pesagem: {new Date(bio.date).toLocaleDateString('pt-BR')}
@@ -202,7 +205,7 @@ export default function PatientOverviewPage() {
             </div>
           </div>
 
-          {/* 2. PRÓXIMOS PASSOS (AGENDA) */}
+          {/* 2. PRÓXIMOS AGENDAMENTOS */}
           <div className="space-y-6">
               <div className="flex items-center justify-between px-2">
                   <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-[0.3em] flex items-center gap-3">
@@ -222,12 +225,11 @@ export default function PatientOverviewPage() {
                   <div className="grid grid-cols-1 gap-4">
                       {nextAppointments.map((apt) => {
                           const { day, month, weekday, time } = formatDateCard(apt.start_time);
-                          const profName = apt.professional ? `${apt.professional.first_name} ${apt.professional.last_name}` : "Especialista";
+                          const profName = apt.professional ? `${apt.professional.first_name} ${apt.professional.last_name || ''}` : "Especialista";
                           
                           return (
                               <div key={apt.id} className="group bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-xl hover:border-pink-100 transition-all flex items-center gap-6">
                                   
-                                  {/* Calendar Widget */}
                                   <div className="flex-shrink-0 flex flex-col items-center justify-center bg-gray-900 w-20 h-20 rounded-3xl shadow-lg group-hover:rotate-3 transition-transform">
                                       <span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">{month}</span>
                                       <span className="text-3xl font-black text-white italic tracking-tighter leading-none">{day}</span>
@@ -243,7 +245,6 @@ export default function PatientOverviewPage() {
                                           </span>
                                       </div>
                                       
-                                      {/* Professional Context */}
                                       <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900/50 p-2.5 rounded-2xl w-fit pr-6 border border-gray-100 dark:border-gray-800">
                                           <div className="w-10 h-10 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0 border-2 border-white">
                                               {apt.professional?.avatar_url ? (
@@ -256,16 +257,16 @@ export default function PatientOverviewPage() {
                                           </div>
                                           <div>
                                               <p className="text-[10px] font-black text-gray-900 dark:text-white uppercase">{profName}</p>
-                                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{apt.professional?.formacao || "Aesthetics Expert"}</p>
+                                              <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{apt.professional?.formacao || "Expertise Clínica"}</p>
                                           </div>
                                       </div>
                                   </div>
 
                                   <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                                      <button onClick={() => navigate(`/appointments/${apt.id}/edit`)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shadow-inner" title="Editar Registro">
+                                      <button onClick={() => navigate(`/appointments/${apt.id}/edit`)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shadow-inner" title="Editar">
                                           <Pencil size={18} />
                                       </button>
-                                      <button onClick={() => handleCancelAppointment(apt.id)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shadow-inner" title="Cancelar Sessão">
+                                      <button onClick={() => handleCancelAppointment(apt.id)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shadow-inner" title="Cancelar">
                                           <Ban size={18} />
                                       </button>
                                   </div>
@@ -276,7 +277,7 @@ export default function PatientOverviewPage() {
               )}
           </div>
 
-          {/* 3. HISTÓRICO COMPACTO */}
+          {/* 3. MEMÓRIA CLÍNICA */}
           <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
               <div className="px-8 py-6 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
                   <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] flex gap-3 items-center">
@@ -292,7 +293,7 @@ export default function PatientOverviewPage() {
                       pastAppointments.map((apt) => (
                           <div key={apt.id} className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-2xl transition-all group">
                               <div className="flex items-center gap-4">
-                                  <div className={`w-2 h-2 rounded-full ${apt.status === 'concluido' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-300'}`}></div>
+                                  <div className={`w-2 h-2 rounded-full ${apt.status === 'completed' || apt.status === 'concluido' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-300'}`}></div>
                                   <div>
                                       <p className="font-black text-gray-900 dark:text-gray-200 italic tracking-tighter uppercase text-sm">
                                           {new Date(apt.start_time).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -310,7 +311,7 @@ export default function PatientOverviewPage() {
           </div>
       </div>
 
-      {/* COLUNA LATERAL (WIDGETS DE CONTROLE) */}
+      {/* COLUNA LATERAL */}
       <div className="lg:col-span-1 space-y-8">
           <PatientPackagesWidget patientId={patient.id} />
           
@@ -320,7 +321,7 @@ export default function PatientOverviewPage() {
                 <DollarSign size={140} />
               </div>
               <h3 className="text-[10px] font-black text-pink-500 uppercase tracking-[0.3em] mb-8 flex items-center gap-3 italic">
-                 Conta Corrente
+                  Conta Corrente
               </h3>
               <div className="space-y-6 relative z-10">
                 <div className="flex items-center justify-between border-b border-white/10 pb-4">
@@ -329,7 +330,7 @@ export default function PatientOverviewPage() {
                 </div>
                 <div className="flex items-center justify-between border-b border-white/10 pb-4">
                    <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">LTV</span>
-                   <span className="text-2xl font-black italic tracking-tighter text-emerald-400">R$ 12.450</span>
+                   <span className="text-2xl font-black italic tracking-tighter text-emerald-400">R$ --</span>
                 </div>
                 <button 
                   onClick={() => navigate("../financial")}
@@ -340,7 +341,7 @@ export default function PatientOverviewPage() {
               </div>
           </div>
 
-          {/* AUDITORIA IA SHORTCUT */}
+          {/* AUDITORIA IA */}
           <div className="bg-gradient-to-br from-indigo-600 to-purple-800 rounded-[3rem] p-10 text-white shadow-xl">
              <div className="flex items-center gap-3 mb-6">
                 <ShieldCheck className="text-indigo-200" size={24}/>
@@ -359,4 +360,4 @@ export default function PatientOverviewPage() {
       </div>
     </div>
   );
-} 
+}

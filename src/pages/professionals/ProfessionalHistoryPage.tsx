@@ -5,6 +5,7 @@ import {
   CheckSquare, 
   User, 
   Activity, 
+  Loader2
 } from 'lucide-react';
 
 // --- TIPAGEM (INTEGRAL) ---
@@ -29,27 +30,28 @@ export default function ProfessionalHistoryPage() {
   async function fetchProfessionalData(professionalId: string) {
     setLoading(true);
     try {
-      // 1. TRATAMENTOS REALIZADOS (Busca na tabela de evoluções/prontuário)
+      // 1. TRATAMENTOS REALIZADOS (Busca na tabela evolution_records do Schema Prisma)
       const { data: treatmentsData, error: treatmentsError } = await supabase
-        .from('treatments')
+        .from('evolution_records')
         .select(`
           id, 
-          data_evolucao:data_procedimento, 
-          procedimento_realizado:tipo_procedimento,
-          patient:patient_id (id, name)
+          date, 
+          subject,
+          patient:patients!patientId (id, name)
         `)
-        .eq('professional_id', professionalId) 
-        .order('data_evolucao', { ascending: false });
+        .eq('professionalId', professionalId) // CamelCase conforme Prisma
+        .order('date', { ascending: false });
 
       if (treatmentsError) throw treatmentsError;
       
-      // Mapeamento SaaS: Proteção contra dados nulos e normalização de arrays
+      // Mapeamento SaaS: Normalização dos dados para o componente visual
       const mappedTreatments: Treatment[] = (treatmentsData || []).map((t: any) => {
           const patientData = Array.isArray(t.patient) ? t.patient[0] : t.patient;
           
           return {
-              ...t,
-              procedimento_realizado: t.procedimento_realizado || 'Procedimento Não Informado',
+              id: t.id,
+              data_evolucao: t.date,
+              procedimento_realizado: t.subject || 'Procedimento Não Informado',
               patient: {
                   id: patientData?.id || '',
                   name: patientData?.name || 'Paciente Removido',

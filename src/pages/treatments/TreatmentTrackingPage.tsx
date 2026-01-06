@@ -4,22 +4,64 @@ import { Camera, FileText, Calendar, AlertCircle, Loader2, Image as ImageIcon } 
 import { Button } from '../../components/ui/button';
 import { usePatientTreatments } from '../../hooks/usePatientTreatments';
 import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale'; // Recomendado para formatar data em PT
 import { supabase } from '../../lib/supabase';
 import { toast } from 'react-hot-toast';
 import { ProgressForm } from './components/ProgressForm';
 
+// Interfaces para tipagem forte
+interface Appointment {
+  id: string;
+  start_time: string;
+  status: string;
+}
+
+interface Treatment {
+  id: string;
+  treatments: {
+    name: string;
+    description: string;
+  };
+  notes: string;
+  appointments: Appointment[];
+  photos: string[];
+}
+
 export function TreatmentTrackingPage() {
   const { id } = useParams();
-  const { data: treatments, isLoading, refetch } = usePatientTreatments(id!);
+  // Casting para tratar o retorno do hook corretamente
+  const { data: rawTreatments, isLoading, refetch } = usePatientTreatments(id!);
+  const treatments = rawTreatments as unknown as Treatment[]; // Ajuste conforme seu hook
+
   const [showProgressForm, setShowProgressForm] = useState(false);
   const [selectedTreatment, setSelectedTreatment] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  // Função segura para extrair data do nome do arquivo
+  // Formato esperado: ID/TIMESTAMP-NOME.jpg
+  const getPhotoDate = (path: string) => {
+    try {
+      const filename = path.split('/').pop(); // Pega a parte depois da última /
+      if (!filename) return new Date();
+      
+      const timestampStr = filename.split('-')[0];
+      const timestamp = parseInt(timestampStr);
+      
+      if (isNaN(timestamp)) return new Date(); // Fallback se não for número
+      
+      return new Date(timestamp);
+    } catch (e) {
+      return new Date();
+    }
+  };
 
   const handlePhotoUpload = async (treatmentId: string, file: File) => {
     try {
       setUploading(true);
       const timestamp = Date.now();
-      const fileName = `${treatmentId}/${timestamp}-${file.name}`;
+      // Sanitiza o nome do arquivo para evitar caracteres especiais
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+      const fileName = `${treatmentId}/${timestamp}-${cleanFileName}`;
       
       const { error: uploadError } = await supabase.storage
         .from('treatment-photos')
@@ -27,7 +69,6 @@ export function TreatmentTrackingPage() {
 
       if (uploadError) throw uploadError;
 
-      // Busca as fotos atuais para atualizar o array
       const currentTreatment = treatments?.find(t => t.id === treatmentId);
       const currentPhotos = Array.isArray(currentTreatment?.photos) ? currentTreatment.photos : [];
 
@@ -66,20 +107,22 @@ export function TreatmentTrackingPage() {
 
       <div className="space-y-8">
         {treatments?.map((treatment) => {
-          // Garante que appointments e photos sejam tratados como arrays para evitar erros de renderização
           const appointmentsList = Array.isArray(treatment.appointments) 
             ? treatment.appointments 
             : treatment.appointments ? [treatment.appointments] : [];
           
-          const photosList = Array.isArray(treatment.photos) ? treatment.photos : [];
+          // Ordena fotos da mais recente para a mais antiga
+          const photosList = Array.isArray(treatment.photos) 
+            ? [...treatment.photos].sort((a, b) => getPhotoDate(b).getTime() - getPhotoDate(a).getTime())
+            : [];
 
           return (
             <div key={treatment.id} className="bg-white dark:bg-gray-800 rounded-[3rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden group">
               
               <div className="p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-gray-50 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/50">
                 <div>
-                  <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">{treatment.treatments.name}</h2>
-                  <p className="text-sm text-gray-500 font-medium italic mt-1">{treatment.treatments.description}</p>
+                  <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">{treatment.treatments?.name || 'Tratamento'}</h2>
+                  <p className="text-sm text-gray-500 font-medium italic mt-1">{treatment.treatments?.description}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <Button
@@ -96,7 +139,7 @@ export function TreatmentTrackingPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-11 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest bg-gray-900 text-white border-0 hover:bg-black"
+                    className="h-11 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest bg-gray-900 text-white border-0 hover:bg-black dark:bg-white dark:text-black"
                     onClick={() => document.getElementById(`photo-${treatment.id}`)?.click()}
                     disabled={uploading}
                   >
@@ -111,6 +154,8 @@ export function TreatmentTrackingPage() {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) handlePhotoUpload(treatment.id, file);
+                      // Limpa o input para permitir selecionar o mesmo arquivo novamente se falhar
+                      e.target.value = '';
                     }}
                   />
                 </div>
@@ -122,19 +167,22 @@ export function TreatmentTrackingPage() {
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-blue-500" /> Histórico de Sessões
                     </h3>
-                    <div className="space-y-3">
-                      {appointmentsList.length > 0 ? appointmentsList.map((appointment: any, index: number) => (
+                    <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                      {appointmentsList.length > 0 ? appointmentsList.map((appointment, index) => (
                         <div key={index} className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 group/item hover:border-pink-200 transition-all">
-                          <span className="font-bold text-sm italic">{format(new Date(appointment.start_time), 'dd/MM/yyyy HH:mm')}</span>
+                          <span className="font-bold text-sm italic">
+                            {format(new Date(appointment.start_time), "dd 'de' MMMM 'às' HH:mm", { locale: ptBR })}
+                          </span>
                           <span className={`px-4 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border-2
                             ${appointment.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
                               appointment.status === 'scheduled' ? 'bg-blue-50 text-blue-700 border-blue-100' :
                               'bg-gray-100 text-gray-800'}`}>
-                            {appointment.status === 'completed' ? 'Realizada' : appointment.status}
+                            {appointment.status === 'completed' ? 'Realizada' : 
+                             appointment.status === 'scheduled' ? 'Agendada' : appointment.status}
                           </span>
                         </div>
                       )) : (
-                          <p className="text-xs text-gray-400 font-medium italic p-4">Nenhuma sessão vinculada a este tratamento.</p>
+                          <p className="text-xs text-gray-400 font-medium italic p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-dashed border-gray-200">Nenhuma sessão vinculada.</p>
                       )}
                     </div>
                   </div>
@@ -143,7 +191,7 @@ export function TreatmentTrackingPage() {
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-500" /> Planejamento & Notas
                     </h3>
-                    <div className="bg-amber-50 dark:bg-amber-900/10 p-6 rounded-[2rem] border-2 border-dashed border-amber-100 dark:border-amber-900/30">
+                    <div className="bg-amber-50 dark:bg-amber-900/10 p-6 rounded-[2rem] border-2 border-dashed border-amber-100 dark:border-amber-900/30 h-full">
                       <p className="text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed italic">
                           "{treatment.notes || 'Nenhuma recomendação específica registrada para este protocolo.'}"
                       </p>
@@ -157,23 +205,27 @@ export function TreatmentTrackingPage() {
                   </h3>
                   {photosList.length > 0 ? (
                       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                          {photosList.map((photo: string, index: number) => (
-                          <div key={index} className="relative group aspect-square rounded-[1.5rem] overflow-hidden border-2 border-gray-100 dark:border-gray-700 hover:border-pink-500 transition-all shadow-sm">
-                              <img
-                              src={`${supabase.storage.from('treatment-photos').getPublicUrl(photo).data.publicUrl}`}
-                              alt={`Evolução ${index + 1}`}
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
-                                  <span className="text-white text-[10px] font-black uppercase tracking-widest">
-                                      {photo.includes('-') ? format(new Date(parseInt(photo.split('/')[1].split('-')[0])), 'dd MMM yyyy') : 'Registro'}
-                                  </span>
+                          {photosList.map((photo, index) => {
+                            const photoDate = getPhotoDate(photo);
+                            return (
+                              <div key={index} className="relative group aspect-square rounded-[1.5rem] overflow-hidden border-2 border-gray-100 dark:border-gray-700 hover:border-pink-500 transition-all shadow-sm cursor-pointer">
+                                  <img
+                                    src={`${supabase.storage.from('treatment-photos').getPublicUrl(photo).data.publicUrl}`}
+                                    alt={`Evolução ${index + 1}`}
+                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
+                                      <span className="text-white text-[10px] font-black uppercase tracking-widest">
+                                          {format(photoDate, 'dd MMM yyyy', { locale: ptBR })}
+                                      </span>
+                                  </div>
                               </div>
-                          </div>
-                          ))}
+                            );
+                          })}
                       </div>
                   ) : (
-                      <div className="py-12 text-center border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-[2rem]">
+                      <div className="py-12 text-center border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-[2rem] bg-gray-50/50 dark:bg-gray-900/50">
                           <Camera className="mx-auto text-gray-200 mb-3" size={32} />
                           <p className="text-xs font-black text-gray-300 uppercase tracking-widest">Nenhuma foto anexada</p>
                       </div>

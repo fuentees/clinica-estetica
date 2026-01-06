@@ -21,18 +21,17 @@ import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
 import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
 import AppointmentEditPage from "./pages/appointments/AppointmentEditPage";
 
-// --- PACIENTES (ESTRUTURA DE LAYOUT ÚNICO) ---
+// --- PACIENTES ---
 import { PatientsListPage } from "./pages/patients/PatientsListPage"; 
 import { PatientFormPage } from "./pages/patients/PatientFormPage"; 
-import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"; // A MOLDURA (Header Rosa)
+import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"; 
 
-// Páginas filhas do Prontuário (Sem chaves na importação default)
+// Páginas filhas do Prontuário
 import PatientOverviewPage from "./pages/patients/PatientOverviewPage";
 import PatientAnamnesisPage from "./pages/patients/anamnesis/PatientAnamnesisPage";
-import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";// A página de Orçamentos/Planejamento
-
+import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";
 import { PatientAIAnalysisPage } from "./pages/patients/PatientAIAnalysisPage"; 
-import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage"; // Se não tiver a página wrapper, use o TabBioimpedancia aqui, mas o ideal é ter uma página
+import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage"; 
 import { PatientEvolutionPage } from "./pages/patients/PatientEvolutionPage";
 import { PatientFinancialPage } from "./pages/patients/PatientFinancialPage";
 import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
@@ -76,13 +75,13 @@ function App() {
               {/* ROTA PÚBLICA */}
               <Route path="/login" element={<LoginPage />} />
 
-              {/* ÁREA PROTEGIDA (ADMIN, PROFISSIONAL, RECEPCIONISTA) */}
+              {/* ÁREA PROTEGIDA */}
               <Route element={<ProtectedRoute allowedRoles={['admin', 'profissional', 'recepcionista']} />}>
                 
-                {/* O LAYOUT GLOBAL ENVOLVE TUDO AQUI */}
+                {/* O LAYOUT GLOBAL */}
                 <Route element={<Layout />}>
                   
-                  {/* Dashboard & Configs */}
+                  {/* Dashboard */}
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
@@ -92,23 +91,17 @@ function App() {
                   <Route path="appointments/new" element={<AppointmentFormPage />} />
                   <Route path="appointments/:id/edit" element={<AppointmentEditPage />} />
                   
-                  {/* Lista de Pacientes (Fora do Prontuário) */}
+                  {/* Pacientes */}
                   <Route path="patients" element={<PatientsListPage />} /> 
                   <Route path="patients/new" element={<PatientFormPage />} />
                   
-                  {/* === O PRONTUÁRIO COM LAYOUT ÚNICO === */}
+                  {/* Prontuário */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
-                      <Route index element={<PatientOverviewPage />} /> {/* Visão Geral */}
-                      
-                      {/* Bloco Clínico */}
+                      <Route index element={<PatientOverviewPage />} />
                       <Route path="anamnesis" element={<PatientAnamnesisPage />} />
-                      <Route path="bioimpedance" element={<PatientBioimpedancePage />} /> {/* Se ainda não tiver essa página, crie ou aponte para um componente temporário */}
+                      <Route path="bioimpedance" element={<PatientBioimpedancePage />} />
                       <Route path="ai-analysis" element={<PatientAIAnalysisPage />} /> 
-                      
-                      {/* Bloco Comercial/Planejamento */}
-                      <Route path="treatment-plans" element={<PatientPlanningPage />} /> {/* Aqui montamos o orçamento */}
-                      
-                      {/* Bloco Administrativo/Histórico */}
+                      <Route path="treatment-plans" element={<PatientPlanningPage />} />
                       <Route path="prescriptions" element={<PatientPrescriptionsPage />} />
                       <Route path="financial" element={<PatientFinancialPage />} />
                       <Route path="evolution" element={<PatientEvolutionPage />} />
@@ -135,15 +128,17 @@ function App() {
                   </Route>
 
                   {/* Financeiro e Estoque */}
-                  <Route path="treatments" element={<TreatmentsPage />} />
-                  <Route path="treatments/new" element={<TreatmentFormPage />} />
+                  {/* ✅ AS ROTAS ESTÃO CERTAS AQUI (SERVICES) */}
+                  <Route path="services" element={<TreatmentsPage />} />
+                  <Route path="services/new" element={<TreatmentFormPage />} />
+                  
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
                 </Route>
               </Route>
 
-              {/* PORTAL DO PACIENTE (Área Externa) */}
+              {/* PORTAL DO PACIENTE */}
               <Route element={<ProtectedRoute allowedRoles={['paciente']} />}>
                 <Route path="/portal" element={<PatientLayout />}>
                   <Route index element={<PatientHome />} />

@@ -16,15 +16,14 @@ import {
 import { format, addDays, subDays, isSameDay, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "react-hot-toast";
-import { Button } from "../../components/ui/button"; // Assumindo que você tem esse componente
-// Se não tiver o componente Button, pode usar HTML button com as classes abaixo.
+import { Button } from "../../components/ui/button";
 
-// --- TIPAGEM (INTEGRAL) ---
+// --- TIPAGEM ---
 interface Appointment {
   id: string;
   start_time: string;
   end_time: string;
-  status: 'agendado' | 'concluido' | 'cancelado' | 'falta';
+  status: string;
   notes?: string;
   patient: {
     id: string;
@@ -36,7 +35,7 @@ interface Appointment {
 // --- CONFIGURAÇÕES DA GRADE VISUAL ---
 const START_HOUR = 6;  
 const END_HOUR = 23;   
-const HOUR_HEIGHT = 120; // Aumentei um pouco para caber melhor as infos
+const HOUR_HEIGHT = 120; 
 
 export default function ProfessionalAgendaPage() {
   const { id } = useParams<{ id: string }>();
@@ -57,11 +56,12 @@ export default function ProfessionalAgendaPage() {
       const startIso = startOfDay(selectedDate).toISOString();
       const endIso = endOfDay(selectedDate).toISOString();
 
+      // Ajuste: buscando pelo professional_id e trazendo paciente relacionado
       const { data, error } = await supabase
         .from("appointments")
         .select(`
           id, start_time, end_time, status, notes,
-          patient:patients(id, name, phone)
+          patient:patients!patient_id (id, name, phone)
         `)
         .eq("professional_id", id)
         .gte("start_time", startIso)
@@ -112,10 +112,14 @@ export default function ProfessionalAgendaPage() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'concluido': return 'bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100 hover:border-emerald-300 dark:bg-emerald-900/20';
-      case 'cancelado': return 'bg-rose-50 border-rose-200 text-rose-900 opacity-60 dark:bg-rose-900/20';
-      case 'falta': return 'bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-900/20';
+    const s = status?.toLowerCase();
+    switch (s) {
+      case 'concluido': 
+      case 'completed': return 'bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100 hover:border-emerald-300 dark:bg-emerald-900/20';
+      case 'cancelado': 
+      case 'canceled': return 'bg-rose-50 border-rose-200 text-rose-900 opacity-60 dark:bg-rose-900/20';
+      case 'falta': 
+      case 'no_show': return 'bg-amber-50 border-amber-200 text-amber-900 dark:bg-amber-900/20';
       default: return 'bg-white border-pink-200 text-gray-900 shadow-sm hover:border-pink-400 hover:shadow-md dark:bg-gray-800 dark:border-gray-700 dark:text-white'; 
     }
   };
@@ -147,7 +151,6 @@ export default function ProfessionalAgendaPage() {
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
-            {/* Navegação de Data */}
             <div className="flex items-center bg-white dark:bg-gray-800 rounded-xl p-1 shadow-sm border border-gray-200 dark:border-gray-700">
                 <button onClick={() => setSelectedDate(subDays(selectedDate, 1))} className="p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg text-gray-500">
                     <ChevronLeft size={18} />
@@ -174,7 +177,7 @@ export default function ProfessionalAgendaPage() {
         </div>
       </div>
 
-      {/* ÁREA DA AGENDA (CARTÃO BRANCO) */}
+      {/* ÁREA DA AGENDA */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col h-[calc(100vh-200px)]">
         
         {loading && (
@@ -206,10 +209,10 @@ export default function ProfessionalAgendaPage() {
                     style={{ 
                         backgroundImage: `linear-gradient(to bottom, #f3f4f6 1px, transparent 1px)`,
                         backgroundSize: `100% ${HOUR_HEIGHT}px`,
-                        backgroundPositionY: '16px' // Ajuste fino para alinhar com o texto da hora
+                        backgroundPositionY: '16px' 
                     }}
                 >
-                    {/* LINHA DO TEMPO ATUAL (AGORA) */}
+                    {/* LINHA DO TEMPO ATUAL */}
                     {isSameDay(selectedDate, new Date()) && (
                         <div 
                             className="absolute w-full border-t-2 border-pink-500 z-30 pointer-events-none flex items-center"
@@ -221,7 +224,6 @@ export default function ProfessionalAgendaPage() {
                         </div>
                     )}
 
-                    {/* RENDERIZAÇÃO DOS CARDS */}
                     <div className="relative mr-4 ml-2">
                         {appointments.map((apt) => {
                             const pos = getPositionStyles(apt.start_time, apt.end_time);
@@ -243,7 +245,7 @@ export default function ProfessionalAgendaPage() {
                                                 <Clock size={12} />
                                                 {format(new Date(apt.start_time), 'HH:mm')} - {format(new Date(apt.end_time), 'HH:mm')}
                                             </span>
-                                            {apt.status === 'agendado' && <Sparkles size={14} className="text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                                            {(apt.status === 'agendado' || apt.status === 'scheduled') && <Sparkles size={14} className="text-pink-500 opacity-0 group-hover:opacity-100 transition-opacity" />}
                                         </div>
                                         
                                         <h3 className="font-bold text-sm leading-tight truncate">
@@ -270,7 +272,6 @@ export default function ProfessionalAgendaPage() {
                         })}
                     </div>
 
-                    {/* EMPTY STATE (AGENDA VAZIA) */}
                     {!loading && appointments.length === 0 && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                             <div className="p-6 rounded-full bg-gray-50 dark:bg-gray-700/50 mb-4">

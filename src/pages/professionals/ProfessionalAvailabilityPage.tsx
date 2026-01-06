@@ -48,6 +48,7 @@ export function ProfessionalAvailabilityPage() {
     const { id: professionalId } = useParams<{ id: string }>();
     const [loading, setLoading] = useState(false);
     const [exceptions, setExceptions] = useState<Exception[]>([]);
+    const [clinicId, setClinicId] = useState<string | null>(null); 
     
     const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ExceptionFormData>({
         resolver: zodResolver(exceptionSchema),
@@ -67,10 +68,17 @@ export function ProfessionalAvailabilityPage() {
         if (!professionalId) return;
         setLoading(true);
         try {
+            // Busca a ClinicID do usuário logado para garantir o vínculo
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+                if (profile) setClinicId(profile.clinicId);
+            }
+
             const { data, error } = await supabase
                 .from('professional_availability_exceptions')
                 .select('*')
-                .eq('professional_id', professionalId)
+                .eq('professionalId', professionalId) // Atualizado para o Schema
                 .gte('end_date', new Date().toISOString().split('T')[0]) 
                 .order('start_date', { ascending: true });
 
@@ -91,10 +99,12 @@ export function ProfessionalAvailabilityPage() {
 
     // --- LÓGICA DE SUBMISSÃO ---
     const onSubmit = async (data: ExceptionFormData) => {
+        if (!clinicId) return toast.error("Erro de identificação da clínica.");
         setLoading(true);
         try {
             const dataToSave = {
-                professional_id: professionalId,
+                professionalId: professionalId, // Atualizado para o Schema
+                clinicId: clinicId,            
                 ...data,
                 start_time: data.is_full_day ? null : data.start_time,
                 end_time: data.is_full_day ? null : data.end_time,
@@ -272,7 +282,6 @@ export function ProfessionalAvailabilityPage() {
                     {!loading && exceptions.length > 0 && (
                         <div className="grid gap-4">
                             {exceptions.map((exc) => {
-                                // Define cor baseada no tipo (Dia todo = Vermelho / Parcial = Laranja)
                                 const isFull = exc.is_full_day;
                                 const borderColor = isFull ? 'border-l-rose-500' : 'border-l-orange-400';
                                 const iconColor = isFull ? 'text-rose-500' : 'text-orange-500';

@@ -44,22 +44,23 @@ export default function ProfessionalCommissionPage() {
   async function fetchCommissionData(profId: string, monthIso: string) {
     setLoading(true);
     try {
-      // 1. Buscar a taxa de comissão do profissional no perfil
+      // 1. Buscar a taxa de comissão e a clínica do profissional
       const { data: profData, error: profError } = await supabase
         .from('profiles')
-        .select('commission_rate')
+        .select('commission_rate, clinicId')
         .eq('id', profId)
         .single();
 
       if (profError) throw profError;
       const rate = profData?.commission_rate || 0;
+      const clinicId = profData?.clinicId;
 
       // 2. Definir intervalo de datas do mês selecionado
       const [year, month] = monthIso.split('-');
       const startDate = `${year}-${month}-01`;
       const endDate = new Date(Number(year), Number(month), 0).toISOString().split('T')[0];
 
-      // 3. Buscar agendamentos concluídos neste mês com nomes de pacientes e serviços
+      // 3. Buscar agendamentos concluídos (Usando o Schema atualizado)
       const { data: appts, error: apptError } = await supabase
         .from('appointments')
         .select(`
@@ -67,11 +68,12 @@ export default function ProfessionalCommissionPage() {
           start_time, 
           status,
           price,
-          patient:patient_id (name),
-          treatment:treatment_id (name)
+          patient:patients!patient_id (name),
+          service:services!service_id (name)
         `)
         .eq('professional_id', profId)
-        .eq('status', 'concluido')
+        .eq('clinic_id', clinicId) // Filtro de segurança por clínica
+        .eq('status', 'completed') // 'completed' é o padrão do banco atualizado
         .gte('start_time', `${startDate}T00:00:00`)
         .lte('start_time', `${endDate}T23:59:59`)
         .order('start_time', { ascending: false });
@@ -82,16 +84,19 @@ export default function ProfessionalCommissionPage() {
       let totalRev = 0;
       
       const mappedItems: CommissionItem[] = (appts || []).map((t: any) => {
-        // Usa o preço real do agendamento ou fallback de R$ 0 se não preenchido
-        const procedureValue = t.price || 0; 
+        const procedureValue = Number(t.price) || 0; 
         const commValue = procedureValue * (rate / 100);
         totalRev += procedureValue;
+
+        // Suporte para retorno de objeto simples ou array do Supabase
+        const pName = Array.isArray(t.patient) ? t.patient[0]?.name : t.patient?.name;
+        const sName = Array.isArray(t.service) ? t.service[0]?.name : t.service?.name;
 
         return {
           id: t.id,
           date: t.start_time,
-          patient_name: t.patient?.name || 'Paciente',
-          procedure: t.treatment?.name || 'Procedimento',
+          patient_name: pName || 'Paciente',
+          procedure: sName || 'Serviço',
           value: procedureValue,
           commission_value: commValue
         };
@@ -112,7 +117,7 @@ export default function ProfessionalCommissionPage() {
     }
   }
 
-  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-pink-600"/></div>;
+  if (loading) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
 
   return (
     <div className="space-y-6 p-4 sm:p-6 animate-in fade-in duration-500">

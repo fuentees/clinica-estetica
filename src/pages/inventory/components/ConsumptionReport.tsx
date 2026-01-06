@@ -15,27 +15,32 @@ export function ConsumptionReport() {
     end: format(new Date(), 'yyyy-MM-dd'),
   });
 
-  // Filtragem Lógica
+  // Filtragem Lógica com tratamento de datas robusto
   const filteredConsumption = consumption?.filter(record => {
     const recordDate = new Date(record.created_at); 
     const startDate = new Date(dateRange.start + 'T00:00:00');
     const endDate = new Date(dateRange.end + 'T23:59:59');
     
-    return (!selectedProfessional || record.professional_id === selectedProfessional) &&
+    // Suporte para camelCase ou snake_case vindo do banco
+    const profId = record.professional_id || record.professionalId;
+    
+    return (!selectedProfessional || profId === selectedProfessional) &&
            recordDate >= startDate &&
            recordDate <= endDate;
   });
 
   // Agrupamento para exibição por Profissional
   const consumptionByProfessional = filteredConsumption?.reduce((acc, record) => {
-    const key = record.professional_id;
+    const key = record.professional_id || record.professionalId || 'unknown';
+    
     if (!acc[key]) {
-      // Aqui usamos o que vem do useProductConsumption (Profiles)
-      const firstName = record.profiles?.first_name || '';
-      const lastName = record.profiles?.last_name || '';
+      // Busca dados do perfil com fallback para camelCase
+      const prof = record.profiles || record.profile;
+      const firstName = prof?.first_name || prof?.firstName || '';
+      const lastName = prof?.last_name || prof?.lastName || '';
       
       acc[key] = {
-        professional: `${firstName} ${lastName}`.trim() || 'Profissional',
+        professional: `${firstName} ${lastName}`.trim() || 'Profissional não identificado',
         items: {} as Record<string, number>,
         total: 0,
       };
@@ -55,13 +60,17 @@ export function ConsumptionReport() {
   const downloadReport = () => {
     if (!filteredConsumption || filteredConsumption.length === 0) return;
 
-    const headers = ['Data', 'Profissional', 'Produto', 'Quantidade'];
-    const rows = filteredConsumption.map(record => [
-      format(new Date(record.created_at), 'dd/MM/yyyy HH:mm'),
-      `${record.profiles?.first_name || ''} ${record.profiles?.last_name || ''}`,
-      record.inventory?.name,
-      record.quantity
-    ]);
+    const headers = ['Data', 'Profissional', 'Produto', 'Quantidade', 'Notas'];
+    const rows = filteredConsumption.map(record => {
+      const prof = record.profiles || record.profile;
+      return [
+        format(new Date(record.created_at), 'dd/MM/yyyy HH:mm'),
+        `${prof?.first_name || prof?.firstName || ''} ${prof?.last_name || prof?.lastName || ''}`,
+        record.inventory?.name || 'Desconhecido',
+        record.quantity,
+        record.notes || ''
+      ];
+    });
 
     const csvContent = [headers, ...rows].map(e => e.join(";")).join("\n");
     const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -80,18 +89,17 @@ export function ConsumptionReport() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
           
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
+            <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-2 ml-1">
               <User size={14} className="text-pink-600"/> Filtrar Profissional
             </label>
             <select
               value={selectedProfessional}
               onChange={(e) => setSelectedProfessional(e.target.value)}
-              className="w-full h-11 px-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-pink-500 outline-none transition-all text-sm"
+              className="w-full h-11 px-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-pink-500 outline-none transition-all text-sm font-bold"
             >
-              <option value="">Todos os profissionais</option>
+              <option value="">Todos os especialistas</option>
               {professionals?.map((prof) => (
                 <option key={prof.id} value={prof.id}>
-                  {/* CORREÇÃO AQUI: Usando firstName e lastName do seu tipo User */}
                   {prof.firstName} {prof.lastName}
                 </option>
               ))}
@@ -99,7 +107,7 @@ export function ConsumptionReport() {
           </div>
 
           <div className="space-y-2 lg:col-span-2">
-            <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
+            <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-2 ml-1">
               <CalendarIcon size={14} className="text-pink-600"/> Período de Consumo
             </label>
             <div className="flex gap-2">
@@ -107,13 +115,13 @@ export function ConsumptionReport() {
                 type="date"
                 value={dateRange.start}
                 onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                className="flex-1 h-11 px-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-pink-500 outline-none text-sm"
+                className="flex-1 h-11 px-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-pink-500 outline-none text-sm font-bold"
               />
               <input
                 type="date"
                 value={dateRange.end}
                 onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                className="flex-1 h-11 px-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-pink-500 outline-none text-sm"
+                className="flex-1 h-11 px-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-pink-500 outline-none text-sm font-bold"
               />
             </div>
           </div>
@@ -123,27 +131,27 @@ export function ConsumptionReport() {
         <Button 
           onClick={downloadReport} 
           disabled={!filteredConsumption?.length}
-          className="bg-gray-900 hover:bg-black text-white h-11 px-6 rounded-xl shadow-lg transition-all hover:scale-105"
+          className="bg-gray-900 hover:bg-black text-white h-11 px-6 rounded-xl shadow-lg transition-all hover:scale-105 font-black uppercase text-[10px] tracking-widest"
         >
-          <Download className="w-4 h-4 mr-2" />
+          <Download className="w-4 h-4 mr-2 text-pink-500" />
           Exportar CSV
         </Button>
       </div>
 
       {/* Cards de Consumo */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {Object.entries(consumptionByProfessional || {}).length > 0 ? (
           Object.entries(consumptionByProfessional || {}).map(([id, data]) => (
-            <div key={id} className="bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden group hover:border-pink-200 transition-colors">
+            <div key={id} className="bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden group hover:border-pink-200 transition-all">
               <div className="p-6 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-900/50">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center text-pink-600 font-bold uppercase">
+                  <div className="w-10 h-10 rounded-2xl bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center text-pink-600 font-black uppercase">
                     {data.professional.charAt(0)}
                   </div>
-                  <h3 className="font-bold text-gray-900 dark:text-white">{data.professional}</h3>
+                  <h3 className="font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">{data.professional}</h3>
                 </div>
-                <span className="px-3 py-1 bg-white dark:bg-gray-800 rounded-full text-xs font-bold text-gray-500 border border-gray-100 shadow-sm">
-                  {data.total} itens total
+                <span className="px-3 py-1 bg-white dark:bg-gray-800 rounded-full text-[10px] font-black uppercase text-gray-400 border border-gray-100 shadow-sm tracking-widest">
+                  {data.total} itens
                 </span>
               </div>
               
@@ -152,9 +160,9 @@ export function ConsumptionReport() {
                   <div key={item} className="flex justify-between items-center p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50">
                     <div className="flex items-center gap-3">
                       <PackageOpen size={16} className="text-gray-400"/>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{item}</span>
+                      <span className="text-sm font-bold text-gray-600 dark:text-gray-300 italic">{item}</span>
                     </div>
-                    <span className="text-sm font-black text-pink-600 bg-pink-50 dark:bg-pink-900/20 px-3 py-1 rounded-lg">
+                    <span className="text-sm font-black text-pink-600 bg-white dark:bg-gray-800 px-3 py-1 rounded-lg shadow-sm border border-pink-50">
                       {quantity as number} un
                     </span>
                   </div>
@@ -163,9 +171,9 @@ export function ConsumptionReport() {
             </div>
           ))
         ) : (
-          <div className="md:col-span-2 py-20 text-center bg-white dark:bg-gray-800 rounded-3xl border border-dashed border-gray-200">
+          <div className="md:col-span-2 py-32 text-center bg-white dark:bg-gray-800 rounded-[3rem] border-2 border-dashed border-gray-100">
              <FileText size={48} className="mx-auto text-gray-200 mb-4"/>
-             <p className="text-gray-500 font-medium">Nenhum registro de consumo no período selecionado.</p>
+             <p className="text-gray-400 font-black uppercase text-xs tracking-[0.3em]">Nenhum registro no período selecionado</p>
           </div>
         )}
       </div>

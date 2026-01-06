@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
-  FileText, Plus, Search, User, 
-  RefreshCw, AlertCircle, ChevronRight, FilePenLine, Trash2, Loader2 
+  FileText, Plus, Search, 
+  RefreshCw, AlertCircle, ChevronRight, FilePenLine, Trash2, Loader2, Pill 
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
@@ -24,46 +24,66 @@ export function PrescriptionsPage() {
       setLoading(true);
       setErrorMsg(null);
       
-      // 1. Busca as Receitas (Estrutura SaaS base)
-      const { data: rawPrescriptions, error } = await supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      // 1. Identificar Clínica
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('clinicId')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile?.clinicId) throw new Error("Clínica não identificada");
+
+      // 2. Busca Otimizada com JOIN
+      // ✅ CORREÇÃO: Order by 'created_at' (nome real no banco) e não 'createdAt'
+      const { data, error } = await supabase
         .from('prescriptions')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select(`
+            *,
+            patient:patients!patientId ( name ),
+            professional:profiles!professionalId ( first_name, last_name, email )
+        `)
+        .eq('clinicId', profile.clinicId)
+        .order('created_at', { ascending: false }); // <--- CORRIGIDO AQUI
 
-      if (error) throw error;
-
-      if (!rawPrescriptions || rawPrescriptions.length === 0) {
-        setPrescriptions([]);
-        return;
+      if (error) {
+          // Fallback caso o join falhe (nomes de FK incorretos, etc)
+          console.warn("Tentativa de Join falhou, usando busca manual...", error);
+          const { data: rawData, error: rawError } = await supabase
+            .from('prescriptions')
+            .select('*')
+            .eq('clinicId', profile.clinicId)
+            .order('created_at', { ascending: false }); // <--- CORRIGIDO AQUI TAMBÉM
+            
+          if (rawError) throw rawError;
+          
+          if (rawData) {
+              const pIds = rawData.map((r: any) => r.patientId).filter(Boolean);
+              const profIds = rawData.map((r: any) => r.professionalId).filter(Boolean);
+              
+              const [pats, profs] = await Promise.all([
+                  supabase.from('patients').select('id, name').in('id', pIds),
+                  supabase.from('profiles').select('id, first_name, last_name').in('id', profIds)
+              ]);
+              
+              const enriched = rawData.map((item: any) => ({
+                  ...item,
+                  patient: pats.data?.find((p: any) => p.id === item.patientId),
+                  professional: profs.data?.find((p: any) => p.id === item.professionalId)
+              }));
+              
+              setPrescriptions(enriched);
+              return;
+          }
       }
 
-      // 2. Extrai IDs para busca manual (evita erros de JOIN complexos)
-      const patientIds = rawPrescriptions.map((p: any) => p.patient_id).filter(Boolean);
-      const profIds = rawPrescriptions.map((p: any) => p.professional_id).filter(Boolean);
-
-      // 3. Busca complementar de metadados
-      const [patientsRes, profsRes] = await Promise.all([
-        supabase.from('patients').select('id, name').in('id', patientIds),
-        supabase.from('profiles').select('id, first_name, last_name, email').in('id', profIds)
-      ]);
-
-      // 4. Consolidação Javascript (SaaS Intelligence)
-      const data = rawPrescriptions.map((recipe: any) => {
-          const patient = patientsRes.data?.find((p: any) => p.id === recipe.patient_id);
-          const professional = profsRes.data?.find((p: any) => p.id === recipe.professional_id);
-          
-          return {
-              ...recipe,
-              patient: patient || { name: 'Paciente não identificado' },
-              professional: professional || { first_name: 'Profissional', last_name: '' }
-          };
-      });
-      
-      setPrescriptions(data);
+      setPrescriptions(data || []);
 
     } catch (error: any) {
-      console.error("Erro na listagem de receitas:", error);
-      setErrorMsg(error.message || "Falha na conexão com o banco de dados.");
+      console.error("Erro na listagem:", error);
+      setErrorMsg("Não foi possível carregar as receitas. " + error.message);
       toast.error("Erro ao carregar lista.");
     } finally {
       setLoading(false);
@@ -74,11 +94,15 @@ export function PrescriptionsPage() {
       e.stopPropagation();
       if(!confirm("Tem certeza que deseja excluir esta receita permanentemente?")) return;
       
-      const { error } = await supabase.from('prescriptions').delete().eq('id', id);
-      if(error) return toast.error("Erro ao excluir registro.");
-      
-      toast.success("Receita removida do histórico.");
-      fetchPrescriptions(); 
+      try {
+        const { error } = await supabase.from('prescriptions').delete().eq('id', id);
+        if(error) throw error;
+        
+        toast.success("Receita removida.");
+        setPrescriptions(prev => prev.filter(item => item.id !== id));
+      } catch (error) {
+        toast.error("Erro ao excluir.");
+      }
   }
 
   const handleOpenPrescription = (id: string) => {
@@ -86,7 +110,7 @@ export function PrescriptionsPage() {
   };
 
   const filtered = prescriptions.filter(item => {
-      const pName = (item.patient?.name || "").toLowerCase();
+      const pName = (item.patient?.name || "Paciente Removido").toLowerCase();
       const profName = (item.professional?.first_name || "").toLowerCase();
       const term = searchTerm.toLowerCase();
       return pName.includes(term) || profName.includes(term);
@@ -94,6 +118,7 @@ export function PrescriptionsPage() {
 
   const getProfName = (item: any) => {
       const p = item.professional;
+      if (!p) return 'Profissional Desconhecido';
       if (p.first_name) return `Dr(a). ${p.first_name} ${p.last_name || ''}`;
       return p.email || 'Profissional';
   }
@@ -101,15 +126,15 @@ export function PrescriptionsPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-700 p-4 md:p-8 max-w-[1400px] mx-auto pb-20">
       
-      {/* CABEÇALHO COM GRADIENTE */}
+      {/* CABEÇALHO */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-5">
             <div className="p-4 bg-gradient-to-br from-pink-500 to-rose-600 rounded-3xl text-white shadow-lg shadow-pink-200 dark:shadow-none">
-                <FileText size={32} />
+                <Pill size={32} />
             </div>
             <div>
                 <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic">Central de <span className="text-pink-600">Receitas</span></h1>
-                <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Gestão de prescrições e orientações técnicas</p>
+                <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Gestão de prescrições e orientações</p>
             </div>
         </div>
         
@@ -130,7 +155,7 @@ export function PrescriptionsPage() {
         </div>
       </div>
 
-      {/* FERRAMENTA DE BUSCA */}
+      {/* BUSCA */}
       <div className="bg-white dark:bg-gray-800 p-4 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700 flex items-center group focus-within:ring-2 focus:ring-pink-500/20 transition-all">
           <div className="pl-4 text-gray-300 group-focus-within:text-pink-500 transition-colors">
               <Search size={22}/>
@@ -148,35 +173,35 @@ export function PrescriptionsPage() {
           <div className="bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/30 p-5 rounded-[1.5rem] flex items-center gap-4 text-rose-600 animate-in slide-in-from-top-2">
               <AlertCircle size={24} />
               <div>
-                  <p className="font-black uppercase text-xs tracking-widest">Inconsistência Detectada</p>
+                  <p className="font-black uppercase text-xs tracking-widest">Atenção</p>
                   <p className="text-sm font-medium">{errorMsg}</p>
               </div>
           </div>
       )}
 
-      {/* LISTAGEM PREMIUM */}
+      {/* LISTAGEM */}
       <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         
-        {/* Header da Tabela */}
+        {/* Header Tabela */}
         <div className="grid grid-cols-12 gap-4 px-8 py-5 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
-            <div className="col-span-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Paciente & Identificação</div>
-            <div className="col-span-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Emitente</div>
+            <div className="col-span-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Paciente</div>
+            <div className="col-span-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Médico/Profissional</div>
             <div className="col-span-2 hidden md:block text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Data</div>
-            <div className="col-span-5 md:col-span-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Gerenciar</div>
+            <div className="col-span-5 md:col-span-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Ações</div>
         </div>
 
         <div className="divide-y divide-gray-50 dark:divide-gray-700">
             {loading ? (
                 <div className="py-20 flex flex-col items-center justify-center gap-3">
                    <Loader2 className="animate-spin text-pink-600" size={32} />
-                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Sincronizando Histórico...</p>
+                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Carregando...</p>
                 </div>
             ) : filtered.length === 0 ? (
                 <div className="py-32 text-center flex flex-col items-center">
                     <div className="w-20 h-20 bg-gray-50 dark:bg-gray-900 rounded-full flex items-center justify-center mb-6 text-gray-200">
                        <FileText size={40}/>
                     </div>
-                    <p className="text-gray-400 font-black uppercase text-xs tracking-widest italic">Nenhum documento arquivado</p>
+                    <p className="text-gray-400 font-black uppercase text-xs tracking-widest italic">Nenhuma receita encontrada</p>
                 </div>
             ) : (
                 filtered.map((item) => (
@@ -187,10 +212,10 @@ export function PrescriptionsPage() {
                     >
                         <div className="col-span-4 flex items-center gap-4">
                             <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center font-black text-sm shrink-0 border border-blue-100 dark:border-blue-800">
-                                {item.patient?.name?.charAt(0) || 'P'}
+                                {item.patient?.name?.charAt(0) || '?'}
                             </div>
                             <div className="font-black text-gray-900 dark:text-white uppercase tracking-tighter italic truncate">
-                                {item.patient?.name || 'Paciente sem nome'}
+                                {item.patient?.name || 'Paciente Removido'}
                             </div>
                         </div>
 
@@ -202,7 +227,7 @@ export function PrescriptionsPage() {
 
                         <div className="col-span-2 hidden md:block text-center">
                             <span className="text-xs font-black text-gray-400 dark:text-gray-500 tabular-nums">
-                                {new Date(item.created_at).toLocaleDateString('pt-BR')}
+                                {new Date(item.date || item.created_at).toLocaleDateString('pt-BR')}
                             </span>
                         </div>
 

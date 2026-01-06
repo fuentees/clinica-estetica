@@ -28,6 +28,7 @@ interface Professional {
   registrationNumber?: string;
   avatarUrl?: string;
   isActive: boolean;
+  clinicId?: string;
 }
 
 export function ProfessionalDashboardLayout() {
@@ -52,9 +53,21 @@ export function ProfessionalDashboardLayout() {
 
         if (error) throw error;
         
-        // O Supabase retorna snake_case (first_name), mas nossa interface espera camelCase (firstName).
-        // Não tem problema, trataremos isso na leitura das variáveis abaixo.
-        setProfessional(data as unknown as Professional); 
+        // Mapeamento manual para garantir que snake_case do banco preencha o camelCase da interface
+        const mappedData: Professional = {
+            id: data.id,
+            firstName: data.first_name || data.firstName || "",
+            lastName: data.last_name || data.lastName || "",
+            email: data.email,
+            role: data.role,
+            formacao: data.formacao,
+            registrationNumber: data.registration_number || data.registrationNumber,
+            avatarUrl: data.avatar_url || data.avatarUrl,
+            isActive: data.is_active ?? data.isActive ?? true,
+            clinicId: data.clinicId || data.clinic_id
+        };
+
+        setProfessional(mappedData); 
       } catch (error) {
         console.error("Erro ao carregar perfil profissional:", error);
         navigate("/professionals");
@@ -76,24 +89,9 @@ export function ProfessionalDashboardLayout() {
 
   if (!professional) return null;
 
-  // --- TRATAMENTO DE DADOS (CORREÇÃO DOS ERROS DE TS) ---
-  // Utilizamos 'as any' para acessar propriedades snake_case vindas do banco
-  // sem que o TypeScript reclame que a interface não possui essas chaves.
-  const raw = professional as any;
-
-  const pName = professional.firstName || raw.first_name || "";
-  const pLast = professional.lastName || raw.last_name || "";
+  const initials = ((professional.firstName?.[0] || "") + (professional.lastName?.[0] || "")).toUpperCase();
+  const fullName = `${professional.firstName} ${professional.lastName}`.trim() || "Profissional Sem Nome";
   
-  // Garante que é string para evitar erro no [0]
-  const initials = ((pName?.[0] || "") + (pLast?.[0] || "")).toUpperCase();
-  const fullName = `${pName} ${pLast}`.trim() || "Profissional Sem Nome";
-  
-  // Garante que é string ou undefined para evitar erro no src da imagem
-  const avatar = professional.avatarUrl || raw.avatar_url || undefined;
-  
-  const isActive = professional.isActive ?? raw.is_active ?? false;
-  const regNumber = professional.registrationNumber || raw.registration_number;
-
   const roleLabels: Record<string, string> = {
     'admin': 'Gestor Geral',
     'profissional': 'Especialista Técnico',
@@ -115,13 +113,11 @@ export function ProfessionalDashboardLayout() {
       
       {/* --- HEADER DO PERFIL PREMIUM --- */}
       <div className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 shadow-sm relative overflow-hidden">
-        {/* Accent Top Line */}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 via-purple-500 to-rose-500"></div>
 
         <div className="max-w-[1600px] mx-auto px-8 py-10">
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-8">
             
-            {/* Botão de Retorno */}
             <button 
               onClick={() => navigate("/professionals")} 
               className="lg:mr-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-pink-50 hover:text-pink-600 text-gray-400 transition-all shadow-inner"
@@ -129,19 +125,19 @@ export function ProfessionalDashboardLayout() {
               <ArrowLeft size={24} />
             </button>
 
-            {/* AVATAR COM INDICADOR DE STATUS */}
+            {/* AVATAR */}
             <div className="relative group">
               <div className="w-28 h-28 md:w-32 md:h-32 rounded-[2.5rem] p-1.5 bg-gradient-to-tr from-pink-100 to-rose-100 dark:from-pink-900/30 dark:to-rose-900/30 shadow-xl group-hover:rotate-3 transition-transform">
                 <div className="w-full h-full rounded-[2rem] bg-white dark:bg-gray-900 flex items-center justify-center overflow-hidden border-4 border-white dark:border-gray-800">
-                  {avatar ? (
-                    <img src={avatar} alt={fullName} className="w-full h-full object-cover"/>
+                  {professional.avatarUrl ? (
+                    <img src={professional.avatarUrl} alt={fullName} className="w-full h-full object-cover"/>
                   ) : (
                     <span className="text-4xl font-black text-pink-600 italic tracking-tighter uppercase">{initials}</span>
                   )}
                 </div>
               </div>
-              <div className={`absolute -bottom-2 -right-2 p-1.5 rounded-2xl border-4 border-white dark:border-gray-900 shadow-lg ${isActive ? 'bg-emerald-500' : 'bg-gray-400'}`}>
-                {isActive ? <CheckCircle2 size={16} className="text-white"/> : <XCircle size={16} className="text-white"/>}
+              <div className={`absolute -bottom-2 -right-2 p-1.5 rounded-2xl border-4 border-white dark:border-gray-900 shadow-lg ${professional.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`}>
+                {professional.isActive ? <CheckCircle2 size={16} className="text-white"/> : <XCircle size={16} className="text-white"/>}
               </div>
             </div>
 
@@ -164,11 +160,11 @@ export function ProfessionalDashboardLayout() {
                   </div>
                 )}
 
-                {regNumber && (
+                {professional.registrationNumber && (
                   <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-100 dark:border-gray-700 shadow-inner">
                     <Shield size={14} className="text-blue-500" />
                     <span className="font-mono text-xs font-black text-gray-700 dark:text-gray-300">
-                      ID: {regNumber}
+                      ID: {professional.registrationNumber}
                     </span>
                   </div>
                 )}
@@ -181,7 +177,7 @@ export function ProfessionalDashboardLayout() {
             </div>
           </div>
 
-          {/* --- TABS NAVEGAÇÃO PREMIUM --- */}
+          {/* NAVEGAÇÃO */}
           <div className="flex items-center gap-1 mt-12 overflow-x-auto custom-scrollbar">
             {navItems.map((item) => {
               const isActive = item.path === "" 
@@ -209,10 +205,9 @@ export function ProfessionalDashboardLayout() {
         </div>
       </div>
 
-      {/* --- RENDERIZAÇÃO DO CONTEÚDO (PÁGINAS FILHAS) --- */}
+      {/* CONTEÚDO DINÂMICO */}
       <div className="flex-1 max-w-[1600px] w-full mx-auto p-8">
         <div className="bg-white dark:bg-gray-900 p-8 rounded-[3rem] border border-gray-100 dark:border-gray-800 shadow-sm min-h-[600px]">
-           {/* Passamos o objeto professional via context para as rotas filhas */}
            <Outlet context={{ professional }} /> 
         </div>
       </div>
@@ -220,7 +215,6 @@ export function ProfessionalDashboardLayout() {
   );
 }
 
-// Hook auxiliar para facilitar uso nas páginas filhas
 export function useProfessionalContext() {
   return useOutletContext<{ professional: Professional }>();
 }

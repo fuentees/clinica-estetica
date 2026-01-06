@@ -7,10 +7,14 @@ import {
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
-import { addMinutes } from "date-fns"; // Certifique-se de ter date-fns instalado
+import { addMinutes } from "date-fns"; 
 
-// Interfaces para Tipagem
-interface Professional { id: string; firstName: string; }
+// Interfaces Ajustadas para o Banco
+interface Professional { 
+    id: string; 
+    first_name: string; 
+    last_name?: string; 
+}
 interface Patient { id: string; name: string; }
 interface Service { id: string; name: string; duration: number; }
 
@@ -52,20 +56,23 @@ export function NewAppointmentPage() {
             
             setClinicId(profile.clinicId);
 
-            // 2. Busca TUDO em paralelo (Profissionais, Pacientes, Serviços)
+            // 2. Busca TUDO em paralelo
             const [profsReq, patientsReq, servicesReq] = await Promise.all([
+                // Busca Profissionais (com first_name e last_name)
                 supabase.from("profiles")
-                    .select("id, first_name")
+                    .select("id, first_name, last_name, role")
                     .eq("clinicId", profile.clinicId)
-                    .eq("isActive", true)
-                    .in("role", ["profissional", "esteticista", "doutor", "admin"])
+                    .eq("is_active", true) // snake_case
+                    .in("role", ["profissional", "esteticista", "doutor", "admin", "recepcionista"])
                     .order("first_name"),
                 
+                // Busca Pacientes
                 supabase.from("patients")
                     .select("id, name")
                     .eq("clinicId", profile.clinicId)
                     .order("name"),
 
+                // Busca Serviços
                 supabase.from("services")
                     .select("id, name, duration")
                     .eq("clinicId", profile.clinicId)
@@ -75,8 +82,8 @@ export function NewAppointmentPage() {
 
             // Formata e Salva nos estados
             if (profsReq.data) {
-                setProfessionals(profsReq.data.map((p: any) => ({ id: p.id, firstName: p.first_name })));
-                // Seleciona o primeiro profissional automaticamente
+                setProfessionals(profsReq.data);
+                // Seleciona o primeiro profissional automaticamente se houver
                 if (profsReq.data.length > 0) setFormData(prev => ({ ...prev, professionalId: profsReq.data[0].id }));
             }
             if (patientsReq.data) setPatients(patientsReq.data);
@@ -110,14 +117,14 @@ export function NewAppointmentPage() {
             
             const endAt = addMinutes(startAt, duration);
 
-            // 2. Inserir no Banco
+            // 2. Inserir no Banco (USANDO SNAKE_CASE NAS COLUNAS)
             const { error } = await supabase.from("appointments").insert({
                 clinicId: clinicId,
-                patientId: formData.patientId,
-                professionalId: formData.professionalId,
-                serviceId: formData.serviceId,
-                startAt: startAt.toISOString(),
-                endAt: endAt.toISOString(),
+                patient_id: formData.patientId,         // ✅ Corrigido
+                professional_id: formData.professionalId, // ✅ Corrigido
+                service_id: formData.serviceId,         // ✅ Corrigido
+                start_time: startAt.toISOString(),      // ✅ Corrigido
+                end_time: endAt.toISOString(),          // ✅ Corrigido
                 status: "scheduled",
                 notes: formData.notes
             });
@@ -125,7 +132,7 @@ export function NewAppointmentPage() {
             if (error) throw error;
 
             toast.success("Agendamento criado com sucesso!");
-            navigate("/appointments"); // Volta para a agenda
+            navigate("/appointments"); 
 
         } catch (error: any) {
             console.error(error);
@@ -169,7 +176,11 @@ export function NewAppointmentPage() {
                                 required
                             >
                                 <option value="">Selecione...</option>
-                                {professionals.map(p => <option key={p.id} value={p.id}>{p.firstName}</option>)}
+                                {professionals.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.first_name} {p.last_name || ''}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                         <div>

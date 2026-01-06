@@ -12,7 +12,7 @@ import {
   LayoutDashboard,
   Image as ImageIcon,
   ClipboardList,
-  Sparkles, // Ícone novo para Planejamento (mais comercial/estético)
+  Sparkles,
   BrainCircuit,
   Scale,
   Settings
@@ -77,16 +77,16 @@ export function PatientDashboardLayout() {
     { label: "Visão Geral", path: "", icon: LayoutDashboard },
     
     // Bloco Clínico
-    { label: "Anamnese", path: "anamnesis", icon: ClipboardList }, // Inclui Injetáveis e Exames
+    { label: "Anamnese", path: "anamnesis", icon: ClipboardList },
     { label: "Bioimpedância", path: "bioimpedance", icon: Scale }, 
     { label: "Auditoria IA", path: "ai-analysis", icon: BrainCircuit }, 
     
-    // Bloco Comercial/Tratamento (A CORREÇÃO AQUI 👇)
-    { label: "Planejamento", path: "treatment-plans", icon: Sparkles }, // Aqui ficam os Orçamentos/Planos de Tratamento
+    // Bloco Comercial/Tratamento
+    { label: "Planejamento", path: "treatment-plans", icon: Sparkles },
     
     // Bloco Administrativo
-    { label: "Financeiro", path: "financial", icon: DollarSign }, // Aqui ficam Pagamentos/Débitos
-    { label: "Receitas", path: "prescriptions", icon: ScrollText },
+    { label: "Financeiro", path: "financial", icon: DollarSign },
+    { label: "Receitas", path: "prescriptions", icon: ScrollText }, // Rota de receitas
     
     // Bloco Histórico/Docs
     { label: "Evolução", path: "evolution", icon: Activity },
@@ -157,7 +157,7 @@ export function PatientDashboardLayout() {
             </div>
           </div>
 
-          {/* NAVEGAÇÃO POR ABAS (Estilo Clean) */}
+          {/* NAVEGAÇÃO POR ABAS */}
           <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar -mb-[1px]">
             {navItems.map((item) => {
               const isActive = item.path === "" 
@@ -189,7 +189,7 @@ export function PatientDashboardLayout() {
       </header>
 
       <main className="flex-1 max-w-[1600px] w-full mx-auto p-6 animate-in fade-in duration-700">
-         <Outlet context={{ patient }} /> 
+          <Outlet context={{ patient }} /> 
       </main>
     </div>
   );

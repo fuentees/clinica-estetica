@@ -51,15 +51,15 @@ export function PatientsPage() {
           avatar_url,
           clinicId
         `)
-        // MANTIDO clinicId (CamelCase) para não quebrar seu banco
+        // Utilizando clinicId (CamelCase) conforme padrão do Prisma
         .eq('clinicId', profile?.clinicId) 
         .order('name', { ascending: true });
 
       if (error) throw error;
       setPatients(data || []);
     } catch (error: any) {
-      console.error('Erro detalhado:', error);
-      toast.error(`Erro ao carregar: ${error.message}`);
+      console.error('Erro na listagem:', error);
+      toast.error(`Falha ao carregar pacientes.`);
     } finally {
       setLoading(false);
     }
@@ -82,7 +82,7 @@ export function PatientsPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700 pb-20">
       
-      {/* HEADER */}
+      {/* HEADER PREMIUM */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
         <div>
           <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase flex items-center gap-3">
@@ -97,7 +97,7 @@ export function PatientsPage() {
         </Link>
       </div>
 
-      {/* BARRA DE BUSCA */}
+      {/* FERRAMENTAS DE FILTRO */}
       <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row gap-4 items-center justify-between">
         <div className="relative w-full md:max-w-xl group">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 group-focus-within:text-pink-500 transition-colors" size={20} />
@@ -114,12 +114,12 @@ export function PatientsPage() {
         </div>
       </div>
 
-      {/* TABELA */}
+      {/* LISTAGEM */}
       <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         {loading ? (
           <div className="py-40 flex flex-col items-center justify-center gap-4">
             <Loader2 className="animate-spin text-pink-600" size={48} />
-            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Carregando Pacientes...</p>
+            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Sincronizando Banco de Dados...</p>
           </div>
         ) : filteredPatients.length === 0 ? (
           <div className="py-40 text-center flex flex-col items-center gap-4">
@@ -127,11 +127,9 @@ export function PatientsPage() {
               <Search size={64} />
             </div>
             <p className="text-gray-500 font-black uppercase text-xs tracking-widest">Nenhum paciente localizado</p>
-            
-            {/* CORREÇÃO DO BOTÃO LINK -> GHOST */}
             {searchTerm && (
                 <Button variant="ghost" onClick={() => setSearchTerm('')} className="text-pink-500 h-auto p-0 hover:bg-transparent font-bold">
-                    Limpar filtro
+                    Limpar filtros de busca
                 </Button>
             )}
           </div>
@@ -142,7 +140,7 @@ export function PatientsPage() {
                 <tr>
                   <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest">Paciente</th>
                   <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Contato</th>
-                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-right">Ações</th>
+                  <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-right">Ações Rápidas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
@@ -153,7 +151,7 @@ export function PatientsPage() {
                     <tr key={patient.id} className="group hover:bg-pink-50/30 dark:hover:bg-gray-900/40 transition-all cursor-pointer" onClick={() => navigate(`/patients/${patient.id}`)}>
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-5">
-                          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-pink-100 to-purple-100 dark:from-pink-900/20 dark:to-purple-900/20 text-pink-600 font-black text-sm flex items-center justify-center shadow-inner overflow-hidden">
+                          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-pink-100 to-purple-100 dark:from-pink-900/20 dark:to-purple-900/20 text-pink-600 font-black text-sm flex items-center justify-center shadow-inner overflow-hidden border-2 border-white dark:border-gray-800">
                             {patient.avatar_url ? (
                                 <img src={patient.avatar_url} alt={patient.name} className="w-full h-full object-cover"/>
                             ) : (
@@ -166,7 +164,7 @@ export function PatientsPage() {
                             </p>
                             <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-1.5">
                               <Calendar size={12} className="text-pink-300"/> 
-                              {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'dd/MM/yyyy') : '-'}
+                              Nasc: {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'dd/MM/yyyy') : '--/--/----'}
                             </p>
                           </div>
                         </div>
@@ -187,13 +185,13 @@ export function PatientsPage() {
                       <td className="px-8 py-6 text-right">
                         <div className="flex justify-end gap-2 items-center" onClick={(e) => e.stopPropagation()}>
                           
-                          <Link to={`/appointments/new?patientId=${patient.id}`}> 
+                          <Link to={`/appointments/new?patientId=${patient.id}`} title="Agendar"> 
                             <Button variant="ghost" size="sm" className="text-gray-300 hover:text-blue-500 h-10 w-10 p-0 rounded-xl hover:bg-blue-50">
                               <CalendarPlus size={20} />
                             </Button>
                           </Link>
                           
-                          <Link to={`/financial/${patient.id}`}> 
+                          <Link to={`/financial/${patient.id}`} title="Financeiro"> 
                             <Button variant="ghost" size="sm" className="text-gray-300 hover:text-emerald-500 h-10 w-10 p-0 rounded-xl hover:bg-emerald-50">
                               <DollarSign size={20} />
                             </Button>

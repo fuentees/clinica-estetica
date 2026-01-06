@@ -39,16 +39,30 @@ export function TabCorporal() {
           description="Medidas antropométricas base para o tratamento"
         >
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-              <Components.InputWithLabel 
-                  label="Peso (kg)" 
-                  name="peso"
-                  type="number" 
-                  step="0.1" 
-                  placeholder="0.0"
-                  register={register}
+              
+              {/* PESO (Divisor 10 -> Digita 705 vira 70.5) */}
+              <Controller
+                name="peso"
+                control={control}
+                render={({ field: { onChange, value, ...field } }) => (
+                  <Components.InputWithLabel
+                    {...field}
+                    label="Peso (kg)"
+                    placeholder="00.0"
+                    type="tel" 
+                    maxLength={6} // Aumentado para não travar
+                    value={value || ""}
+                    onChange={(e: any) => {
+                      const rawValue = e.target.value.replace(/\D/g, "");
+                      if (rawValue === "") { onChange(""); return; }
+                      const floatValue = parseFloat(rawValue) / 10;
+                      onChange(floatValue.toFixed(1));
+                    }}
+                  />
+                )}
               />
 
-              {/* INPUT DE ALTURA COM MÁSCARA AUTOMÁTICA */}
+              {/* ALTURA (Divisor 100 -> Digita 175 vira 1.75) */}
               <Controller
                 name="altura"
                 control={control}
@@ -57,11 +71,11 @@ export function TabCorporal() {
                     {...field}
                     label="Altura (m)"
                     placeholder="0.00"
-                    type="tel" // 'tel' evita setinhas de número e permite formatação
-                    maxLength={4} // Limita caracteres (ex: 1.85)
+                    type="tel"
+                    maxLength={6} // <-- AQUI ESTAVA O PROBLEMA (Mudado de 4 para 6)
                     value={value || ""}
                     onChange={(e: any) => {
-                      // 1. Remove tudo que não é número
+                      // 1. Pega só os números
                       const rawValue = e.target.value.replace(/\D/g, "");
                       
                       if (rawValue === "") {
@@ -69,17 +83,17 @@ export function TabCorporal() {
                         return;
                       }
 
-                      // 2. Transforma em decimal (ex: 175 -> 1.75)
+                      // 2. Divide por 100 (move a vírgula 2 casas)
                       const floatValue = parseFloat(rawValue) / 100;
                       
-                      // 3. Formata para string com 2 casas
+                      // 3. Atualiza o valor
                       onChange(floatValue.toFixed(2));
                     }}
                   />
                 )}
               />
               
-              {/* Card de IMC com destaque visual */}
+              {/* Card de IMC */}
               <div className="relative">
                   <label className="block text-[10px] font-bold text-gray-400 uppercase mb-2 tracking-widest ml-1">
                     IMC Calculado

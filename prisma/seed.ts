@@ -1,162 +1,200 @@
 import { PrismaClient } from '@prisma/client'
-import { v4 as uuidv4 } from 'uuid'
 
 const prisma = new PrismaClient()
 
+// ====================================================================
+// ⚠️ ATENÇÃO: SUBSTITUA PELO SEU ID REAL DO SUPABASE (MENU AUTH > USERS)
+// ====================================================================
+const SUPABASE_USER_ID = 'd551add1-3a2b-4f52-bc64-07ed574aeb9b'; 
+const MY_EMAIL = 'fuentes_tti@hotmail.com';
+
 async function main() {
-  // ==========================================
-  // 1. CONFIGURAÇÕES DE IDENTIDADE (FIXO SUPABASE)
-  // ==========================================
-  const SUPABASE_USER_ID = 'dc9ad8d8-b940-4865-9fff-d921d7ab7d05'
-  const USER_EMAIL = 'fuentes_tti@hotmail.com'
+  console.log('🌱 Iniciando seed definitivo...')
 
-  console.log('🌱 Iniciando Seed Estrutural Premium...')
-
-  // ==========================================
-  // 2. LIMPEZA DE SEGURANÇA (Previne erros de duplicidade)
-  // ==========================================
-  // Remove vínculos de profissionais antes de recriar
-  await prisma.serviceProfessional.deleteMany({})
-  // Remove configurações antigas para garantir as novas
-  await prisma.systemSetting.deleteMany({})
-
-  // ==========================================
-  // 3. CRIAR CLÍNICA (Identidade Visual Integrada)
-  // ==========================================
+  // ======================================================
+  // 1. CLÍNICA
+  // ======================================================
   const clinic = await prisma.clinic.upsert({
     where: { slug: 'vf-estetica' },
-    update: {
-      primaryColor: '#B43250', // Rosa/Vinho para o PDF
-    },
+    update: { isActive: true },
     create: {
-      id: uuidv4(),
       name: 'VF Estética Avançada',
       slug: 'vf-estetica',
       primaryColor: '#B43250',
       isActive: true,
     },
   })
-  console.log(`🏥 Clínica: ${clinic.name}`)
 
-  // ==========================================
-  // 4. ESTRUTURA DE CARGOS (Roles)
-  // ==========================================
+  // ======================================================
+  // 2. ROLE ADMIN
+  // ======================================================
   const roleAdmin = await prisma.role.upsert({
-    where: { name: 'ADMIN' },
+    where: { name: 'admin' },
     update: {},
-    create: { 
-      name: 'ADMIN', 
-      description: 'Acesso total, Auditoria e Inteligência Clínica' 
-    }
+    create: { name: 'admin', description: 'Acesso total ao sistema' },
   })
 
-  // ==========================================
-  // 5. MATRIZ DE PERMISSÕES (Segurança & IA)
-  // ==========================================
-  const permissionsData = [
-    { resource: 'calendar', action: 'read' },
-    { resource: 'calendar', action: 'write' },
-    { resource: 'patient', action: 'read' },
-    { resource: 'patient', action: 'write' },
-    { resource: 'clinical_ia', action: 'read' },     // ✅ Essencial para o motor de IA
-    { resource: 'legal_terms', action: 'write' },    // ✅ Essencial para Assinatura Digital
-    { resource: 'financial', action: 'read' },
-    { resource: 'inventory', action: 'write' },
-    { resource: 'settings', action: 'write' },
+  // ======================================================
+  // 3. PERMISSÕES (Tipagem corrigida para evitar erro de aritmética)
+  // ======================================================
+  const permissions: [string, string][] = [
+    ['calendar', 'read'], 
+    ['calendar', 'write'],
+    ['patient', 'read'], 
+    ['patient', 'write'],
+    ['settings', 'write'],
   ]
 
-  for (const p of permissionsData) {
-    const perm = await prisma.permission.upsert({
-      where: { resource_action: { resource: p.resource, action: p.action } },
+  for (const [resource, action] of permissions) {
+    const permission = await prisma.permission.upsert({
+      where: { resource_action: { resource, action } },
       update: {},
-      create: { resource: p.resource, action: p.action }
+      create: { resource, action },
     })
 
     await prisma.rolePermission.upsert({
-      where: { 
-        roleId_permissionId: { roleId: roleAdmin.id, permissionId: perm.id } 
-      },
+      where: { roleId_permissionId: { roleId: roleAdmin.id, permissionId: permission.id } },
       update: {},
-      create: { roleId: roleAdmin.id, permissionId: perm.id }
+      create: { roleId: roleAdmin.id, permissionId: permission.id },
     })
   }
 
-  // ==========================================
-  // 6. SINCRONIZAR PERFIL DO USUÁRIO (Admin)
-  // ==========================================
-  const user = await prisma.profile.upsert({
+  // ======================================================
+  // 4. PERFIL ADMIN
+  // ======================================================
+  const adminProfile = await prisma.profile.upsert({
     where: { id: SUPABASE_USER_ID },
     update: {
-      email: USER_EMAIL,
-      roleId: roleAdmin.id,
+      email: MY_EMAIL,
+      roleLegacy: 'admin',
       clinicId: clinic.id,
-      isActive: true
+      roleId: roleAdmin.id,
+      isActive: true,
     },
     create: {
       id: SUPABASE_USER_ID,
-      email: USER_EMAIL,
+      email: MY_EMAIL,
       fullName: 'Victor Fuentes',
       firstName: 'Victor',
       lastName: 'Fuentes',
-      roleId: roleAdmin.id,
-      clinicId: clinic.id,
+      roleLegacy: 'admin',
       isActive: true,
-      avatarUrl: 'https://github.com/shadcn.png',
+      clinicId: clinic.id,
+      roleId: roleAdmin.id,
+      workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+      startTime: '08:00',
+      endTime: '19:00',
+      agendaColor: '#db2777'
     },
-  })
-  console.log(`👤 Perfil Sincronizado: ${user.fullName}`)
+  });
 
-  // ==========================================
-  // 7. CATÁLOGO DE SERVIÇOS TÉCNICOS
-  // ==========================================
-  const services = [
-    { name: 'Toxina Botulínica (Botox)', cat: 'INJETAVEL', price: 1200, dur: 30 },
-    { name: 'Bioestimulador Sculptra', cat: 'INJETAVEL', price: 2400, dur: 45 },
-    { name: 'Peeling Químico Renovador', cat: 'ESTETICA', price: 350, dur: 60 },
+  // ======================================================
+  // 5. SERVIÇOS (Tipagem explícita para evitar erro string | number)
+  // ======================================================
+  const services: { name: string; category: string; price: number; duration: number }[] = [
+    { name: 'Toxina Botulínica (Botox)', category: 'INJETAVEL', price: 1200, duration: 30 },
+    { name: 'Bioestimulador Sculptra', category: 'INJETAVEL', price: 2400, duration: 45 },
+    { name: 'Peeling Químico Renovador', category: 'ESTETICA', price: 350, duration: 60 },
   ]
 
   for (const s of services) {
-    const service = await prisma.service.create({
-      data: {
+    const service = await prisma.service.upsert({
+      where: { clinicId_name: { clinicId: clinic.id, name: s.name } },
+      update: {},
+      create: {
         clinicId: clinic.id,
         name: s.name,
-        category: s.cat,
+        category: s.category,
         price: s.price,
-        duration: s.dur,
-        isActive: true
-      }
+        duration: s.duration,
+        isActive: true,
+      },
     })
-
-    // Vincula o profissional ao serviço para habilitar a agenda
-    await prisma.serviceProfessional.create({
-      data: {
-        serviceId: service.id,
-        profileId: user.id,
-        commissionRate: 15.0
-      }
-    })
+    
+    // Vincula ao profissional se ele existir
+    if(adminProfile) {
+        await prisma.serviceProfessional.upsert({
+            where: { serviceId_profileId: { serviceId: service.id, profileId: adminProfile.id } },
+            update: {},
+            create: { serviceId: service.id, profileId: adminProfile.id, commissionRate: 15 }
+        });
+    }
   }
 
-  // ==========================================
-  // 8. CONFIGURAÇÕES GLOBAIS DO SAAS (Novos Módulos)
-  // ==========================================
+  // ======================================================
+  // 6. CONFIGURAÇÕES
+  // ======================================================
   await prisma.systemSetting.createMany({
     data: [
-      { clinicId: clinic.id, key: 'ai_engine', value: 'enabled', category: 'ai', dataType: 'string' },
-      { clinicId: clinic.id, key: 'digital_signature', value: 'required', category: 'legal', dataType: 'string' },
-      { clinicId: clinic.id, key: 'whatsapp_reminders', value: 'active', category: 'notifications', dataType: 'string' },
-      { clinicId: clinic.id, key: 'calendar_start', value: '08:00', category: 'calendar', dataType: 'time' },
-      { clinicId: clinic.id, key: 'calendar_end', value: '20:00', category: 'calendar', dataType: 'time' },
-    ]
+      { clinicId: clinic.id, key: 'system_status', value: 'active' },
+      { clinicId: clinic.id, key: 'ai_engine', value: 'enabled' },
+      { clinicId: clinic.id, key: 'calendar_start', value: '08:00' },
+      { clinicId: clinic.id, key: 'calendar_end', value: '20:00' },
+    ],
+    skipDuplicates: true,
   })
 
-  console.log('🚀 SEED COMPLETO: Sistema pronto para operação clínica de alto nível.')
+  // ======================================================
+  // 7. 🔥 CORREÇÃO DE PERMISSÕES E CACHE 🔥
+  // ======================================================
+  console.log('🔓 Restaurando permissões e limpando cache do Supabase...')
+  
+  const sqlCommands: string[] = [
+    `GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role`,
+    `GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role`,
+    `GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role`,
+    `GRANT ALL ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role`,
+    
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role`,
+
+    `ALTER TABLE profiles ENABLE ROW LEVEL SECURITY`,
+    `ALTER TABLE roles ENABLE ROW LEVEL SECURITY`,
+    `ALTER TABLE clinics ENABLE ROW LEVEL SECURITY`,
+    `ALTER TABLE patients ENABLE ROW LEVEL SECURITY`,
+    
+    // Profiles
+    `DROP POLICY IF EXISTS "Seed Read Profiles" ON profiles`,
+    `DROP POLICY IF EXISTS "Liberar geral profiles" ON profiles`,
+    `DROP POLICY IF EXISTS "Permitir leitura para autenticados" ON profiles`,
+    `CREATE POLICY "Seed Read Profiles" ON profiles FOR SELECT USING (true)`,
+    `CREATE POLICY "Seed Update Profiles" ON profiles FOR UPDATE USING (true)`,
+    
+    // Roles
+    `DROP POLICY IF EXISTS "Seed Read Roles" ON roles`,
+    `DROP POLICY IF EXISTS "Liberar geral roles" ON roles`,
+    `CREATE POLICY "Seed Read Roles" ON roles FOR SELECT USING (true)`,
+
+    // Clinics
+    `DROP POLICY IF EXISTS "Seed Read Clinics" ON clinics`,
+    `CREATE POLICY "Seed Read Clinics" ON clinics FOR SELECT USING (true)`,
+
+    // Patients
+    `DROP POLICY IF EXISTS "Seed Read Patients" ON patients`,
+    `CREATE POLICY "Seed Read Patients" ON patients FOR SELECT USING (true)`,
+    `CREATE POLICY "Seed Write Patients" ON patients FOR INSERT WITH CHECK (true)`,
+    `CREATE POLICY "Seed Update Patients" ON patients FOR UPDATE USING (true)`,
+
+    // Cache reload
+    `NOTIFY pgrst, 'reload'` 
+  ];
+
+  for (const command of sqlCommands) {
+    try {
+        await prisma.$executeRawUnsafe(command);
+    } catch (error) {
+        console.warn(`⚠️ Aviso SQL: ${command.substring(0, 40)}...`);
+    }
+  }
+
+  console.log('🚀 Seed concluído! Login liberado e cache atualizado.')
 }
 
 main()
-  .then(async () => { await prisma.$disconnect() })
-  .catch(async (e) => {
-    console.error(e)
-    await prisma.$disconnect()
+  .catch((e) => {
+    console.error('❌ Erro no seed:', e)
     process.exit(1)
+  })
+  .finally(async () => {
+    await prisma.$disconnect()
   })

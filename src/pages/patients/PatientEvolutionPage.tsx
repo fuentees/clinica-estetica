@@ -19,20 +19,25 @@ import {
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
-// Tipagem do Tratamento (Integral)
+// Tipagem do Tratamento (Atualizada para EvolutionRecord)
 interface Treatment {
   id: string;
-  data_procedimento: string;
-  tipo_procedimento: string;
-  descricao: string;
-  produtos_usados: string;
-  proxima_sessao: string;
+  date: string;          // data_procedimento -> date
+  subject: string;       // tipo_procedimento -> subject
+  description: string;   // descricao -> description
+  // Campos extras via JSON ou colunas novas se você adicionar
+  // Para manter compatibilidade, vamos salvar produtos e proxima sessão dentro da descrição ou criar colunas novas se preferir.
+  // Vou simular que salvamos no JSON 'attachments' para não alterar o schema agora.
+  attachments: {
+      products?: string;
+      nextSession?: string;
+  };
   created_at: string;
 }
 
-// Helper para cores das tags baseadas no texto (Integral)
+// Helper para cores das tags baseadas no texto
 const getProcedureColor = (type: string) => {
-    const t = type.toLowerCase();
+    const t = (type || "").toLowerCase();
     if (t.includes("botox") || t.includes("toxina")) return "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400";
     if (t.includes("preenchimento") || t.includes("bioestimulador")) return "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400";
     if (t.includes("laser") || t.includes("lavieen")) return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400";
@@ -46,8 +51,10 @@ export function PatientEvolutionPage() {
   const [loading, setLoading] = useState(true);
   const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [clinicId, setClinicId] = useState<string | null>(null);
+  const [professionalId, setProfessionalId] = useState<string | null>(null);
   
-  // Form States (Todos os seus campos originais)
+  // Form States
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newType, setNewType] = useState("");
   const [newDesc, setNewDesc] = useState("");
@@ -61,14 +68,37 @@ export function PatientEvolutionPage() {
 
   async function fetchData() {
     try {
+      // 1. Identificar Usuário Logado para preencher os IDs necessários
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+          const { data: profile } = await supabase.from('profiles').select('id, clinicId').eq('id', user.id).single();
+          if (profile) {
+              setClinicId(profile.clinicId);
+              setProfessionalId(profile.id);
+          }
+      }
+
+      // 2. Buscar Evoluções (usando a tabela correta do Schema)
+      // Ajuste: patientId (camelCase)
       const { data: hist, error } = await supabase
-        .from("treatments")
+        .from("evolution_records") 
         .select("*")
-        .eq("patient_id", id)
-        .order("data_procedimento", { ascending: false });
+        .eq("patientId", id)
+        .order("date", { ascending: false });
 
       if (error) throw error;
-      setTreatments(hist || []);
+      
+      // Mapear dados do banco para o estado local
+      const formatted = (hist || []).map((item: any) => ({
+          id: item.id,
+          date: item.date,
+          subject: item.subject,
+          description: item.description,
+          attachments: item.attachments || {}, // Recupera dados extras do JSON
+          created_at: item.createdAt || item.created_at
+      }));
+
+      setTreatments(formatted);
     } catch (error) {
       console.error(error);
     } finally {
@@ -79,16 +109,25 @@ export function PatientEvolutionPage() {
   const handleAddTreatment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newType) return toast.error("Informe o tipo de procedimento.");
+    if (!clinicId || !professionalId) return toast.error("Erro de identificação.");
 
     setIsSaving(true);
     try {
-      const { error } = await supabase.from("treatments").insert({
-        patient_id: id,
-        data_procedimento: newDate,
-        tipo_procedimento: newType,
-        descricao: newDesc,
-        produtos_usados: newProducts,
-        proxima_sessao: nextSession || null
+      // Ajuste: Inserindo na tabela 'evolution_records' com os campos corretos
+      const { error } = await supabase.from("evolution_records").insert({
+        clinicId: clinicId,
+        patientId: id,
+        professionalId: professionalId,
+        
+        date: new Date(newDate).toISOString(), // Formato ISO
+        subject: newType,                      // Mapeado para Subject
+        description: newDesc,
+        
+        // Salvando campos extras no JSON 'attachments' para não perder informação
+        attachments: {
+            products: newProducts,
+            nextSession: nextSession
+        }
       });
 
       if (error) throw error;
@@ -96,8 +135,9 @@ export function PatientEvolutionPage() {
       toast.success("Evolução registrada!");
       setNewType(""); setNewDesc(""); setNewProducts(""); setNextSession("");
       fetchData();
-    } catch (error) {
-      toast.error("Erro ao salvar.");
+    } catch (error: any) {
+      console.error(error);
+      toast.error("Erro ao salvar: " + error.message);
     } finally {
       setIsSaving(false);
     }
@@ -106,7 +146,7 @@ export function PatientEvolutionPage() {
   const handleDelete = async (treatmentId: string) => {
     if (!confirm("Tem certeza que deseja apagar este registro?")) return;
     try {
-      await supabase.from("treatments").delete().eq("id", treatmentId);
+      await supabase.from("evolution_records").delete().eq("id", treatmentId);
       toast.success("Registro apagado.");
       setTreatments(treatments.filter(t => t.id !== treatmentId));
     } catch (error) {
@@ -115,8 +155,8 @@ export function PatientEvolutionPage() {
   };
 
   const filteredTreatments = treatments.filter(t => 
-    t.tipo_procedimento.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.descricao?.toLowerCase().includes(searchTerm.toLowerCase())
+    t.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) return (
@@ -261,15 +301,15 @@ export function PatientEvolutionPage() {
                           <div className="flex items-center gap-2 mb-2">
                             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
                                 <Calendar size={12} className="text-pink-500"/> 
-                                {new Date(item.data_procedimento).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                {new Date(item.date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
                             </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-3">
                               <h3 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">
-                                  {item.tipo_procedimento}
+                                  {item.subject}
                               </h3>
-                              <span className={`text-[9px] px-3 py-1 rounded-lg border-2 font-black uppercase tracking-widest ${getProcedureColor(item.tipo_procedimento)}`}>
-                                  {item.tipo_procedimento.split(' ')[0]}
+                              <span className={`text-[9px] px-3 py-1 rounded-lg border-2 font-black uppercase tracking-widest ${getProcedureColor(item.subject)}`}>
+                                  {item.subject.split(' ')[0]}
                               </span>
                           </div>
                       </div>
@@ -285,28 +325,28 @@ export function PatientEvolutionPage() {
                       <div className="bg-gray-50 dark:bg-gray-900/50 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-4 opacity-5 text-gray-400"><FileText size={80}/></div>
                         <p className="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line relative z-10">
-                          {item.descricao || "Descrição técnica não informada."}
+                          {item.description || "Descrição técnica não informada."}
                         </p>
                       </div>
                       
-                      {(item.produtos_usados || item.proxima_sessao) && (
+                      {(item.attachments?.products || item.attachments?.nextSession) && (
                           <div className="flex flex-wrap gap-4 pt-2">
-                              {item.produtos_usados && (
+                              {item.attachments.products && (
                                   <div className="flex items-center gap-3 bg-blue-50 dark:bg-blue-900/20 px-4 py-2.5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
                                       <Syringe size={16} className="text-blue-500" />
                                       <div>
                                         <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Insumos</p>
-                                        <p className="text-xs font-bold text-blue-800 dark:text-blue-300">{item.produtos_usados}</p>
+                                        <p className="text-xs font-bold text-blue-800 dark:text-blue-300">{item.attachments.products}</p>
                                       </div>
                                   </div>
                               )}
-                              {item.proxima_sessao && (
+                              {item.attachments.nextSession && (
                                   <div className="flex items-center gap-3 bg-orange-50 dark:bg-orange-900/20 px-4 py-2.5 rounded-2xl border border-orange-100 dark:border-orange-900/30">
                                       <Clock size={16} className="text-orange-500" />
                                       <div>
                                         <p className="text-[9px] font-black text-orange-400 uppercase tracking-widest">Retorno</p>
                                         <p className="text-xs font-bold text-orange-800 dark:text-orange-300">
-                                          {new Date(item.proxima_sessao).toLocaleDateString('pt-BR')}
+                                          {new Date(item.attachments.nextSession).toLocaleDateString('pt-BR')}
                                         </p>
                                       </div>
                                   </div>
@@ -317,8 +357,8 @@ export function PatientEvolutionPage() {
 
                     {/* Rodapé Interno do Card */}
                     <div className="mt-8 pt-6 border-t border-gray-50 dark:border-gray-700 flex justify-between items-center">
-                       <p className="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em]">Registrado em {new Date(item.created_at).toLocaleDateString()}</p>
-                       <div className="flex items-center gap-1 text-[9px] font-black text-pink-500 uppercase">Ver detalhes <ChevronRight size={10}/></div>
+                        <p className="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em]">Registrado em {new Date(item.created_at).toLocaleDateString()}</p>
+                        <div className="flex items-center gap-1 text-[9px] font-black text-pink-500 uppercase">Ver detalhes <ChevronRight size={10}/></div>
                     </div>
 
                   </div>

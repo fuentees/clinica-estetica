@@ -5,10 +5,12 @@ import { toast } from 'react-hot-toast';
 import { 
   Calendar, DollarSign, Clock, 
   Loader2, Activity, Sparkles, Pencil, Ban, FileText, 
-  Lock, X, AlertCircle, PlusCircle, Play 
-} from 'lucide-react';
+  Lock, X, PlusCircle, Play 
+} from 'lucide-react'; // Removido AlertCircle que não era usado
 import { Button } from '../../components/ui/button';
 import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
+import { format } from 'date-fns'; // ✅ ADICIONADO: Importação que estava faltando
+import { ptBR } from 'date-fns/locale';
 
 // --- FUNÇÕES DE DATA E HORA SEGURAS ---
 
@@ -70,44 +72,51 @@ export default function ProfessionalOverviewPage() {
     try {
       const todayStr = getTodayDateStr(); 
       const now = new Date(); 
-      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`; 
-      const monthStart = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`;
+      // Removido currentTime que não era lido
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
       // 1. Total Mês
       const { count: monthCount } = await supabase.from('appointments')
           .select('*', { count: 'exact', head: true })
           .eq('professional_id', id)
-          .gte('date', monthStart)
-          .neq('status', 'cancelled')
-          .neq('status', 'blocked');
+          .gte('start_time', `${monthStart}T00:00:00`)
+          .neq('status', 'canceled');
 
       // 2. Próximo Paciente
       const { data: futureAppts } = await supabase.from('appointments')
-          .select(`id, date, start_time, status, patient:patient_id(id, name), treatment:treatment_id(name)`)
-          .eq('professional_id', id).gte('date', todayStr).eq('status', 'scheduled').order('date', { ascending: true }).order('start_time', { ascending: true }).limit(5);
+          .select(`id, start_time, status, patient:patients!patient_id(id, name), service:services!service_id(name)`)
+          .eq('professional_id', id)
+          .gte('start_time', now.toISOString())
+          .eq('status', 'scheduled')
+          .order('start_time', { ascending: true })
+          .limit(1);
 
-      let nextAppt = null;
-      if (futureAppts) {
-          nextAppt = futureAppts.find((appt: any) => {
-              if (appt.date > todayStr) return true;
-              if (appt.date === todayStr && formatTime(appt.start_time) > currentTime) return true; 
-              return false;
-          });
-      }
+      const nextAppt = futureAppts?.[0] || null;
 
       // 3. Agenda de Hoje
+      const startToday = `${todayStr}T00:00:00`;
+      const endToday = `${todayStr}T23:59:59`;
       const { data: todays } = await supabase.from('appointments')
-          .select(`id, start_time, status, notes, patient:patient_id(id, name), treatment:treatment_id(name)`)
-          .eq('professional_id', id).eq('date', todayStr).neq('status', 'cancelled').order('start_time');
+          .select(`id, start_time, status, notes, patient:patients!patient_id(id, name), service:services!service_id(name)`)
+          .eq('professional_id', id)
+          .gte('start_time', startToday)
+          .lte('start_time', endToday)
+          .neq('status', 'canceled')
+          .order('start_time');
 
       // 4. Gráfico (Últimos 7 dias)
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
           const d = new Date(); d.setDate(d.getDate() - i);
-          const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const dy = String(d.getDate()).padStart(2, '0');
-          const dStr = `${y}-${m}-${dy}`;
-          const { count } = await supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('professional_id', id).eq('date', dStr).neq('status', 'cancelled');
-          chartData.push({ day: `${dy}/${m}`, appointments: count || 0 });
+          const dStr = d.toISOString().split('T')[0];
+          const { count } = await supabase.from('appointments')
+            .select('*', { count: 'exact', head: true })
+            .eq('professional_id', id)
+            .gte('start_time', `${dStr}T00:00:00`)
+            .lte('start_time', `${dStr}T23:59:59`)
+            .neq('status', 'canceled');
+          
+          chartData.push({ day: format(d, 'dd/MM'), appointments: count || 0 });
       }
 
       const estimatedCommission = (monthCount || 0) * 150 * 0.30; 
@@ -116,7 +125,7 @@ export default function ProfessionalOverviewPage() {
       setStats({ monthCount: monthCount || 0, commission: estimatedCommission, next: nextAppt, chartData, goalPercent });
       setTodayList(todays || []);
 
-    } catch (error) { console.error(error); } finally { setLoading(false); }
+    } catch (error) { console.error("Erro Dashboard:", error); } finally { setLoading(false); }
   }
 
   useEffect(() => { loadDashboard(); }, [id]);
@@ -124,7 +133,7 @@ export default function ProfessionalOverviewPage() {
   const handleCancel = async (e: React.MouseEvent, apptId: string) => {
       e.stopPropagation();
       if (window.confirm("Cancelar este agendamento?")) {
-          await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', apptId);
+          await supabase.from('appointments').update({ status: 'canceled' }).eq('id', apptId);
           toast.success("Cancelado!"); loadDashboard();
       }
   }
@@ -149,7 +158,7 @@ export default function ProfessionalOverviewPage() {
       return appt.status === 'blocked' ? null : appt.patient?.id;
   }
 
-  if (loading) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600 w-10 h-10"/></div>;
+  if (loading) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700 p-2 relative">
@@ -159,7 +168,7 @@ export default function ProfessionalOverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* 1. DESTAQUE PRÓXIMO ATENDIMENTO */}
-        <div className="lg:col-span-1 relative overflow-hidden p-8 rounded-[2.5rem] bg-gray-900 text-white shadow-2xl flex flex-col justify-between group border border-white/5">
+        <div className="lg:col-span-1 relative overflow-hidden p-8 rounded-[2.5rem] bg-gray-900 text-white shadow-2xl flex flex-col justify-between group border border-white/5 min-h-[380px]">
             <div className="absolute inset-0 bg-gradient-to-br from-pink-600/30 to-purple-900/60 opacity-50"></div>
             <div className="relative z-10">
                 <div className="flex items-center gap-2 mb-8">
@@ -173,7 +182,7 @@ export default function ProfessionalOverviewPage() {
                             <h2 className="text-3xl font-black italic tracking-tighter uppercase leading-tight line-clamp-2 group-hover:text-pink-400 transition-colors">{getPatientName(stats.next)}</h2>
                             <div className="flex items-center gap-2 mt-2">
                                 <div className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse"></div>
-                                <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{stats.next.treatment?.name || 'Protocolo Clínico'}</p>
+                                <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">{stats.next.service?.name || 'Protocolo Clínico'}</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-4 bg-white/5 p-4 rounded-3xl border border-white/5">
@@ -181,7 +190,7 @@ export default function ProfessionalOverviewPage() {
                             <div>
                                 <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Horário Previsto</p>
                                 <p className="text-lg font-black italic tracking-tighter">
-                                    {formatFriendlyDate(stats.next.date)} às {formatTime(stats.next.start_time)} 
+                                    {formatFriendlyDate(stats.next.start_time.split('T')[0])} às {formatTime(stats.next.start_time)} 
                                 </p>
                             </div>
                         </div>
@@ -190,7 +199,7 @@ export default function ProfessionalOverviewPage() {
                         </Button>
                     </div>
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-10 text-gray-500 border-2 border-dashed border-white/5 rounded-3xl">
+                    <div className="flex flex-col items-center justify-center py-10 text-gray-500 border-2 border-dashed border-white/5 rounded-3xl h-full">
                         <Sparkles size={32} className="mb-3 opacity-20"/>
                         <p className="text-xs font-black uppercase tracking-widest">Nenhum agendamento pendente</p>
                     </div>
@@ -204,7 +213,7 @@ export default function ProfessionalOverviewPage() {
                 <div className="relative z-10">
                     <div className="flex justify-between items-start mb-6">
                         <div className="p-4 bg-emerald-50 dark:bg-emerald-900/30 rounded-3xl text-emerald-600"><DollarSign size={28}/></div>
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Produção Mensal</span>
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Produção Mensal Estimada</span>
                     </div>
                     <h3 className="text-4xl font-black text-gray-900 dark:text-white italic tracking-tighter mb-2">
                         <span className="text-lg font-bold text-gray-300 mr-1 italic">R$</span>{stats.commission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -218,7 +227,7 @@ export default function ProfessionalOverviewPage() {
 
             <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden group transition-all hover:shadow-xl">
                 <div className="flex justify-between items-center mb-6">
-                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Fluxo Semanal</span></div>
+                    <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Volume Semanal</span></div>
                     <h4 className="text-2xl font-black text-gray-900 dark:text-white italic tracking-tighter">{stats.monthCount} <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest ml-1">Atend.</span></h4>
                 </div>
                 <div className="h-32 w-full">
@@ -231,7 +240,7 @@ export default function ProfessionalOverviewPage() {
                 </div>
             </div>
 
-            <div className="md:col-span-2 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-[2rem] border border-dashed border-gray-200 dark:border-gray-800 flex gap-4 overflow-x-auto custom-scrollbar">
+            <div className="md:col-span-2 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-[2rem] border border-dashed border-gray-200 dark:border-gray-800 flex gap-4 overflow-x-auto no-scrollbar">
                 <ToolButton icon={<Calendar size={20}/>} label="Ver Agenda" onClick={() => navigate(`agenda`)} color="blue"/>
                 <ToolButton icon={<Lock size={20}/>} label="Bloquear" onClick={() => setIsBlockModalOpen(true)} color="orange"/>
                 <ToolButton icon={<PlusCircle size={20}/>} label="Novo Agend." onClick={() => navigate('/appointments/new')} color="pink"/>
@@ -244,7 +253,7 @@ export default function ProfessionalOverviewPage() {
           <div className="px-10 py-8 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center bg-gray-50/30 dark:bg-gray-900">
               <div>
                 <h3 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic flex items-center gap-3"><Activity size={22} className="text-pink-600"/> Cronograma de Hoje</h3>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Sincronizado com a recepção em tempo real</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Sincronizado em tempo real</p>
               </div>
               <span className="text-[10px] font-black text-pink-600 uppercase tracking-widest bg-pink-50 dark:bg-pink-900/20 px-5 py-2 rounded-full border border-pink-100 dark:border-pink-900/30">{formatFriendlyDate(getTodayDateStr())}</span>
           </div>
@@ -268,13 +277,13 @@ export default function ProfessionalOverviewPage() {
                               {getPatientName(appt)}
                           </h4>
                           <div className="flex items-center gap-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2">
-                              {appt.status === 'blocked' ? <span className="flex items-center gap-1.5 text-orange-600"><Lock size={14}/> Período Indisponível</span> : <span className="bg-gray-50 dark:bg-gray-900 px-3 py-1 rounded-lg border border-gray-100 dark:border-gray-700 italic">{appt.treatment?.name || 'Consulta Padrão'}</span>}
+                              {appt.status === 'blocked' ? <span className="flex items-center gap-1.5 text-orange-600"><Lock size={14}/> Período Indisponível</span> : <span className="bg-gray-50 dark:bg-gray-900 px-3 py-1 rounded-lg border border-gray-100 dark:border-gray-700 italic">{appt.service?.name || 'Consulta Padrão'}</span>}
                               {appt.notes && <span className="flex items-center gap-1.5 opacity-60"><FileText size={12}/> Com observação</span>}
                           </div>
                       </div>
                       
                       <div className="flex items-center gap-3">
-                         {appt.status !== 'completed' && appt.status !== 'cancelled' && (
+                         {appt.status !== 'completed' && appt.status !== 'canceled' && (
                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
                                 {appt.status !== 'blocked' && (
                                     <Button size="sm" variant="ghost" onClick={(e) => handleEdit(e, appt.id)} className="h-11 w-11 p-0 rounded-2xl text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"><Pencil size={18}/></Button>
@@ -319,7 +328,6 @@ function BlockScheduleModal({ professionalId, onClose, onSuccess }: any) {
         const offset = getLocalOffset();
         const { error } = await supabase.from('appointments').insert({ 
             professional_id: professionalId, 
-            date: f.date, 
             start_time: `${f.date}T${f.start}:00${offset}`, 
             end_time: `${f.date}T${f.end}:00${offset}`, 
             status: 'blocked', 

@@ -7,11 +7,12 @@ import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-hot-toast';
-import { Loader2, ArrowLeft, Sparkles, Clock, DollarSign, FileText } from 'lucide-react';
+import { Loader2, ArrowLeft, Sparkles, Clock, DollarSign, FileText, Tag } from 'lucide-react';
 
 // --- SCHEMA DE VALIDAÇÃO ---
 const treatmentSchema = z.object({
   name: z.string().min(3, "O nome deve ter pelo menos 3 letras"),
+  category: z.string().min(1, "A categoria é obrigatória"), // ✅ Campo Novo Obrigatório
   description: z.string().optional(),
   price: z.coerce.number().min(0, "O preço não pode ser negativo"),
   duration_minutes: z.coerce.number().min(5, "A duração mínima é 5 minutos"),
@@ -27,29 +28,43 @@ export function TreatmentFormPage() {
     resolver: zodResolver(treatmentSchema),
     defaultValues: {
       price: 0,
-      duration_minutes: 30
+      duration_minutes: 30,
+      category: "Facial" // Valor padrão
     }
   });
 
   const onSubmit = async (data: TreatmentFormData) => {
     setIsSubmitting(true);
     try {
-      // Converte minutos para formato interval do Postgres (ex: "45 minutes")
-      const durationInterval = `${data.duration_minutes} minutes`;
+      // 1. Pega o usuário logado e sua clínica
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
 
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('clinicId')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile?.clinicId) throw new Error("Clínica não identificada");
+
+      // 2. Salva na tabela correta ('services') com os tipos certos
       const { error } = await supabase
-        .from('treatments')
+        .from('services') // ✅ Tabela correta
         .insert({
+          clinicId: profile.clinicId, // ✅ Obrigatório
           name: data.name,
+          category: data.category,    // ✅ Obrigatório
           description: data.description,
           price: data.price,
-          duration: durationInterval,
+          duration: data.duration_minutes, // ✅ Envia número (Int), não string
+          isActive: true
         });
 
       if (error) throw error;
 
       toast.success('Procedimento catalogado com sucesso!');
-      navigate('/treatments');
+      navigate('/services'); // ✅ Redireciona para a rota certa
 
     } catch (error: any) {
       console.error('Erro ao salvar serviço:', error);
@@ -65,7 +80,7 @@ export function TreatmentFormPage() {
       <div className="flex items-center gap-4 mb-8">
         <Button 
           variant="ghost" 
-          onClick={() => navigate('/treatments')}
+          onClick={() => navigate('/services')}
           className="h-12 w-12 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 p-0 hover:bg-gray-50"
         >
           <ArrowLeft size={22} className="text-gray-600 dark:text-gray-300" />
@@ -82,23 +97,43 @@ export function TreatmentFormPage() {
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-600 to-purple-600"></div>
         
-        {/* Nome do Procedimento */}
-        <div className="space-y-2">
-          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-            <Sparkles size={14} className="text-pink-500" /> Nome do Procedimento
-          </label>
-          <Input 
-            {...register('name')} 
-            className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold"
-            placeholder="Ex: Botox Full Face ou Limpeza Profunda" 
-          />
-          {errors.name && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.name.message}</p>}
+        {/* Linha 1: Nome e Categoria */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <Sparkles size={14} className="text-pink-500" /> Nome do Procedimento
+                </label>
+                <Input 
+                    {...register('name')} 
+                    className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold"
+                    placeholder="Ex: Botox Full Face" 
+                />
+                {errors.name && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.name.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <Tag size={14} className="text-purple-500" /> Categoria
+                </label>
+                <select 
+                    {...register('category')}
+                    className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold outline-none text-sm"
+                >
+                    <option value="Facial">Facial</option>
+                    <option value="Corporal">Corporal</option>
+                    <option value="Capilar">Capilar</option>
+                    <option value="Injetáveis">Injetáveis</option>
+                    <option value="Laser">Laser & Tecnologias</option>
+                    <option value="Outros">Outros</option>
+                </select>
+                {errors.category && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.category.message}</p>}
+            </div>
         </div>
 
         {/* Descrição */}
         <div className="space-y-2">
           <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-            <FileText size={14} /> Detalhamento do Serviço (Opcional)
+            <FileText size={14} /> Detalhamento do Serviço
           </label>
           <textarea 
             {...register('description')}

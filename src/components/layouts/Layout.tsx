@@ -12,10 +12,11 @@ import {
   Wallet,
   Menu,
   X,
-  Package 
+  Package,
+  Sparkles // ✅ Ícone adicionado
 } from "lucide-react";
 
-// ✅ IMPORTAÇÕES DOS CONTEXTOS
+// IMPORTAÇÕES DOS CONTEXTOS
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 
@@ -26,14 +27,18 @@ export function Layout() {
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // ✅ MENU EXATAMENTE COMO VOCÊ QUER
+  // ✅ MENU ATUALIZADO COM "SERVIÇOS"
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/" },
     { icon: Calendar, label: "Agenda", path: "/appointments" },
     { icon: Users, label: "Pacientes", path: "/patients" },
     { icon: Stethoscope, label: "Profissionais", path: "/professionals" },
-    { icon: Package, label: "Estoque", path: "/inventory" }, // ✅ Estoque mantido
-    { icon: Wallet, label: "Financeiro", path: "/payments" }, // ✅ Financeiro (Rota /payments)
+    
+    // 👇 ADICIONADO AQUI
+    { icon: Sparkles, label: "Serviços", path: "/services" }, 
+    
+    { icon: Package, label: "Estoque", path: "/inventory" },
+    { icon: Wallet, label: "Financeiro", path: "/payments" },
     { icon: Settings, label: "Ajustes", path: "/settings" },
   ];
 
@@ -128,7 +133,7 @@ export function Layout() {
       <div className="lg:hidden fixed top-0 w-full bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 p-4 flex justify-between items-center z-[60]">
         <div className="flex items-center gap-2">
            <div className="w-8 h-8 bg-pink-600 rounded-lg flex items-center justify-center text-white">
-              <Stethoscope size={16}/>
+             <Stethoscope size={16}/>
            </div>
            <span className="font-black tracking-tighter dark:text-white uppercase italic text-sm">VF Clinic</span>
         </div>
@@ -151,15 +156,15 @@ export function Layout() {
       {isMobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 bg-white dark:bg-gray-900 z-50 pt-24 p-6 space-y-2 animate-in slide-in-from-top-10 duration-200">
            {menuItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-4 p-4 rounded-2xl font-black uppercase text-xs tracking-widest text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border border-transparent hover:border-gray-100"
-              >
-                <item.icon size={20} className="text-pink-500" />
-                {item.label}
-              </Link>
+             <Link
+               key={item.path}
+               to={item.path}
+               onClick={() => setIsMobileMenuOpen(false)}
+               className="flex items-center gap-4 p-4 rounded-2xl font-black uppercase text-xs tracking-widest text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border border-transparent hover:border-gray-100"
+             >
+               <item.icon size={20} className="text-pink-500" />
+               {item.label}
+             </Link>
            ))}
            <button 
              onClick={handleLogout} 

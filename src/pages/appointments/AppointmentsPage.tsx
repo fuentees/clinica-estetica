@@ -4,8 +4,6 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-// Se tiver um arquivo CSS customizado para o calendário, importe aqui
-// import './calendar-custom.css'; 
 
 import { supabase } from '../../lib/supabase';
 import { Link, useNavigate } from 'react-router-dom';
@@ -43,97 +41,128 @@ export function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>(Views.WEEK);
   
+  // --- CARREGAMENTO DA AGENDA ---
   useEffect(() => {
+    let isMounted = true;
+
+    // Timeout de segurança para não travar a tela
+    const timeout = setTimeout(() => {
+        if (isMounted && loading) {
+            setLoading(false);
+            toast.error("Demora na resposta do servidor.");
+        }
+    }, 10000);
+
+    async function fetchAppointments() {
+      try {
+        setLoading(true);
+        
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // 1. Pega ClinicId
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('clinicId')
+            .eq('id', user.id)
+            .single();
+            
+        if (!profile?.clinicId) {
+            toast.error("Clínica não encontrada.");
+            return;
+        }
+
+        // 2. Busca Agendamentos
+        // Ajuste: 'profiles' em vez de 'professionals' e 'first_name' em vez de 'name'
+        const { data: appointments, error } = await supabase
+          .from('appointments')
+          .select(`
+            id, start_time, end_time, status, notes,
+            patient:patients ( name ),
+            professional:profiles ( first_name, last_name )
+          `) 
+          .eq('clinicId', profile.clinicId);
+
+        if (error) throw error;
+        if (!appointments) return;
+
+        // 3. Formata para o Calendário
+        const formattedEvents: CalendarEvent[] = appointments.map((appt: any) => {
+          // Tratamento seguro para relacionamentos
+          const patientName = appt.patient?.name || 'Paciente';
+          
+          const profName = appt.professional 
+            ? `${appt.professional.first_name} ${appt.professional.last_name || ''}`.trim()
+            : '?';
+
+          return {
+            id: appt.id,
+            title: `${patientName} (${profName})`,
+            start: new Date(appt.start_time), 
+            end: new Date(appt.end_time),
+            resource: { 
+              status: appt.status,
+              professionalName: profName,
+              notes: appt.notes
+            }
+          };
+        });
+
+        if (isMounted) setEvents(formattedEvents);
+
+      } catch (error: any) {
+        console.error('Erro:', error);
+        toast.error('Erro ao carregar agenda.');
+      } finally {
+        if (isMounted) setLoading(false);
+        clearTimeout(timeout);
+      }
+    }
+
     fetchAppointments();
+
+    return () => { isMounted = false; clearTimeout(timeout); };
   }, []);
 
-  async function fetchAppointments() {
-    try {
-      setLoading(true);
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // 1. Pega ClinicId (Isolamento SaaS)
-      const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
-      if (!profile?.clinicId) return;
-
-      // 2. Busca Agendamentos
-      const { data: appointments, error } = await supabase
-        .from('appointments')
-        .select(`
-            id, start_time, end_time, status, notes,
-            patients ( name ),
-            professionals ( name )
-        `) // Ajustei os nomes das colunas para bater com o SQL que te passei (start_time, etc)
-        .eq('clinicId', profile.clinicId); // Se sua tabela appointments não tem clinicId, remova essa linha temporariamente
-
-      if (error) throw error;
-      if (!appointments) return;
-
-      // 3. Formata
-      const formattedEvents: CalendarEvent[] = appointments.map((appt: any) => {
-        // Tratamento de array/objeto dependendo do retorno do Supabase
-        const patientName = Array.isArray(appt.patients) ? appt.patients[0]?.name : appt.patients?.name;
-        const profName = Array.isArray(appt.professionals) ? appt.professionals[0]?.name : appt.professionals?.name;
-
-        return {
-            id: appt.id,
-            title: `${patientName || 'Paciente'} (${profName || '?'})`,
-            start: new Date(appt.start_time), // Ajustado para start_time
-            end: new Date(appt.end_time),     // Ajustado para end_time
-            resource: { 
-                status: appt.status,
-                professionalName: profName,
-                notes: appt.notes
-            }
-        };
-      });
-
-      setEvents(formattedEvents);
-
-    } catch (error: any) {
-      console.error('Erro:', error);
-      toast.error('Erro ao carregar agenda.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const eventStyleGetter = (event: CalendarEvent) => {
-    let backgroundColor = '#3b82f6'; 
+    let backgroundColor = '#3b82f6'; // Azul padrão
     const status = event.resource?.status;
     
-    if (status === 'confirmed') backgroundColor = '#10b981'; // Emerald-500
-    if (status === 'completed') backgroundColor = '#3b82f6'; // Blue-500
-    if (status === 'canceled') backgroundColor = '#ef4444'; // Red-500
-    if (status === 'no_show') backgroundColor = '#6b7280';  // Gray-500
+    // Cores baseadas no status
+    if (status === 'confirmed') backgroundColor = '#10b981'; // Verde
+    if (status === 'completed') backgroundColor = '#8b5cf6'; // Roxo
+    if (status === 'canceled') backgroundColor = '#ef4444';  // Vermelho
+    if (status === 'no_show') backgroundColor = '#6b7280';   // Cinza
+    if (status === 'scheduled') backgroundColor = '#3b82f6'; // Azul
 
     return {
       style: {
         backgroundColor,
-        borderRadius: '8px',
+        borderRadius: '6px',
         border: 'none',
         color: 'white',
-        fontSize: '0.75rem',
+        fontSize: '0.75rem', // text-xs
         fontWeight: '600',
-        padding: '4px 8px',
+        padding: '2px 6px',
         boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
       }
     };
   };
 
   const handleSelectSlot = (slotInfo: { start: Date; end: Date }) => {
+    // Redireciona para criação com a data pré-selecionada
     navigate(`/appointments/new?date=${slotInfo.start.toISOString()}`);
   };
 
   const handleSelectEvent = (event: CalendarEvent) => {
+    // Redireciona para edição
     navigate(`/appointments/${event.id}/edit`);
   };
 
   if (loading) return (
-    <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+    <div className="flex flex-col h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 gap-4">
         <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest animate-pulse">Carregando Agenda...</p>
     </div>
   );
 
@@ -182,7 +211,7 @@ export function AppointmentsPage() {
             noEventsInRange: "Sem agendamentos."
           }}
           defaultView={Views.WEEK}
-          views={['month', 'week', 'day']}
+          views={['month', 'week', 'day', 'agenda']}
           view={view}
           onView={setView}
           selectable

@@ -11,14 +11,32 @@ export function PatientGalleryPage() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [clinicId, setClinicId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    async function loadPhotos() {
+    async function loadData() {
         try {
-            const { data } = await supabase.from("patients").select("procedimentos_detalhes_json").eq("id", id).single();
-            if(data?.procedimentos_detalhes_json?.galeria_fotos) {
-                setPhotos(data.procedimentos_detalhes_json.galeria_fotos);
+            setLoading(true);
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // 1. Identificar Clínica
+            const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+            if (profile) setClinicId(profile.clinicId);
+
+            // 2. Carregar Fotos do Tratamento Ativo
+            // Ajuste: patientId (camelCase)
+            const { data } = await supabase
+                .from("patient_treatments")
+                .select("photos")
+                .eq("patientId", id)
+                .eq("status", "active")
+                .limit(1)
+                .single();
+
+            if (data?.photos) {
+                setPhotos(data.photos);
             }
         } catch (error) { 
             console.error("Erro ao carregar galeria:", error); 
@@ -26,14 +44,18 @@ export function PatientGalleryPage() {
             setLoading(false); 
         }
     }
-    loadPhotos();
+    loadData();
   }, [id]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-     if (!e.target.files?.length) return;
+     if (!e.target.files?.length || !clinicId) {
+         if(!clinicId) toast.error("Erro de identificação da clínica.");
+         return;
+     }
+     
      setUploading(true);
      const file = e.target.files[0];
-     const fileName = `${id}/${Date.now()}`; 
+     const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substring(7)}`; 
      
      try {
          // 1. Upload para o Storage
@@ -45,19 +67,38 @@ export function PatientGalleryPage() {
          const publicUrl = data.publicUrl;
          const newPhotos = [...photos, publicUrl];
          
-         // 3. Atualizar o JSON de evolução no banco
-         const { data: curr } = await supabase.from("patients").select("procedimentos_detalhes_json").eq("id", id).single();
-         const json = curr?.procedimentos_detalhes_json || {};
-         
-         await supabase.from("patients").update({ 
-             procedimentos_detalhes_json: { ...json, galeria_fotos: newPhotos } 
-         }).eq("id", id);
+         // 3. Atualizar ou Criar Registro de Tratamento
+         // Primeiro, verifica se já existe um tratamento ativo
+         const { data: existing } = await supabase
+            .from("patient_treatments")
+            .select("id")
+            .eq("patientId", id)
+            .eq("status", "active")
+            .single();
+
+         if (existing) {
+             // Atualiza existente
+             await supabase
+                .from("patient_treatments")
+                .update({ photos: newPhotos })
+                .eq("id", existing.id);
+         } else {
+             // Cria novo tratamento (Galeria Inicial)
+             await supabase.from("patient_treatments").insert({
+                 clinicId: clinicId,
+                 patientId: id,
+                 status: "active",
+                 notes: "Galeria de Fotos",
+                 photos: newPhotos,
+                 startDate: new Date().toISOString()
+             });
+         }
          
          setPhotos(newPhotos);
          toast.success("Imagem anexada à timeline!");
-     } catch (err) { 
+     } catch (err: any) { 
          console.error(err);
-         toast.error("Falha no upload. O bucket 'patient-photos' deve ser público."); 
+         toast.error("Falha no upload: " + err.message); 
      } finally { 
          setUploading(false);
          if (fileInputRef.current) fileInputRef.current.value = "";
@@ -70,15 +111,22 @@ export function PatientGalleryPage() {
       const newPhotos = photos.filter(p => p !== url);
       
       try {
-          const { data: curr } = await supabase.from("patients").select("procedimentos_detalhes_json").eq("id", id).single();
-          const json = curr?.procedimentos_detalhes_json || {};
-          
-          await supabase.from("patients").update({ 
-              procedimentos_detalhes_json: { ...json, galeria_fotos: newPhotos } 
-          }).eq("id", id);
-          
-          setPhotos(newPhotos);
-          toast.success("Foto removida.");
+          const { data: existing } = await supabase
+            .from("patient_treatments")
+            .select("id")
+            .eq("patientId", id)
+            .eq("status", "active")
+            .single();
+
+          if (existing) {
+              await supabase
+                .from("patient_treatments")
+                .update({ photos: newPhotos })
+                .eq("id", existing.id);
+              
+              setPhotos(newPhotos);
+              toast.success("Foto removida.");
+          }
       } catch (error) {
           toast.error("Erro ao sincronizar exclusão.");
       }
@@ -162,7 +210,7 @@ export function PatientGalleryPage() {
                             </div>
                         </div>
                         
-                        {/* Tag de Data (Simulada) */}
+                        {/* Tag de Data (Simulada para Demo) */}
                         <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
                             <span className="text-[9px] font-bold text-white uppercase">Sessão {photos.length - i}</span>
                         </div>

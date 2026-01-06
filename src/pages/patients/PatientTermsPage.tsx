@@ -85,9 +85,10 @@ export function PatientTermsPage() {
     async function load() {
       try {
         setLoading(true);
+        // Busca paciente e tenta trazer o perfil associado
         const { data, error } = await supabase
           .from("patients")
-          .select("*, profiles:profile_id(*)")
+          .select("*, profiles!profile_id(*)")
           .eq("id", id)
           .single();
         
@@ -106,8 +107,8 @@ export function PatientTermsPage() {
           }
         }
       } catch (e) { 
-        console.error("Erro:", e);
-        toast.error("Erro ao carregar dados.");
+        console.error("Erro ao carregar dados dos termos:", e);
+        toast.error("Erro ao carregar dados do paciente.");
       } finally { 
         setLoading(false); 
       }
@@ -116,19 +117,20 @@ export function PatientTermsPage() {
   }, [id, setValue]);
 
   const handlePrint = () => {
-    if (!fullData) return toast.error("Carregando...");
+    if (!fullData) return toast.error("Aguarde o carregamento dos dados...");
     const pdfData = { ...fullData, ...watch() };
     generateAnamnesisPdf(fullData, pdfData, signatureData || savedSignature);
-    toast.success("PDF Gerado!");
+    toast.success("PDF gerado com sucesso!");
   }
 
   const onSubmit = async (data: any) => {
     if (!signatureData && !savedSignature) {
-      return toast.error("Assinatura obrigatória.");
+      return toast.error("A assinatura biométrica é obrigatória.");
     }
 
     setSaving(true);
     try {
+      // 1. Atualiza os campos booleanos de consentimento
       const { error: updateError } = await supabase.from("patients").update({
         termo_aceito: data.termo_aceito,
         autoriza_foto: data.autoriza_foto,
@@ -138,7 +140,8 @@ export function PatientTermsPage() {
 
       if (updateError) throw updateError;
       
-      if (signatureData) {
+      // 2. Se houve nova assinatura, atualiza o JSON de detalhes
+      if (signatureData && signatureData !== savedSignature) {
         const { data: curr } = await supabase.from("patients").select("procedimentos_detalhes_json").eq("id", id).single();
         const json = curr?.procedimentos_detalhes_json || {};
         
@@ -149,19 +152,20 @@ export function PatientTermsPage() {
         setSavedSignature(signatureData);
       }
 
-      toast.success("Documentação confirmada!");
+      toast.success("Documentação jurídica confirmada!");
       navigate(`/patients/${id}`);
     } catch (e: any) { 
-      toast.error("Erro: " + e.message); 
+      console.error(e);
+      toast.error("Erro ao salvar termos: " + e.message); 
     } finally { 
       setSaving(false); 
     }
   }
 
   if (loading) return (
-    <div className="h-screen flex flex-col items-center justify-center gap-4">
+    <div className="h-screen flex flex-col items-center justify-center gap-4 bg-gray-50 dark:bg-gray-950">
       <Loader2 className="animate-spin text-pink-600" size={40} />
-      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando...</p>
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando documentação...</p>
     </div>
   );
 
@@ -171,7 +175,7 @@ export function PatientTermsPage() {
       {/* HEADER */}
       <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-6">
         <div className="flex items-center gap-6">
-          <Button variant="ghost" onClick={() => navigate(-1)} className="h-12 w-12 rounded-2xl bg-gray-50 dark:bg-gray-900 p-0">
+          <Button variant="ghost" onClick={() => navigate(-1)} className="h-12 w-12 rounded-2xl bg-gray-50 dark:bg-gray-900 p-0 hover:bg-gray-100">
             <ArrowLeft size={20} />
           </Button>
           <div className="flex items-center gap-4">
@@ -184,12 +188,12 @@ export function PatientTermsPage() {
             </div>
           </div>
         </div>
-        <Button type="button" onClick={handlePrint} variant="outline" className="h-12 px-6 rounded-xl border-gray-200 font-black uppercase text-[10px] tracking-widest">
+        <Button type="button" onClick={handlePrint} variant="outline" className="h-12 px-6 rounded-xl border-gray-200 font-black uppercase text-[10px] tracking-widest hover:bg-pink-50 transition-colors">
           <Printer size={18} className="mr-2 text-pink-500" /> Exportar PDF
         </Button>
       </div>
 
-      {/* TERMO DE TEXTO */}
+      {/* TEXTO DO TERMO */}
       <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-700 shadow-sm relative overflow-hidden">
         <div className="absolute -top-6 -right-6 text-gray-50 dark:text-gray-900/40 opacity-50">
           <ShieldCheck size={180} />
@@ -212,13 +216,13 @@ export function PatientTermsPage() {
             <CheckSquare size={20}/> Validação do Paciente
           </h3>
           <div className="grid gap-4">
-            <Components.CheckboxItem name="termo_aceito" label="Li e aceito os termos de responsabilidade." register={register} />
-            <Components.CheckboxItem name="autoriza_foto" label="Autorizo fotos para fins de prontuário técnico." register={register} />
-            <Components.CheckboxItem name="autoriza_midia" label="Autorizo uso de imagem em redes sociais." register={register} />
+            <Components.CheckboxItem name="termo_aceito" label="Li e aceito os termos de responsabilidade e ciência." register={register} />
+            <Components.CheckboxItem name="autoriza_foto" label="Autorizo fotos para fins de prontuário e acompanhamento técnico." register={register} />
+            <Components.CheckboxItem name="autoriza_midia" label="Autorizo o uso de imagem em redes sociais e materiais de divulgação." register={register} />
           </div>
         </div>
 
-        {/* ASSINATURA */}
+        {/* PAD DE ASSINATURA */}
         <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] border border-gray-100 dark:border-gray-700 shadow-sm">
           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-8 ml-1 flex items-center gap-2">
             <UserIcon size={14} className="text-pink-500" /> Assinatura Digital
@@ -230,17 +234,17 @@ export function PatientTermsPage() {
           />
         </div>
 
-        {/* SALVAR */}
+        {/* BOTÃO DE AÇÃO */}
         <div className="flex justify-end">
           <Button 
             type="submit" 
             disabled={saving || !termoAceito} 
             className={`h-16 px-14 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl transition-all flex items-center gap-3 ${
-              termoAceito ? 'bg-gray-900 text-white hover:scale-[1.02]' : 'bg-gray-200 text-gray-400'
+              termoAceito ? 'bg-gray-900 text-white hover:scale-[1.02] active:scale-95' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}
           >
             {saving ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} className="text-pink-500" />}
-            {saving ? "Salvando..." : "Confirmar Assinatura"}
+            {saving ? "Processando..." : "Confirmar Assinatura"}
           </Button>
         </div>
       </form>

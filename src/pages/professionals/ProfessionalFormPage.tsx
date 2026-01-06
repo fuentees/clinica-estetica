@@ -42,18 +42,14 @@ const isValidUUID = (uuid: string | undefined) => {
     return regex.test(uuid);
 };
 
-// --- SCHEMA CORRIGIDO (ACEITA NULL) ---
 // Helper para aceitar string, null ou undefined e virar string vazia
 const nullableString = z.union([z.string(), z.null(), z.undefined()]).transform(val => val || "");
 
 const professionalSchema = z.object({
   first_name: z.string().min(2, "Nome obrigatório"),
   last_name: z.string().min(2, "Sobrenome obrigatório"),
-  
-  // Email aceita vazio OU email válido
   email: z.string().trim().email("E-mail inválido").optional().or(z.literal('')),
   
-  // Campos que podem vir null do banco:
   phone: nullableString,
   role: nullableString,
   formacao: nullableString,
@@ -107,7 +103,7 @@ export function ProfessionalFormPage() {
   const watchFirstName = watch("first_name");
   const watchFormacao = watch("formacao");
   
-  // Lógica: Se for Profissional (inclui esteticista, médico, etc) mostra campos técnicos
+  // Só mostra campos clínicos se for Profissional
   const isMedicalStaff = watchRole === "profissional"; 
   const councilLabel = watchFormacao ? (COUNCIL_MAP[watchFormacao] || "Registro") : "Especialidade";
   const initials = (watchFirstName?.[0] || 'U').toUpperCase();
@@ -132,7 +128,6 @@ export function ProfessionalFormPage() {
               const cleanStart = data.start_time?.slice(0, 5) || '09:00';
               const cleanEnd = data.end_time?.slice(0, 5) || '18:00';
               
-              // Importante: Tratamos nulls aqui também para garantir
               reset({ 
                   ...data, 
                   first_name: data.first_name || "",
@@ -224,12 +219,23 @@ export function ProfessionalFormPage() {
     }
   };
 
-  // --- SUBMIT ---
+  // --- SUBMIT COM AUTOMATIZAÇÃO DE CLÍNICA ---
   const onSubmit = async (data: ProfessionalFormData) => {
     try {
+        // 1. Descobrir a ClinicID do Admin Logado
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Usuário não autenticado");
+
+        const { data: adminProfile } = await supabase
+            .from("profiles")
+            .select("clinicId")
+            .eq("id", user.id)
+            .single();
+
+        if (!adminProfile?.clinicId) throw new Error("Erro: Sua conta não está vinculada a nenhuma clínica.");
+
         const cleanData = { ...data };
         
-        // Se não for profissional técnico, limpamos os dados médicos
         if (!isMedicalStaff) {
             cleanData.formacao = "";
             cleanData.registration_number = "";
@@ -240,6 +246,7 @@ export function ProfessionalFormPage() {
 
         const payload = {
             ...cleanData,
+            clinicId: adminProfile.clinicId, 
             working_days: cleanData.working_days || [], 
             updated_at: new Date().toISOString(),
             full_name: `${cleanData.first_name} ${cleanData.last_name}`.trim(),
@@ -248,7 +255,7 @@ export function ProfessionalFormPage() {
         if (isNew) {
             const { error } = await supabase.from("profiles").insert(payload);
             if (error) throw error;
-            toast.success("Profissional cadastrado!");
+            toast.success("Profissional cadastrado e vinculado!");
         } else {
             const { error } = await supabase.from("profiles").update(payload).eq("id", id);
             if (error) throw error;
@@ -363,7 +370,7 @@ export function ProfessionalFormPage() {
                                 <select {...register("role")} className={inputClassName}>
                                     <option value="profissional">👨‍⚕️ Profissional / Especialista</option>
                                     <option value="recepcionista">📅 Recepcionista / Front Desk</option>
-                                    <option value="admin">⚙️ Administrador do Sistema</option>
+                                    <option value="admin">⚙️ Administrador</option>
                                 </select>
                             </div>
 
@@ -463,7 +470,7 @@ export function ProfessionalFormPage() {
 
                             <div className="grid grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <label className={labelClassName}>Cor</label>
+                                    <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Cor</label>
                                     <div className="flex items-center gap-3">
                                         <div className="relative overflow-hidden w-12 h-12 rounded-2xl shadow-xl">
                                             <input type="color" {...register("agenda_color")} className="absolute -top-4 -left-4 w-24 h-24 cursor-pointer border-0 p-0" />
@@ -472,7 +479,7 @@ export function ProfessionalFormPage() {
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className={labelClassName}>Comissão (%)</label>
+                                    <label className="text-xs font-bold text-gray-500 uppercase mb-1.5 block">Comissão (%)</label>
                                     <div className="relative">
                                         <Percent size={14} className="absolute left-3 top-3.5 text-gray-400"/>
                                         <Input type="number" {...register("commission_rate")} className={`${inputClassName} pl-10 font-black italic text-purple-600`} />

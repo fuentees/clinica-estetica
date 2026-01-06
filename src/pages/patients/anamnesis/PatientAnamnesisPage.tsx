@@ -12,6 +12,7 @@ import {
 import { supabase } from "../../../lib/supabase"; 
 import { Button } from "../../../components/ui/button";
 import { AnamnesisAIService } from '../../../services/anamnesisAIService';
+import { useAuth } from "../../../contexts/AuthContext"; // Importando AuthContext
 
 // --- IMPORTAÇÕES DAS ABAS MODULARES ---
 import { anamnesisSchema, AnamnesisFormValues } from "./schema";
@@ -53,6 +54,7 @@ const PremiumTabButton = ({ active, onClick, icon: Icon, label }: any) => (
 
 export default function PatientAnamnesisPage() {
   const { id } = useParams();
+  const { profile } = useAuth(); // Pega o perfil logado para verificar clinicId
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("queixa");
@@ -74,9 +76,16 @@ export default function PatientAnamnesisPage() {
   // --- CARREGAR DADOS DO PACIENTE E ANAMNESE ---
   useEffect(() => {
     async function fetchAnamnesis() {
-      if (!id) return;
+      if (!id || !profile?.clinicId) return; // Garante que temos o ID da clínica
+
       try {
-        const { data, error } = await supabase.from("patients").select("*").eq("id", id).single();
+        const { data, error } = await supabase
+            .from("patients")
+            .select("*")
+            .eq("id", id)
+            .eq("clinicId", profile.clinicId) // Segurança: Só carrega se for da mesma clínica
+            .single();
+
         if (error) throw error;
         
         const formData = { ...data };
@@ -94,29 +103,36 @@ export default function PatientAnamnesisPage() {
         ];
 
         arrayFields.forEach(field => {
-          if (data[field]) formData[field] = strToArray(data[field]);
+          // Fallback seguro: se vier null, vira array vazio
+          formData[field] = strToArray(data[field] || ""); 
         });
 
         // Tratamento de tipos específicos e JSON
         formData.tem_telangiectasias = data.tem_telangiectasias ? "true" : "false";
         formData.body_mapping = data.anamnesis_body_mapping || [];
         
+        // Garantir que objetos JSON não sejam null
+        formData.corporal_adipometria_dados = data.corporal_adipometria_dados || {};
+        formData.corporal_perimetria_dados = data.corporal_perimetria_dados || {};
+
         // Resetar o formulário com os dados higienizados
         methods.reset(formData);
 
       } catch (e) { 
           console.error("Erro ao carregar anamnese:", e); 
-          toast.error("Não foi possível carregar os dados do paciente."); 
+          toast.error("Não foi possível carregar os dados. Verifique sua conexão."); 
       } finally { 
           setLoading(false); 
       }
     }
     fetchAnamnesis();
-  }, [id, methods]);
+  }, [id, methods, profile?.clinicId]);
 
   // --- PERSISTÊNCIA DOS DADOS ---
   const onSubmitAnamnesis = async (data: any) => {
+    if (!profile?.clinicId) return;
     setSaving(true);
+
     try {
       const payload = {
         ...data,
@@ -129,26 +145,42 @@ export default function PatientAnamnesisPage() {
         // Mapeamentos específicos
         tem_telangiectasias: data.tem_telangiectasias === "true",
         anamnesis_body_mapping: data.body_mapping || [],
-        updated_at: new Date().toISOString()
+        
+        // CORREÇÃO CRÍTICA: updated_at em snake_case
+        updated_at: new Date().toISOString() 
       };
 
       // Limpar campos auxiliares do formulário que não vão para o DB
       delete payload.body_mapping;
+      
+      // Segurança: Não permitir alterar o ID ou ClinicId via form
+      delete payload.id;
+      delete payload.clinicId;
 
-      const { error } = await supabase.from("patients").update(payload).eq("id", id);
+      const { error } = await supabase
+        .from("patients")
+        .update(payload)
+        .eq("id", id)
+        .eq("clinicId", profile.clinicId); // Segurança dupla
+
       if (error) throw error;
 
-      toast.success("Prontuário atualizado!");
+      toast.success("Prontuário atualizado com sucesso!");
       
-      // Acionar IA para análise de risco se houver mudança significativa
-      const ai = await AnamnesisAIService.analyzeAnamnesis(id!, payload);
-      if (ai) {
-        setAiAnalysis(ai);
-        if (ai.confidence_score < 70) setShowAiModal(true);
+      // Acionar IA (Try-Catch silencioso para não travar o fluxo se a IA falhar)
+      try {
+          const ai = await AnamnesisAIService.analyzeAnamnesis(id!, payload);
+          if (ai) {
+            setAiAnalysis(ai);
+            if (ai.confidence_score < 70) setShowAiModal(true);
+          }
+      } catch (aiError) {
+          console.warn("IA indisponível no momento:", aiError);
       }
 
     } catch (e: any) { 
-        toast.error("Falha ao salvar alterações."); 
+        console.error(e);
+        toast.error(`Falha ao salvar: ${e.message || "Erro desconhecido"}`); 
     } finally { 
         setSaving(false); 
     }
@@ -243,7 +275,7 @@ export default function PatientAnamnesisPage() {
                   </h2>
                   <p className="opacity-80 text-xs font-bold uppercase tracking-widest mt-2">Análise algorítmica de intercorrências e contraindicações</p>
                 </div>
-                <button onClick={() => setShowAiModal(false)} className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition-colors"><X/></button>
+                <button type="button" onClick={() => setShowAiModal(false)} className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition-colors"><X/></button>
             </div>
 
             <div className="p-10 overflow-y-auto bg-gray-50 dark:bg-gray-900 custom-scrollbar flex-1">
@@ -276,24 +308,24 @@ export default function PatientAnamnesisPage() {
 
                   <div className="space-y-6">
                     <div className="bg-gray-900 rounded-[2rem] p-8 text-center text-white">
-                       <p className="text-[10px] font-black uppercase opacity-50 tracking-widest mb-2">Score de Confiança</p>
-                       <div className="text-5xl font-black text-pink-500">{aiAnalysis.confidence_score}%</div>
-                       <div className="w-full bg-white/10 h-1.5 rounded-full mt-4 overflow-hidden">
+                        <p className="text-[10px] font-black uppercase opacity-50 tracking-widest mb-2">Score de Confiança</p>
+                        <div className="text-5xl font-black text-pink-500">{aiAnalysis.confidence_score}%</div>
+                        <div className="w-full bg-white/10 h-1.5 rounded-full mt-4 overflow-hidden">
                           <div className="bg-pink-500 h-full transition-all duration-1000" style={{ width: `${aiAnalysis.confidence_score}%` }}></div>
-                       </div>
+                        </div>
                     </div>
                     
                     <div className="p-6 bg-blue-50 dark:bg-blue-900/20 rounded-[2rem] border border-blue-100 dark:border-blue-800/30">
-                       <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold leading-relaxed">
-                         Este laudo é informativo e não substitui a decisão clínica do profissional responsável.
-                       </p>
+                        <p className="text-[10px] text-blue-600 dark:text-blue-400 font-bold leading-relaxed">
+                          Este laudo é informativo e não substitui a decisão clínica do profissional responsável.
+                        </p>
                     </div>
                   </div>
                 </div>
             </div>
 
             <div className="p-8 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setShowAiModal(false)} className="h-14 px-8 rounded-2xl font-bold">Revisar Prontuário</Button>
+                <Button variant="outline" type="button" onClick={() => setShowAiModal(false)} className="h-14 px-8 rounded-2xl font-bold">Revisar Prontuário</Button>
                 <Button className="bg-gray-900 text-white h-14 px-8 rounded-2xl font-black uppercase tracking-widest flex items-center gap-2" onClick={() => window.print()}>
                   <Printer size={18}/> Imprimir Auditoria
                 </Button>

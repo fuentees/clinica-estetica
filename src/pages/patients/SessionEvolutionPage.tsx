@@ -16,6 +16,7 @@ export function SessionEvolutionPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [patient, setPatient] = useState<any>(null);
     const [treatmentsList, setTreatmentsList] = useState<any[]>([]);
+    const [clinicId, setClinicId] = useState<string | null>(null);
     
     // Dados Gerais
     const [selectedTreatmentId, setSelectedTreatmentId] = useState('');
@@ -62,9 +63,18 @@ export function SessionEvolutionPage() {
     async function loadData() {
         try {
             setLoading(true);
+
+            // 1. Pega ClinicId do usuário logado
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+                if (profile) setClinicId(profile.clinicId);
+            }
+
+            // 2. Busca Paciente
             const { data: pat } = await supabase
                 .from('patients')
-                .select(`id, altura, peso, name, profiles:profile_id (first_name, last_name)`)
+                .select(`id, altura, peso, name`)
                 .eq('id', patientId)
                 .single();
             setPatient(pat);
@@ -77,10 +87,12 @@ export function SessionEvolutionPage() {
                 }));
             }
 
+            // 3. Busca lista de tratamentos cadastrados
             const { data: treats } = await supabase.from('treatments').select('*').order('name');
             setTreatmentsList(treats || []);
+
         } catch (error) {
-            toast.error("Erro ao carregar dados do paciente.");
+            toast.error("Erro ao carregar prontuário.");
         } finally {
             setLoading(false);
         }
@@ -100,20 +112,24 @@ export function SessionEvolutionPage() {
 
     const handleSaveEvolution = async () => {
         if (!selectedTreatmentId) return toast.error("Selecione o procedimento realizado.");
+        if (!clinicId) return toast.error("Sua sessão expirou. Recarregue a página.");
 
         setIsSubmitting(true);
         try {
             const treatmentName = treatmentsList.find(t => t.id === selectedTreatmentId)?.name;
 
-            // 1. Registro no Prontuário Geral
+            // 1. Registro no Prontuário Geral (Evolução)
             const { error: sessionError } = await supabase
                 .from('patient_treatments')
                 .insert({
-                    patient_id: patientId,
+                    clinicId: clinicId,
+                    patientId: patientId, // CamelCase conforme Prisma
                     treatment_id: selectedTreatmentId,
                     notes: `Sessão ${sessionNumber} - ${treatmentName}: ${notes}`,
                     photos: photos,
-                    signature_url: signatureDataURL || null
+                    signature_url: signatureDataURL || null,
+                    startDate: new Date().toISOString(),
+                    status: 'completed'
                 });
 
             if (sessionError) throw sessionError;
@@ -123,7 +139,7 @@ export function SessionEvolutionPage() {
                 const { error: bioError } = await supabase
                     .from('patient_bioimpedance')
                     .insert({
-                        patient_id: patientId,
+                        patientId: patientId, // CamelCase conforme Prisma
                         data: new Date().toISOString(),
                         peso: Number(bioData.peso),
                         altura: Number(bioData.altura),
@@ -140,7 +156,7 @@ export function SessionEvolutionPage() {
                         observacoes: notes
                     });
                 
-                // Sincroniza dados corporais no cadastro principal
+                // Atualiza o cadastro base do paciente com os novos valores
                 await supabase.from('patients').update({ 
                     peso: Number(bioData.peso), 
                     altura: Number(bioData.altura) 
@@ -152,8 +168,8 @@ export function SessionEvolutionPage() {
             toast.success("Evolução registrada com sucesso!");
             navigate(isBio ? `/patients/${patientId}/bioimpedance` : `/patients/${patientId}/history`);
             
-        } catch (error) {
-            toast.error("Falha ao salvar registro clínico.");
+        } catch (error: any) {
+            toast.error("Falha ao salvar registro: " + error.message);
             console.error(error);
         } finally {
             setIsSubmitting(false);
@@ -161,9 +177,9 @@ export function SessionEvolutionPage() {
     };
 
     if (loading) return (
-        <div className="h-screen flex flex-col items-center justify-center gap-4">
+        <div className="h-screen flex flex-col items-center justify-center gap-4 bg-white dark:bg-gray-950">
             <Loader2 className="animate-spin text-pink-600" size={40} />
-            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">Sincronizando Prontuário...</p>
+            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-widest">Compilando Dados Clínicos...</p>
         </div>
     );
 
@@ -172,7 +188,7 @@ export function SessionEvolutionPage() {
             {/* HEADER */}
             <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-6">
                 <div className="flex items-center gap-6">
-                    <Button variant="ghost" onClick={() => navigate(-1)} className="rounded-2xl h-12 w-12 p-0 bg-gray-50 hover:bg-gray-100">
+                    <Button variant="ghost" onClick={() => navigate(-1)} className="rounded-2xl h-12 w-12 p-0 bg-gray-50 dark:bg-gray-900">
                         <ArrowLeft size={24} />
                     </Button>
                     <div>
@@ -187,12 +203,12 @@ export function SessionEvolutionPage() {
                 <div className="lg:col-span-2 space-y-8">
                     <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
                         <h2 className="text-sm font-black text-gray-900 dark:text-white mb-8 flex items-center gap-3 uppercase tracking-[0.2em]">
-                            <Activity size={20} className="text-pink-600" /> Parâmetros Técnicos
+                            <Activity size={20} className="text-pink-600" /> Parâmetros de Aplicação
                         </h2>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Procedimento</label>
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Protocolo Aplicado</label>
                                 <select 
                                     className="w-full h-12 px-4 bg-gray-50 dark:bg-gray-900 border-0 rounded-xl font-bold focus:ring-2 focus:ring-pink-500 outline-none"
                                     value={selectedTreatmentId}
@@ -205,7 +221,7 @@ export function SessionEvolutionPage() {
                                 </select>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Sessão do Plano</label>
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Sequência da Sessão</label>
                                 <Input type="number" value={sessionNumber} onChange={e => setSessionNumber(Number(e.target.value))} className="h-12 font-bold" />
                             </div>
                         </div>
@@ -213,7 +229,7 @@ export function SessionEvolutionPage() {
                         {isBio && (
                             <div className="bg-blue-50/50 dark:bg-blue-900/10 p-8 rounded-[2rem] border-2 border-blue-100 dark:border-blue-900/30 mb-8 animate-in zoom-in-95">
                                 <h3 className="text-xs font-black text-blue-700 dark:text-blue-400 mb-6 flex items-center gap-2 uppercase tracking-widest">
-                                    <Scale size={18} /> Balança e Composição
+                                    <Scale size={18} /> Composição de Bioimpedância
                                 </h3>
                                 
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
@@ -249,8 +265,8 @@ export function SessionEvolutionPage() {
                                     <InputItem label="TMB (Kcal)" value={bioData.tmb} onChange={v => setBioData({...bioData, tmb: v})} />
                                     <InputItem label="Idade Metab." value={bioData.idade_metabolica} onChange={v => setBioData({...bioData, idade_metabolica: v})} />
                                     <div className="col-span-2 space-y-2">
-                                        <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Relatório Balança</label>
-                                        <ImageUpload label="Upload do Ticket" folder={`bioimpedancia/${patientId}`} onUpload={url => setBioData({...bioData, arquivo: url})} />
+                                        <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest">Ticket da Balança</label>
+                                        <ImageUpload label="Fazer Upload do Relatório" folder={`bioimpedancia/${patientId}`} onUpload={url => setBioData({...bioData, arquivo: url})} />
                                     </div>
                                 </div>
                             </div>
@@ -258,13 +274,13 @@ export function SessionEvolutionPage() {
 
                         <div className="space-y-2">
                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                                {isBio ? "Observações da Análise" : "Anotações Clínicas"}
+                                {isBio ? "Resumo da Análise Bioelétrica" : "Parecer Clínico da Sessão"}
                             </label>
                             <textarea 
                                 value={notes}
                                 onChange={e => setNotes(e.target.value)}
                                 className="w-full p-6 bg-gray-50 dark:bg-gray-900 border-0 rounded-[2rem] h-40 font-medium text-sm focus:ring-2 focus:ring-pink-500 outline-none resize-none shadow-inner"
-                                placeholder="Descreva os detalhes desta sessão..."
+                                placeholder="Dose, técnica utilizada, reações imediatas..."
                             />
                         </div>
                     </div>
@@ -272,7 +288,7 @@ export function SessionEvolutionPage() {
                     {!isBio && (
                         <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-sm">
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                                <FileText size={14} className="text-pink-600" /> Assinatura do Paciente
+                                <FileText size={14} className="text-pink-600" /> Confirmação do Paciente
                             </h3>
                             <div className="p-2 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-3xl">
                                 <SignaturePad onEnd={setSignatureDataURL} isLoading={isSubmitting} />
@@ -285,12 +301,12 @@ export function SessionEvolutionPage() {
                 <div className="lg:col-span-1">
                     <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 sticky top-24">
                         <h2 className="text-sm font-black text-gray-900 dark:text-white mb-8 flex items-center gap-3 uppercase tracking-widest">
-                            <Camera size={20} className="text-pink-600" /> Registro Visual
+                            <Camera size={20} className="text-pink-600" /> Registro Fotográfico
                         </h2>
                         <div className="space-y-8">
-                            <ImageUpload label="Antes (Frontal/Lateral)" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, before: url}))} />
+                            <ImageUpload label="Antes (Início Sessão)" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, before: url}))} />
                             <div className="h-px bg-gray-50 dark:bg-gray-700 w-full" />
-                            <ImageUpload label="Depois (Imediato)" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, after: url}))} />
+                            <ImageUpload label="Depois (Final Sessão)" folder={`prontuario/${patientId}`} onUpload={url => setPhotos(p => ({...p, after: url}))} />
                         </div>
                     </div>
                 </div>
@@ -303,7 +319,7 @@ export function SessionEvolutionPage() {
                     className="h-16 px-12 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase text-sm tracking-[0.2em] shadow-2xl transition-all hover:scale-[1.02] active:scale-95"
                 >
                     {isSubmitting ? <Loader2 className="animate-spin mr-3" /> : <Save size={20} className="mr-3 text-pink-500" />}
-                    {isBio ? "Finalizar Bioimpedância" : "Concluir Atendimento"}
+                    Finalizar Atendimento
                 </Button>
             </div>
         </div>

@@ -43,7 +43,11 @@ import { PrescriptionsPage } from "./pages/prescriptions/PrescriptionsPage";
 import { PrescriptionFormPage } from "./pages/prescriptions/PrescriptionFormPage";
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
+
+// ✅ CORREÇÃO: Importamos o Form de Estoque que faltava
 import { InventoryPage } from "./pages/inventory/InventoryPage";
+import { InventoryFormPage } from "./pages/inventory/InventoryFormPage"; 
+
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
 import { CashFlowPage } from "./pages/payments/CashFlowPage";
 
@@ -128,11 +132,14 @@ function App() {
                   </Route>
 
                   {/* Financeiro e Estoque */}
-                  {/* ✅ AS ROTAS ESTÃO CERTAS AQUI (SERVICES) */}
                   <Route path="services" element={<TreatmentsPage />} />
                   <Route path="services/new" element={<TreatmentFormPage />} />
                   
+                  {/* ✅ CORREÇÃO: Rotas de Estoque completas */}
                   <Route path="inventory" element={<InventoryPage />} />
+                  <Route path="inventory/new" element={<InventoryFormPage />} />
+                  <Route path="inventory/:id/edit" element={<InventoryFormPage />} />
+
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
                 </Route>

@@ -5,21 +5,21 @@ import { toast } from 'react-hot-toast';
 import { 
   Calendar, DollarSign, Clock, 
   Loader2, Activity, Sparkles, Pencil, Ban, FileText, 
-  Lock, X, PlusCircle, Play 
-} from 'lucide-react'; // Removido AlertCircle que não era usado
+  Lock, X, PlusCircle, Play, ShieldCheck, Mail, User, Edit 
+} from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
-import { format } from 'date-fns'; // ✅ ADICIONADO: Importação que estava faltando
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+// ✅ IMPORTAÇÃO DO MODAL DE ACESSO
+import { ProfessionalAccessModal } from '../../components/professionals/ProfessionalAccessModal';
 
 // --- FUNÇÕES DE DATA E HORA SEGURAS ---
 
 const getTodayDateStr = () => {
     const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return format(d, 'yyyy-MM-dd');
 };
 
 const formatFriendlyDate = (dateStr: string) => {
@@ -28,23 +28,23 @@ const formatFriendlyDate = (dateStr: string) => {
     
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    const tomorrow = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const tomorrow = format(d, 'yyyy-MM-dd');
 
     if (dateStr === today) return "Hoje";
     if (dateStr === tomorrow) return "Amanhã";
     
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
+    // Corrige problema de fuso horário ao criar data a partir de string YYYY-MM-DD
+    const dateParts = dateStr.split('-');
+    const dateObj = new Date(Number(dateParts[0]), Number(dateParts[1]) - 1, Number(dateParts[2]));
+    
+    return format(dateObj, 'dd/MM/yyyy');
 };
 
 const formatTime = (isoString: string) => {
     if (!isoString) return '';
-    let cleanIsoString = isoString.replace(' ', 'T'); 
-    const date = new Date(cleanIsoString);
-    if (isNaN(date.getTime())) {
-        return cleanIsoString.substring(11, 16) || '--:--';
-    }
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '--:--';
+    return format(date, 'HH:mm');
 };
 
 export default function ProfessionalOverviewPage() {
@@ -53,6 +53,10 @@ export default function ProfessionalOverviewPage() {
   const [loading, setLoading] = useState(true);
   
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
+  
+  // ✅ ESTADOS NOVOS PARA O ACESSO
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [professionalDetails, setProfessionalDetails] = useState<any>(null);
 
   const [stats, setStats] = useState({
     monthCount: 0,
@@ -70,10 +74,18 @@ export default function ProfessionalOverviewPage() {
     if (!id) return;
     
     try {
+      // 0. ✅ Busca dados do Profissional (Para o botão de acesso)
+      const { data: profData } = await supabase
+        .from('profiles') // Assumindo que a tabela é 'profiles'
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (profData) setProfessionalDetails(profData);
+
       const todayStr = getTodayDateStr(); 
       const now = new Date(); 
-      // Removido currentTime que não era lido
-      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const monthStart = format(new Date(now.getFullYear(), now.getMonth(), 1), 'yyyy-MM-dd');
 
       // 1. Total Mês
       const { count: monthCount } = await supabase.from('appointments')
@@ -108,7 +120,7 @@ export default function ProfessionalOverviewPage() {
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
           const d = new Date(); d.setDate(d.getDate() - i);
-          const dStr = d.toISOString().split('T')[0];
+          const dStr = format(d, 'yyyy-MM-dd');
           const { count } = await supabase.from('appointments')
             .select('*', { count: 'exact', head: true })
             .eq('professional_id', id)
@@ -158,12 +170,78 @@ export default function ProfessionalOverviewPage() {
       return appt.status === 'blocked' ? null : appt.patient?.id;
   }
 
-  if (loading) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
+  if (loading && !professionalDetails) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700 p-2 relative">
       
       {isBlockModalOpen && <BlockScheduleModal professionalId={id!} onClose={() => setIsBlockModalOpen(false)} onSuccess={() => { setIsBlockModalOpen(false); loadDashboard(); }} />}
+
+      {/* ✅ NOVO CABEÇALHO DO PROFISSIONAL */}
+      {professionalDetails && (
+        <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-8 shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
+              <div className="flex items-center gap-6">
+                <div className="w-20 h-20 rounded-[2rem] bg-gray-100 dark:bg-gray-700 overflow-hidden border-4 border-white dark:border-gray-800 shadow-xl flex items-center justify-center text-gray-400">
+                  {professionalDetails.avatar_url ? (
+                    <img src={professionalDetails.avatar_url} alt={professionalDetails.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={32} />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-3">
+                    <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase">
+                        {professionalDetails.name || professionalDetails.first_name}
+                    </h1>
+                    {/* Badge de Status */}
+                    {professionalDetails.user_id ? (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 text-[9px] font-black uppercase tracking-widest border border-blue-200">
+                            <ShieldCheck size={10}/> Acesso Ativo
+                        </span>
+                    ) : (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 text-[9px] font-black uppercase tracking-widest border border-gray-200">
+                            <Lock size={10}/> Sem Acesso
+                        </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-4 mt-2 text-xs text-gray-500 font-medium">
+                    <span className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900 px-2 py-1 rounded-md border border-gray-100 dark:border-gray-700 uppercase font-bold tracking-wider text-[10px]">
+                        {professionalDetails.role || "Especialista"}
+                    </span>
+                    {professionalDetails.email && <span className="flex items-center gap-1.5"><Mail size={12} className="text-blue-400"/> {professionalDetails.email}</span>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                {/* BOTÃO DE ACESSO */}
+                <Button 
+                  onClick={() => setIsAccessModalOpen(true)}
+                  className={`h-12 px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 ${
+                    professionalDetails.user_id 
+                    ? "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-blue-200 hover:text-blue-600" 
+                    : "bg-gray-900 text-white hover:bg-black"
+                  }`}
+                >
+                  {professionalDetails.user_id ? (
+                      <><Lock size={14} className="mr-2"/> Redefinir Senha</>
+                  ) : (
+                      <><ShieldCheck size={14} className="mr-2 text-blue-500"/> Liberar Acesso</>
+                  )}
+                </Button>
+                
+                <Button 
+                  className="h-12 w-12 p-0 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg"
+                  onClick={() => navigate(`../details`)} 
+                >
+                  <Edit size={18}/>
+                </Button>
+              </div>
+            </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
@@ -283,20 +361,39 @@ export default function ProfessionalOverviewPage() {
                       </div>
                       
                       <div className="flex items-center gap-3">
-                         {appt.status !== 'completed' && appt.status !== 'canceled' && (
+                          {appt.status !== 'completed' && appt.status !== 'canceled' && (
                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0">
                                 {appt.status !== 'blocked' && (
                                     <Button size="sm" variant="ghost" onClick={(e) => handleEdit(e, appt.id)} className="h-11 w-11 p-0 rounded-2xl text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"><Pencil size={18}/></Button>
                                 )}
                                 <Button size="sm" variant="ghost" onClick={(e) => handleCancel(e, appt.id)} className="h-11 w-11 p-0 rounded-2xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all"><Ban size={18}/></Button>
                             </div>
-                         )}
-                         <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl border-2 ${appt.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : appt.status === 'blocked' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-900/20 dark:border-amber-800'}`}>{appt.status === 'scheduled' ? 'Confirmado' : appt.status}</span>
+                          )}
+                          <span className={`text-[9px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl border-2 ${appt.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : appt.status === 'blocked' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-900/20 dark:border-amber-800'}`}>{appt.status === 'scheduled' ? 'Confirmado' : appt.status}</span>
                       </div>
                   </div>
               ))}
           </div>
       </div>
+
+      {/* ✅ MODAL DE ACESSO */}
+      {isAccessModalOpen && professionalDetails && (
+        <ProfessionalAccessModal 
+          professional={{
+             id: professionalDetails.id,
+             name: professionalDetails.name || professionalDetails.first_name,
+             email: professionalDetails.email,
+             cpf: professionalDetails.cpf,
+             phone: professionalDetails.phone,
+             role: professionalDetails.role
+          }} 
+          onClose={() => {
+            setIsAccessModalOpen(false);
+            loadDashboard(); // Recarrega para atualizar o badge
+          }} 
+        />
+      )}
+
     </div>
   );
 }

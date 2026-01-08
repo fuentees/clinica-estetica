@@ -61,6 +61,19 @@ export function ProfessionalAccessModal({ professional, onClose }: Props) {
     }
   };
 
+  const handleWhatsAppSend = () => {
+    const phone = professional.phone?.replace(/\D/g, '');
+    const link = window.location.origin + "/login"; 
+    
+    const message = `Olá *${professional.name}*! 👋\n\nSeu acesso ao sistema da clínica foi liberado.\n\n🔗 *Acesse:* ${link}\n📧 *Login:* ${formData.email}\n🔑 *Senha:* ${formData.password}\n\nBom trabalho!`;
+    
+    const url = phone 
+        ? `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`
+        : `https://wa.me/?text=${encodeURIComponent(message)}`; 
+    
+    window.open(url, '_blank');
+  };
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white dark:bg-gray-800 rounded-[2rem] p-8 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700 relative">
@@ -80,8 +93,9 @@ export function ProfessionalAccessModal({ professional, onClose }: Props) {
             <div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 border-4 border-white dark:border-gray-700 shadow-xl"><CheckCircle size={32} /></div>
             <div className="space-y-1">
                 <p className="font-bold text-gray-900 dark:text-white">Profissional Ativo!</p>
-                <p className="text-xs text-gray-500">Credenciais:</p>
+                <p className="text-xs text-gray-500">Envie as credenciais abaixo:</p>
             </div>
+            
             <div className="bg-gray-50 dark:bg-gray-900 p-5 rounded-xl text-left space-y-3 border border-dashed border-gray-200 dark:border-gray-700">
                 <div>
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Login</p>
@@ -93,7 +107,18 @@ export function ProfessionalAccessModal({ professional, onClose }: Props) {
                     <p className="font-mono font-bold text-lg text-gray-900 dark:text-white select-all">{formData.password}</p>
                 </div>
             </div>
-            <Button onClick={onClose} className="w-full bg-gray-900 text-white rounded-xl h-12 font-bold uppercase tracking-widest">Concluir</Button>
+
+            <div className="flex gap-3 pt-2">
+                <Button onClick={onClose} variant="outline" className="flex-1 rounded-xl h-12 font-bold uppercase tracking-widest">
+                    Fechar
+                </Button>
+                <Button 
+                    onClick={handleWhatsAppSend} 
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl h-12 font-bold uppercase tracking-widest shadow-lg shadow-green-200 dark:shadow-none"
+                >
+                    Enviar no Zap
+                </Button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleCreateAccess} className="space-y-5">
@@ -149,7 +174,7 @@ export function ProfessionalAccessModal({ professional, onClose }: Props) {
                 value={formData.password} 
                 onChange={e => setFormData({...formData, password: e.target.value})} 
                 className="h-12 font-bold rounded-xl" 
-                placeholder="Digite a senha..." // Se não tiver CPF, pede para digitar
+                placeholder="Digite a senha..." 
               />
             </div>
 

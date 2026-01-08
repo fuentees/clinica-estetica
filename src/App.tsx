@@ -7,7 +7,9 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext"; 
 
 // --- LAYOUTS GLOBAIS ---
+// Certifique-se que o MainLayout/Layout está exportado corretamente
 import { Layout } from "./components/layouts/Layout"; 
+import { PatientLayout } from "./components/layouts/PatientLayout"; 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 // --- PÁGINAS GERAIS ---
@@ -26,7 +28,7 @@ import { PatientsListPage } from "./pages/patients/PatientsListPage";
 import { PatientFormPage } from "./pages/patients/PatientFormPage"; 
 import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"; 
 
-// Páginas filhas do Prontuário
+// Páginas filhas do Prontuário do Paciente
 import PatientOverviewPage from "./pages/patients/PatientOverviewPage";
 import PatientAnamnesisPage from "./pages/patients/anamnesis/PatientAnamnesisPage";
 import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";
@@ -38,16 +40,15 @@ import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
 import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
 import { PatientPrescriptionsPage } from "./pages/patients/PatientPrescriptionsPage";
 
-// --- OUTROS MÓDULOS ---
+// --- PRESCRIÇÕES E TRATAMENTOS ---
 import { PrescriptionsPage } from "./pages/prescriptions/PrescriptionsPage";
 import { PrescriptionFormPage } from "./pages/prescriptions/PrescriptionFormPage";
 import { TreatmentsPage } from "./pages/treatments/TreatmentsPage";
 import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage"; 
 
-// ✅ CORREÇÃO: Importamos o Form de Estoque que faltava
+// --- ESTOQUE E FINANCEIRO ---
 import { InventoryPage } from "./pages/inventory/InventoryPage";
 import { InventoryFormPage } from "./pages/inventory/InventoryFormPage"; 
-
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
 import { CashFlowPage } from "./pages/payments/CashFlowPage";
 
@@ -61,8 +62,7 @@ import { ProfessionalAvailabilityPage } from "./pages/professionals/Professional
 import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
 import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
 
-// --- PORTAL DO PACIENTE ---
-import { PatientLayout } from "./components/layouts/PatientLayout"; 
+// --- PORTAL DO PACIENTE (HOME) ---
 import PatientHome from "./pages/patients/PatientHome";
 
 const queryClient = new QueryClient();
@@ -76,30 +76,30 @@ function App() {
             <Toaster position="top-right" toastOptions={{ className: "dark:bg-gray-800 dark:text-white" }} />
             
             <Routes>
-              {/* ROTA PÚBLICA */}
+              {/* === ROTA PÚBLICA === */}
               <Route path="/login" element={<LoginPage />} />
 
-              {/* ÁREA PROTEGIDA */}
+              {/* === ÁREA CLÍNICA (Admin, Profissional, Recepcionista) === */}
               <Route element={<ProtectedRoute allowedRoles={['admin', 'profissional', 'recepcionista']} />}>
                 
-                {/* O LAYOUT GLOBAL */}
+                {/* O Layout aqui contém a Sidebar Completa */}
                 <Route element={<Layout />}>
                   
-                  {/* Dashboard */}
+                  {/* Dashboard Geral */}
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
 
-                  {/* Agendamentos */}
+                  {/* Módulo de Agendamentos */}
                   <Route path="appointments" element={<AppointmentsPage />} />
                   <Route path="appointments/new" element={<AppointmentFormPage />} />
                   <Route path="appointments/:id/edit" element={<AppointmentEditPage />} />
                   
-                  {/* Pacientes */}
+                  {/* Módulo de Pacientes (Lista e Cadastro) */}
                   <Route path="patients" element={<PatientsListPage />} /> 
                   <Route path="patients/new" element={<PatientFormPage />} />
                   
-                  {/* Prontuário */}
+                  {/* PRONTUÁRIO ELETRÔNICO (Sub-rotas do Paciente) */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
                       <Route index element={<PatientOverviewPage />} />
                       <Route path="anamnesis" element={<PatientAnamnesisPage />} />
@@ -118,7 +118,7 @@ function App() {
                   <Route path="prescriptions" element={<PrescriptionsPage />} />
                   <Route path="prescriptions/new" element={<PrescriptionFormPage />} />
                   
-                  {/* Profissionais */}
+                  {/* Módulo de Profissionais */}
                   <Route path="professionals" element={<ProfessionalsListPage />} /> 
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                   
@@ -131,28 +131,30 @@ function App() {
                       <Route path="history" element={<ProfessionalHistoryPage />} />
                   </Route>
 
-                  {/* Financeiro e Estoque */}
+                  {/* Serviços e Tratamentos */}
                   <Route path="services" element={<TreatmentsPage />} />
                   <Route path="services/new" element={<TreatmentFormPage />} />
                   
-                  {/* ✅ CORREÇÃO: Rotas de Estoque completas */}
+                  {/* Estoque */}
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="inventory/new" element={<InventoryFormPage />} />
                   <Route path="inventory/:id/edit" element={<InventoryFormPage />} />
 
+                  {/* Financeiro */}
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
                 </Route>
               </Route>
 
-              {/* PORTAL DO PACIENTE */}
+              {/* === PORTAL DO PACIENTE (Acesso Restrito ao Paciente) === */}
               <Route element={<ProtectedRoute allowedRoles={['paciente']} />}>
                 <Route path="/portal" element={<PatientLayout />}>
                   <Route index element={<PatientHome />} />
+                  {/* Aqui você pode adicionar rotas como /portal/meus-exames, etc */}
                 </Route>
               </Route>
 
-              {/* ROTA 404 */}
+              {/* === ROTA 404 (Página não encontrada) === */}
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
 

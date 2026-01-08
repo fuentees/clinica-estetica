@@ -118,7 +118,7 @@ export function PatientBioimpedancePage() {
       const { data, error } = await supabase
         .from("bioimpedance_records")
         .select("*")
-        .eq("patient_id", id) // Se der erro, troque por .eq("patientId", id)
+        .eq("patient_id", id) // Se der erro, troque por .eq("patient_id", id)
         .order("date", { ascending: true });
 
       if (error) throw error;

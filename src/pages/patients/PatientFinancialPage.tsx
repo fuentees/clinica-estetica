@@ -51,7 +51,7 @@ export function PatientFinancialPage() {
       const { data, error } = await supabase
         .from('transactions')
         .select('*')
-        .eq('patientId', id)
+        .eq('patient_id', id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

@@ -56,16 +56,16 @@ export function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+      const { data: profile } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
 
-      if (!profile?.clinicId) {
+      if (!profile?.clinic_id) {
         toast.error("Você não está vinculado a uma clínica.");
         return;
       }
 
-      setClinicId(profile.clinicId);
+      setClinicId(profile.clinic_id);
 
-      const { data: clinic, error } = await supabase.from('clinics').select('*').eq('id', profile.clinicId).single();
+      const { data: clinic, error } = await supabase.from('clinics').select('*').eq('id', profile.clinic_id).single();
 
       if (error) throw error;
 

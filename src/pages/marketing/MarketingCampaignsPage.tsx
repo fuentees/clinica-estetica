@@ -28,13 +28,13 @@ export function MarketingCampaignsPage() {
   const queryClient = useQueryClient();
 
   const { data: campaigns, isLoading } = useQuery({
-    queryKey: ['marketing-campaigns', profile?.clinicId],
-    enabled: !!profile?.clinicId,
+    queryKey: ['marketing-campaigns', profile?.clinic_id],
+    enabled: !!profile?.clinic_id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('marketing_campaigns')
         .select('*')
-        .eq('clinicId', profile?.clinicId)
+        .eq('clinic_id', profile?.clinic_id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -48,7 +48,7 @@ export function MarketingCampaignsPage() {
         .from('marketing_campaigns')
         .insert({
           ...campaignData,
-          clinicId: profile?.clinicId,
+          clinic_id: profile?.clinic_id,
           created_by: profile?.id,
         })
         .select()
@@ -74,7 +74,7 @@ export function MarketingCampaignsPage() {
           sent_at: new Date().toISOString(),
         })
         .eq('id', campaignId)
-        .eq('clinicId', profile?.clinicId);
+        .eq('clinic_id', profile?.clinic_id);
 
       if (error) throw error;
     },

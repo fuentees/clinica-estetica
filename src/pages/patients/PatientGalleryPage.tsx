@@ -22,15 +22,15 @@ export function PatientGalleryPage() {
             if (!user) return;
 
             // 1. Identificar Clínica
-            const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
-            if (profile) setClinicId(profile.clinicId);
+            const { data: profile } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
+            if (profile) setClinicId(profile.clinic_id);
 
             // 2. Carregar Fotos do Tratamento Ativo
             // Ajuste: patientId (camelCase)
             const { data } = await supabase
                 .from("patient_treatments")
                 .select("photos")
-                .eq("patientId", id)
+                .eq("patient_id", id)
                 .eq("status", "active")
                 .limit(1)
                 .single();
@@ -72,7 +72,7 @@ export function PatientGalleryPage() {
          const { data: existing } = await supabase
             .from("patient_treatments")
             .select("id")
-            .eq("patientId", id)
+            .eq("patient_id", id)
             .eq("status", "active")
             .single();
 
@@ -85,8 +85,8 @@ export function PatientGalleryPage() {
          } else {
              // Cria novo tratamento (Galeria Inicial)
              await supabase.from("patient_treatments").insert({
-                 clinicId: clinicId,
-                 patientId: id,
+                 clinic_id: clinicId,
+                 patient_id: id,
                  status: "active",
                  notes: "Galeria de Fotos",
                  photos: newPhotos,
@@ -114,7 +114,7 @@ export function PatientGalleryPage() {
           const { data: existing } = await supabase
             .from("patient_treatments")
             .select("id")
-            .eq("patientId", id)
+            .eq("patient_id", id)
             .eq("status", "active")
             .single();
 

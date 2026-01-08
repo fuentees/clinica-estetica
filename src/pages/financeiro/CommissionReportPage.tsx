@@ -34,7 +34,7 @@ export function CommissionReportPage() {
         async function getClinic() {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-                const { data } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+                const { data } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
                 if (data?.clinicId) {
                     setClinicId(data.clinicId);
                 }
@@ -72,7 +72,7 @@ export function CommissionReportPage() {
                     service:serviceId ( name, price ),
                     professional:professionalId ( firstName, lastName, commissionRate )
                 `)
-                .eq('clinicId', clinicId)
+                .eq('clinic_id', clinicId)
                 .eq('status', 'completed')
                 .gte('startAt', startDate + 'T00:00:00')
                 .lte('startAt', endDate + 'T23:59:59');

@@ -14,7 +14,7 @@ interface PhotoPair {
   created_at: string;
 }
 
-export function PatientGallery({ patientId }: { patientId: string }) {
+export function PatientGallery({ patientId }: { patient_id: string }) {
   const [photos, setPhotos] = useState<PhotoPair[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);

@@ -36,7 +36,7 @@ export function SupplierForm({ onClose }: SupplierFormProps) {
   });
 
   const onSubmit = async (data: SupplierFormData) => {
-    if (!profile?.clinicId) {
+    if (!profile?.clinic_id) {
       toast.error('Clínica não identificada');
       return;
     }
@@ -45,7 +45,7 @@ export function SupplierForm({ onClose }: SupplierFormProps) {
       // Inserção com vínculo obrigatório à clínica
       const { error } = await supabase.from('suppliers').insert({
         ...data,
-        clinicId: profile.clinicId
+        clinic_id: profile.clinic_id
       });
 
       if (error) throw error;

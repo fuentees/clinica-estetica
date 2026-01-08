@@ -27,25 +27,27 @@ export default function ProfessionalHistoryPage() {
     }
   }, [id]);
 
-  async function fetchProfessionalData(professionalId: string) {
+  async function fetchProfessionalData(professional_id: string) {
     setLoading(true);
     try {
-      // 1. TRATAMENTOS REALIZADOS (Busca na tabela evolution_records do Schema Prisma)
+      // 1. TRATAMENTOS REALIZADOS
       const { data: treatmentsData, error: treatmentsError } = await supabase
         .from('evolution_records')
         .select(`
           id, 
           date, 
           subject,
-          patient:patients!patientId (id, name)
+          patient:patients!patient_id (id, name)
         `)
-        .eq('professionalId', professionalId) // CamelCase conforme Prisma
+        // CORREÇÃO: Usando a variável correta (professional_id)
+        .eq('professional_id', professional_id) 
         .order('date', { ascending: false });
 
       if (treatmentsError) throw treatmentsError;
       
       // Mapeamento SaaS: Normalização dos dados para o componente visual
       const mappedTreatments: Treatment[] = (treatmentsData || []).map((t: any) => {
+          // Tratamento robusto para array ou objeto único
           const patientData = Array.isArray(t.patient) ? t.patient[0] : t.patient;
           
           return {

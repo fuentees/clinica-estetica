@@ -11,7 +11,12 @@ type Appointment = {
   patient_name: string;
 };
 
-export default function ProfessionalFutureAgendaWidget({ professionalId }: { professionalId: string }) {
+// CORREÇÃO: A interface da prop deve bater com o nome da variável (professionalId)
+interface WidgetProps {
+    professionalId: string;
+}
+
+export default function ProfessionalFutureAgendaWidget({ professionalId }: WidgetProps) {
   const [loading, setLoading] = useState(true);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -26,9 +31,9 @@ export default function ProfessionalFutureAgendaWidget({ professionalId }: { pro
     setLoading(true);
     setDbError(null);
     try {
-      // Busca agendamentos a partir de agora
       const now = new Date().toISOString();
 
+      // USO CORRETO DO JOIN EXPLÍCITO (!patient_id)
       const { data, error } = await supabase
         .from('appointments')
         .select(`
@@ -38,16 +43,16 @@ export default function ProfessionalFutureAgendaWidget({ professionalId }: { pro
           patient:patients!patient_id ( name ),
           service:services!service_id ( name )
         `)
-        .eq('professional_id', id)
+        .eq('professional_id', id) // Aqui usamos snake_case porque é o nome da coluna no banco
         .gte('start_time', now)
-        .eq('status', 'scheduled') // Apenas os confirmados/agendados
+        .eq('status', 'scheduled')
         .order('start_time', { ascending: true })
         .limit(5);
 
       if (error) throw error;
 
       const mappedAppts: Appointment[] = (data || []).map((a: any) => {
-        // Trata o retorno que pode vir como objeto ou array dependendo da config do Supabase
+        // Tratamento defensivo para arrays ou objetos
         const pName = Array.isArray(a.patient) ? a.patient[0]?.name : a.patient?.name;
         const sName = Array.isArray(a.service) ? a.service[0]?.name : a.service?.name;
 
@@ -78,21 +83,17 @@ export default function ProfessionalFutureAgendaWidget({ professionalId }: { pro
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 h-full">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 h-full animate-in fade-in duration-500">
       <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
         <Calendar size={20} className="text-pink-600" /> Próximos Agendamentos
       </h3>
 
-      {/* ÁREA DE ERRO DO BANCO DE DADOS */}
       {dbError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex gap-3 items-start">
             <AlertTriangle className="text-red-500 shrink-0" size={20} />
             <div className="text-sm text-red-700">
                 <p className="font-bold">Erro de Sincronização:</p>
                 <code className="block bg-red-100 p-1 rounded mt-1 font-mono text-xs">{dbError}</code>
-                <p className="mt-2 text-xs opacity-75">
-                    Verifique se as tabelas 'services' e 'patients' estão relacionadas corretamente.
-                </p>
             </div>
         </div>
       )}

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Save, Plus, Trash2, Calendar, Syringe, MapPin, Loader2, ClipboardCheck, History, Target, Info } from 'lucide-react';
+import { Save, Plus, Trash2, Calendar, Syringe, MapPin, Loader2, ClipboardCheck, History, Target, Info, Link as LinkIcon } from 'lucide-react';
 import { BodyMappingComponent } from '../../components/anamnesis/BodyMappingComponent';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../../components/ui/button';
 import toast from 'react-hot-toast';
+import { usePatientTreatments } from '../../hooks/usePatientTreatments'; // Hook de tratamentos
 
-// Interfaces mantidas exatamente como as suas
+// --- INTERFACES ---
 interface MarkedArea {
   id: string;
   x: number;
@@ -22,33 +23,38 @@ interface InjectableProduct {
   name: string;
   brand: string;
   volume: string;
-  dilution?: string; // Mantido
+  dilution?: string;
 }
 
 interface InjectablePlan {
   id?: string;
   patient_id: string;
-  clinicId: string; // Adicionado para SaaS
+  clinic_id: string;
+  treatment_id?: string; // ✅ NOVO CAMPO: Vínculo com Tratamento Maior
   date: string;
   areas: MarkedArea[];
   products: InjectableProduct[];
   notes: string;
-  total_units?: number; // Mantido
-  professional_notes?: string; // Mantido
-  next_session_date?: string; // Mantido
+  total_units?: number;
+  professional_notes?: string;
+  next_session_date?: string;
 }
 
 export function InjectablesPlanningPage() {
   const { id: patientId } = useParams<{ id: string }>();
   const { profile } = useAuth();
+  
+  // ✅ Busca Tratamentos Ativos do Paciente
+  const { data: patientTreatments, isLoading: loadingTreatments } = usePatientTreatments(patientId || '');
+
   const [loading, setLoading] = useState(false);
   const [plans, setPlans] = useState<InjectablePlan[]>([]);
   const [viewMode, setViewMode] = useState<'face' | 'body'>('face');
 
-  // Estado do plano atual com todos os seus campos originais
   const [currentPlan, setCurrentPlan] = useState<InjectablePlan>({
     patient_id: patientId || '',
-    clinicId: '', 
+    clinic_id: '', 
+    treatment_id: '', // Inicializa vazio
     date: new Date().toISOString().split('T')[0],
     areas: [],
     products: [],
@@ -63,7 +69,6 @@ export function InjectablesPlanningPage() {
     id: '', name: '', brand: '', volume: '', dilution: '',
   });
 
-  // Sua lista de produtos comuns mantida
   const commonProducts = [
     { name: 'Toxina Botulínica', brand: 'Botox', volume: '100U' },
     { name: 'Toxina Botulínica', brand: 'Dysport', volume: '300U' },
@@ -97,19 +102,26 @@ export function InjectablesPlanningPage() {
 
     setLoading(true);
     try {
-      const { error } = await supabase.from('injectable_plans').insert([{
-        ...currentPlan,
-        clinicId: profile?.clinicId, // Proteção SaaS
-        patient_id: patientId
-      }]);
+      // Prepara payload, removendo tratamento vazio se não selecionado
+      const payload = {
+          ...currentPlan,
+          clinic_id: profile?.clinic_id,
+          patient_id: patientId,
+          treatment_id: currentPlan.treatment_id || null // Garante null se vazio
+      };
+
+      const { error } = await supabase.from('injectable_plans').insert([payload]);
 
       if (error) throw error;
 
       toast.success('Plano salvo com sucesso!');
       loadPlans();
+      
+      // Reset do formulário
       setCurrentPlan({
         patient_id: patientId || '',
-        clinicId: '',
+        clinic_id: '',
+        treatment_id: '', // Reset
         date: new Date().toISOString().split('T')[0],
         areas: [],
         products: [],
@@ -120,6 +132,7 @@ export function InjectablesPlanningPage() {
       });
     } catch (error) {
       toast.error('Erro ao salvar plano');
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -168,7 +181,31 @@ export function InjectablesPlanningPage() {
         {/* Coluna de Dados (Lado Direito) */}
         <div className="space-y-6">
           
-          {/* Seção 1: Datas (Sua estrutura original de inputs) */}
+          {/* ✅ NOVO: Seção de Vínculo com Tratamento */}
+          <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-8 shadow-sm border border-gray-100 dark:border-gray-700">
+             <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-2">
+                <LinkIcon size={14} className="text-blue-500"/> Vincular a Tratamento
+             </h2>
+             {loadingTreatments ? (
+                 <div className="h-10 w-full bg-gray-100 animate-pulse rounded-xl"></div>
+             ) : (
+                 <select 
+                    value={currentPlan.treatment_id || ''}
+                    onChange={(e) => setCurrentPlan({...currentPlan, treatment_id: e.target.value})}
+                    className="w-full h-12 px-4 bg-gray-50 dark:bg-gray-900 rounded-xl border-0 font-bold text-sm text-gray-700 dark:text-white outline-none focus:ring-2 focus:ring-pink-500"
+                 >
+                    <option value="">-- Sem vínculo (Avulso) --</option>
+                    {patientTreatments?.map((t: any) => (
+                        <option key={t.id} value={t.id}>
+                            {t.treatments?.name || 'Tratamento sem nome'} 
+                            {t.status === 'active' ? ' (Em andamento)' : ''}
+                        </option>
+                    ))}
+                 </select>
+             )}
+          </div>
+
+          {/* Seção 1: Datas */}
           <div className="bg-gray-900 rounded-[2.5rem] p-8 text-white shadow-2xl space-y-6">
             <h2 className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-2 border-b border-white/10 pb-4">
               <Calendar size={18} className="text-pink-500" /> Datas da Sessão
@@ -185,7 +222,7 @@ export function InjectablesPlanningPage() {
             </div>
           </div>
 
-          {/* Seção 2: Insumos (Seu formulário de produtos completo) */}
+          {/* Seção 2: Insumos */}
           <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-8 shadow-sm border border-gray-100 dark:border-gray-700">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-gray-900 dark:text-white uppercase text-xs tracking-widest flex items-center gap-2"><ClipboardCheck size={18} className="text-pink-600"/> Produtos</h3>
@@ -204,14 +241,12 @@ export function InjectablesPlanningPage() {
               </div>
             )}
 
-            {/* Seus Quick Adds mantidos */}
             <div className="flex flex-wrap gap-2 mb-6">
               {commonProducts.map((p, i) => (
                 <button key={i} onClick={() => setCurrentPlan({...currentPlan, products: [...currentPlan.products, {...p, id: `q-${Date.now()}-${i}`, dilution: ''}]})} className="px-3 py-1.5 bg-gray-50 dark:bg-gray-900 text-gray-500 hover:text-pink-600 rounded-full text-[10px] font-black uppercase border border-gray-100 transition-all">+ {p.brand}</button>
               ))}
             </div>
 
-            {/* Listagem de produtos adicionados */}
             <div className="space-y-3">
               {currentPlan.products.map((p) => (
                 <div key={p.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900/50 rounded-2xl border border-gray-100 group">
@@ -225,7 +260,7 @@ export function InjectablesPlanningPage() {
             </div>
           </div>
 
-          {/* Seção 3: Observações e Total Units (Original Completo) */}
+          {/* Seção 3: Observações e Total Units */}
           <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-8 shadow-sm border border-gray-100 dark:border-gray-700 space-y-6">
              <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 block">Total de Unidades (Geral)</label>
@@ -245,7 +280,7 @@ export function InjectablesPlanningPage() {
              </Button>
           </div>
 
-          {/* Histórico Simplificado (Sessão Original) */}
+          {/* Histórico Simplificado */}
           {plans.length > 0 && (
             <div className="p-4 bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700">
               <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2"><History size={14}/> Últimos Planos</h3>

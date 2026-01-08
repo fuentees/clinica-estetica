@@ -5,14 +5,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+// Removido Input importado errado, usando HTML nativo estilizado abaixo
 import { toast } from 'react-hot-toast';
 import { Loader2, ArrowLeft, Sparkles, Clock, DollarSign, FileText, Tag } from 'lucide-react';
 
 // --- SCHEMA DE VALIDAÇÃO ---
 const treatmentSchema = z.object({
   name: z.string().min(3, "O nome deve ter pelo menos 3 letras"),
-  category: z.string().min(1, "A categoria é obrigatória"), // ✅ Campo Novo Obrigatório
+  category: z.string().min(1, "A categoria é obrigatória"),
   description: z.string().optional(),
   price: z.coerce.number().min(0, "O preço não pode ser negativo"),
   duration_minutes: z.coerce.number().min(5, "A duração mínima é 5 minutos"),
@@ -29,46 +29,44 @@ export function TreatmentFormPage() {
     defaultValues: {
       price: 0,
       duration_minutes: 30,
-      category: "Facial" // Valor padrão
+      category: "Facial"
     }
   });
 
   const onSubmit = async (data: TreatmentFormData) => {
     setIsSubmitting(true);
     try {
-      // 1. Pega o usuário logado e sua clínica
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('clinicId')
+        .select('clinic_id:clinic_id')
         .eq('id', user.id)
         .single();
 
-      if (!profile?.clinicId) throw new Error("Clínica não identificada");
+      if (!profile?.clinic_id) throw new Error("Clínica não identificada");
 
-      // 2. Salva na tabela correta ('services') com os tipos certos
       const { error } = await supabase
-        .from('services') // ✅ Tabela correta
+        .from('services') 
         .insert({
-          clinicId: profile.clinicId, // ✅ Obrigatório
+          clinic_id: profile.clinic_id,
           name: data.name,
-          category: data.category,    // ✅ Obrigatório
+          category: data.category,
           description: data.description,
           price: data.price,
-          duration: data.duration_minutes, // ✅ Envia número (Int), não string
-          isActive: true
+          duration: data.duration_minutes,
+          is_active: true
         });
 
       if (error) throw error;
 
       toast.success('Procedimento catalogado com sucesso!');
-      navigate('/services'); // ✅ Redireciona para a rota certa
+      navigate('/services');
 
     } catch (error: any) {
       console.error('Erro ao salvar serviço:', error);
-      toast.error('Erro ao salvar: ' + (error.message || 'Falha na conexão com o banco'));
+      toast.error('Erro ao salvar: ' + (error.message || 'Falha na conexão'));
     } finally {
       setIsSubmitting(false);
     }
@@ -103,9 +101,9 @@ export function TreatmentFormPage() {
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
                     <Sparkles size={14} className="text-pink-500" /> Nome do Procedimento
                 </label>
-                <Input 
+                <input 
                     {...register('name')} 
-                    className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold"
+                    className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 outline-none focus:ring-2 focus:ring-pink-500 font-bold text-gray-900 dark:text-white"
                     placeholder="Ex: Botox Full Face" 
                 />
                 {errors.name && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.name.message}</p>}
@@ -117,13 +115,15 @@ export function TreatmentFormPage() {
                 </label>
                 <select 
                     {...register('category')}
-                    className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold outline-none text-sm"
+                    className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold outline-none text-sm text-gray-900 dark:text-white"
                 >
                     <option value="Facial">Facial</option>
                     <option value="Corporal">Corporal</option>
+                    <option value="Toxina">Toxina</option>
+                    <option value="Preenchedor">Preenchedor</option>
+                    <option value="Bioestimulador">Bioestimulador</option>
+                    <option value="Tecnologia">Tecnologia</option>
                     <option value="Capilar">Capilar</option>
-                    <option value="Injetáveis">Injetáveis</option>
-                    <option value="Laser">Laser & Tecnologias</option>
                     <option value="Outros">Outros</option>
                 </select>
                 {errors.category && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.category.message}</p>}
@@ -137,7 +137,7 @@ export function TreatmentFormPage() {
           </label>
           <textarea 
             {...register('description')}
-            className="w-full rounded-2xl border-0 bg-gray-50 dark:bg-gray-900 p-4 text-sm font-medium focus:ring-2 focus:ring-pink-500 outline-none min-h-[100px] resize-none shadow-inner"
+            className="w-full rounded-2xl border-0 bg-gray-50 dark:bg-gray-900 p-4 text-sm font-medium focus:ring-2 focus:ring-pink-500 outline-none min-h-[100px] resize-none shadow-inner text-gray-900 dark:text-white"
             placeholder="Descreva o que está incluso, técnica utilizada ou benefícios..."
           />
         </div>
@@ -148,11 +148,11 @@ export function TreatmentFormPage() {
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
               <DollarSign size={14} className="text-emerald-500" /> Valor de Venda (R$)
             </label>
-            <Input 
+            <input 
               type="number" 
               step="0.01"
               {...register('price')} 
-              className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-emerald-600"
+              className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-emerald-600 outline-none"
             />
             {errors.price && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.price.message}</p>}
           </div>
@@ -162,10 +162,10 @@ export function TreatmentFormPage() {
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
               <Clock size={14} className="text-blue-500" /> Tempo em Cabine (Min)
             </label>
-            <Input 
+            <input 
               type="number" 
               {...register('duration_minutes')} 
-              className="h-12 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-blue-600"
+              className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-blue-600 outline-none"
             />
             {errors.duration_minutes && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.duration_minutes.message}</p>}
           </div>

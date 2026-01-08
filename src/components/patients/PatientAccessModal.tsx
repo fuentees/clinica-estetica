@@ -11,7 +11,7 @@ interface Props {
     id: string;
     name: string;
     email?: string | null;
-    clinicId: string;
+    clinic_id: string;
     cpf?: string | null;
     phone?: string | null; // <--- O erro sumirá com essa linha
   };

@@ -10,7 +10,8 @@ import { toast } from "react-hot-toast";
 import { 
   ArrowLeft, Loader2, User, Briefcase, Mail, Phone, 
   Percent, Award, CheckCircle2, Camera, Shield, Clock, Calendar,
-  PenTool, Eraser, Sparkles, AlertTriangle
+  PenTool, Eraser, Sparkles, AlertTriangle, FileText, CreditCard, 
+  MapPin, Search, CalendarDays
 } from "lucide-react";
 
 // --- CONFIGURAÇÕES ---
@@ -43,8 +44,10 @@ const isValidUUID = (uuid: string | undefined) => {
 };
 
 // Helper para aceitar string, null ou undefined e virar string vazia
+// Nota: Isso é bom para o Input, mas precisa ser tratado antes de enviar datas ao banco
 const nullableString = z.union([z.string(), z.null(), z.undefined()]).transform(val => val || "");
 
+// --- SCHEMA ATUALIZADO (Zod) ---
 const professionalSchema = z.object({
   first_name: z.string().min(2, "Nome obrigatório"),
   last_name: z.string().min(2, "Sobrenome obrigatório"),
@@ -54,6 +57,23 @@ const professionalSchema = z.object({
   role: nullableString,
   formacao: nullableString,
   registration_number: nullableString,
+  
+  // Documentos Pessoais
+  cpf: nullableString,
+  rg: nullableString,
+  cnpj: nullableString,
+  birth_date: nullableString,
+  pix_key: nullableString,
+
+  // Endereço Detalhado
+  zip_code: nullableString,
+  street: nullableString,
+  number: nullableString,
+  complement: nullableString,
+  neighborhood: nullableString,
+  city: nullableString,
+  state: nullableString,
+
   agenda_color: nullableString.transform(val => val || "#db2777"),
   
   commission_rate: z.union([z.string(), z.number(), z.null(), z.undefined()])
@@ -79,7 +99,19 @@ const defaultValues: Partial<ProfessionalFormData> = {
     end_time: '18:00',
     is_active: true,
     formacao: "",
-    registration_number: ""
+    registration_number: "",
+    cpf: "",
+    rg: "",
+    cnpj: "",
+    pix_key: "",
+    zip_code: "",
+    street: "",
+    number: "",
+    complement: "",
+    neighborhood: "",
+    city: "",
+    state: "",
+    birth_date: ""
 };
 
 export function ProfessionalFormPage() {
@@ -87,6 +119,7 @@ export function ProfessionalFormPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [isNew, setIsNew] = useState(true);
+  const [loadingCep, setLoadingCep] = useState(false);
   
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
@@ -94,7 +127,7 @@ export function ProfessionalFormPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  const { register, handleSubmit, reset, watch, setValue, formState: { errors, isSubmitting } } = useForm<ProfessionalFormData>({
+  const { register, handleSubmit, reset, watch, setValue, setFocus, formState: { errors, isSubmitting } } = useForm<ProfessionalFormData>({
     resolver: zodResolver(professionalSchema),
     defaultValues
   });
@@ -103,7 +136,6 @@ export function ProfessionalFormPage() {
   const watchFirstName = watch("first_name");
   const watchFormacao = watch("formacao");
   
-  // Só mostra campos clínicos se for Profissional
   const isMedicalStaff = watchRole === "profissional"; 
   const councilLabel = watchFormacao ? (COUNCIL_MAP[watchFormacao] || "Registro") : "Especialidade";
   const initials = (watchFirstName?.[0] || 'U').toUpperCase();
@@ -141,7 +173,21 @@ export function ProfessionalFormPage() {
                   start_time: cleanStart, 
                   end_time: cleanEnd,
                   role: data.role || "profissional",
-                  commission_rate: Number(data.commission_rate) || 0
+                  commission_rate: Number(data.commission_rate) || 0,
+                  // Dados Pessoais
+                  cpf: data.cpf || "",
+                  rg: data.rg || "",
+                  cnpj: data.cnpj || "",
+                  birth_date: data.birth_date || "",
+                  pix_key: data.pix_key || "",
+                  // Endereço
+                  zip_code: data.zip_code || "",
+                  street: data.street || "",
+                  number: data.number || "",
+                  complement: data.complement || "",
+                  neighborhood: data.neighborhood || "",
+                  city: data.city || "",
+                  state: data.state || "",
               });
 
               if (data.avatar_url) setAvatarPreview(data.avatar_url);
@@ -155,6 +201,33 @@ export function ProfessionalFormPage() {
           setLoading(false); 
       }
   }
+
+  // --- BUSCA DE CEP ---
+  const handleCepBlur = async (e: React.FocusEvent<HTMLInputElement>) => {
+    const cep = e.target.value.replace(/\D/g, '');
+    if (cep.length !== 8) return;
+
+    setLoadingCep(true);
+    try {
+        const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cep}`);
+        if (!response.ok) throw new Error('CEP não encontrado');
+        
+        const data = await response.json();
+        
+        setValue('street', data.street);
+        setValue('neighborhood', data.neighborhood);
+        setValue('city', data.city);
+        setValue('state', data.state);
+        setFocus('number');
+        
+        toast.success("Endereço encontrado!");
+    } catch (error) {
+        toast.error("CEP não localizado.");
+        console.error(error);
+    } finally {
+        setLoadingCep(false);
+    }
+  };
   
   // --- AUXILIARES (Assinatura e Avatar) ---
   const startDrawing = (e: any) => {
@@ -219,20 +292,21 @@ export function ProfessionalFormPage() {
     }
   };
 
-  // --- SUBMIT COM AUTOMATIZAÇÃO DE CLÍNICA ---
+  // --- SUBMIT ---
   const onSubmit = async (data: ProfessionalFormData) => {
     try {
-        // 1. Descobrir a ClinicID do Admin Logado
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("Usuário não autenticado");
 
         const { data: adminProfile } = await supabase
             .from("profiles")
-            .select("clinicId")
+            .select("clinic_id") 
             .eq("id", user.id)
             .single();
+        
+        const adminClinicId = adminProfile?.clinic_id;
 
-        if (!adminProfile?.clinicId) throw new Error("Erro: Sua conta não está vinculada a nenhuma clínica.");
+        if (!adminClinicId) throw new Error("Erro: Sua conta não está vinculada a nenhuma clínica.");
 
         const cleanData = { ...data };
         
@@ -242,11 +316,17 @@ export function ProfessionalFormPage() {
             cleanData.commission_rate = 0;
             cleanData.working_days = [];
             cleanData.signature_data = "";
+            cleanData.cnpj = "";
         }
 
         const payload = {
             ...cleanData,
-            clinicId: adminProfile.clinicId, 
+            clinic_id: adminClinicId,
+            
+            // CORREÇÃO CRÍTICA AQUI:
+            // O formulário pode enviar "" (string vazia), mas o banco quer NULL para data.
+            birth_date: cleanData.birth_date ? cleanData.birth_date : null,
+
             working_days: cleanData.working_days || [], 
             updated_at: new Date().toISOString(),
             full_name: `${cleanData.first_name} ${cleanData.last_name}`.trim(),
@@ -348,54 +428,103 @@ export function ProfessionalFormPage() {
                                     </div>
                                     {errors.email && <p className="text-rose-500 text-[10px] font-bold uppercase mt-1 flex items-center gap-1"><AlertTriangle size={10}/> {errors.email.message}</p>}
                                 </div>
-                                <div className="md:col-span-2 space-y-1.5">
+                                <div className="space-y-1.5">
                                     <label className={labelClassName}>WhatsApp</label>
                                     <div className="relative">
                                         <Phone size={18} className="absolute left-4 top-3.5 text-gray-400"/>
                                         <Input {...register("phone")} className={`${inputClassName} pl-12`} placeholder="(11) 99999-9999" />
                                     </div>
                                 </div>
+                                <div className="space-y-1.5">
+                                    <label className={labelClassName}>Data Nascimento</label>
+                                    <div className="relative">
+                                        <CalendarDays size={18} className="absolute left-4 top-3.5 text-gray-400"/>
+                                        <Input type="date" {...register("birth_date")} className={`${inputClassName} pl-12`} />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* CARD 2: ATUAÇÃO PROFISSIONAL */}
+                    {/* CARD 2: DOCUMENTAÇÃO & FINANCEIRO */}
                     <div className={cardClassName}>
                         <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
-                            <Briefcase size={18} className="text-purple-600"/> Função
+                            <FileText size={18} className="text-blue-500"/> Documentação & Endereço
                         </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-1.5">
-                                <label className={labelClassName}>Permissão</label>
-                                <select {...register("role")} className={inputClassName}>
-                                    <option value="profissional">👨‍⚕️ Profissional / Especialista</option>
-                                    <option value="recepcionista">📅 Recepcionista / Front Desk</option>
-                                    <option value="admin">⚙️ Administrador</option>
-                                </select>
+                                <label className={labelClassName}>CPF <span className="text-pink-500">*</span></label>
+                                <Input {...register("cpf")} className={inputClassName} placeholder="000.000.000-00" />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>RG</label>
+                                <Input {...register("rg")} className={inputClassName} placeholder="00.000.000-0" />
+                            </div>
+                            
+                            {isMedicalStaff && (
+                                <div className="space-y-1.5">
+                                    <label className={labelClassName}>CNPJ (Se PJ)</label>
+                                    <Input {...register("cnpj")} className={inputClassName} placeholder="00.000.000/0001-00" />
+                                </div>
+                            )}
+
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Chave PIX</label>
+                                <div className="relative">
+                                    <CreditCard size={18} className="absolute left-4 top-3.5 text-gray-400"/>
+                                    <Input {...register("pix_key")} className={`${inputClassName} pl-12`} placeholder="Chave para comissão" />
+                                </div>
+                            </div>
+                            
+                            {/* --- SEÇÃO DE ENDEREÇO --- */}
+                            <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 my-4"></div>
+                            
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>CEP (Busca Automática)</label>
+                                <div className="relative">
+                                    <Search size={18} className={`absolute left-4 top-3.5 ${loadingCep ? 'text-pink-500 animate-pulse' : 'text-gray-400'}`}/>
+                                    <Input 
+                                      {...register("zip_code")} 
+                                      className={`${inputClassName} pl-12`} 
+                                      placeholder="00000-000" 
+                                      onBlur={handleCepBlur}
+                                      maxLength={9}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Rua / Logradouro</label>
+                                <div className="relative">
+                                    <MapPin size={18} className="absolute left-4 top-3.5 text-gray-400"/>
+                                    <Input {...register("street")} className={`${inputClassName} pl-12`} />
+                                </div>
                             </div>
 
-                            {/* CAMPOS ESPECÍFICOS DE SAÚDE */}
-                            {isMedicalStaff && (
-                                <>
-                                    <div className="space-y-1.5">
-                                        <label className={labelClassName}>Formação</label>
-                                        <div className="relative">
-                                            <Award size={18} className="absolute left-4 top-3.5 text-gray-400 pointer-events-none"/>
-                                            <select {...register("formacao")} className={`${inputClassName} pl-12`}>
-                                                <option value="">Selecione...</option>
-                                                {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="md:col-span-2 space-y-1.5">
-                                        <label className={labelClassName}>Registro Profissional ({councilLabel})</label>
-                                        <div className="relative">
-                                            <Shield size={18} className="absolute left-4 top-3.5 text-gray-400"/>
-                                            <Input {...register("registration_number")} className={`${inputClassName} pl-12`} placeholder="000.000-00" />
-                                        </div>
-                                    </div>
-                                </>
-                            )}
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Número</label>
+                                <Input {...register("number")} className={inputClassName} />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Complemento</label>
+                                <Input {...register("complement")} className={inputClassName} />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Bairro</label>
+                                <Input {...register("neighborhood")} className={inputClassName} />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Cidade</label>
+                                <Input {...register("city")} className={inputClassName} />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Estado (UF)</label>
+                                <Input {...register("state")} className={inputClassName} maxLength={2} />
+                            </div>
                         </div>
                     </div>
 
@@ -431,7 +560,47 @@ export function ProfessionalFormPage() {
                 {/* COLUNA DIREITA (4/12) */}
                 <div className="lg:col-span-4 space-y-8">
                     
-                    {/* CARD 4: AGENDA E COMISSÃO */}
+                    {/* CARD 4: FUNÇÃO E ESPECIALIDADE */}
+                    <div className={cardClassName}>
+                        <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">
+                            <Briefcase size={18} className="text-purple-600"/> Função
+                        </h2>
+                        <div className="space-y-6">
+                            <div className="space-y-1.5">
+                                <label className={labelClassName}>Permissão</label>
+                                <select {...register("role")} className={inputClassName}>
+                                    <option value="profissional">👨‍⚕️ Profissional / Especialista</option>
+                                    <option value="recepcionista">📅 Recepcionista / Front Desk</option>
+                                    <option value="admin">⚙️ Administrador</option>
+                                </select>
+                            </div>
+
+                            {/* CAMPOS ESPECÍFICOS DE SAÚDE */}
+                            {isMedicalStaff && (
+                                <>
+                                    <div className="space-y-1.5">
+                                        <label className={labelClassName}>Formação</label>
+                                        <div className="relative">
+                                            <Award size={18} className="absolute left-4 top-3.5 text-gray-400 pointer-events-none"/>
+                                            <select {...register("formacao")} className={`${inputClassName} pl-12`}>
+                                                <option value="">Selecione...</option>
+                                                {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className={labelClassName}>Registro Profissional ({councilLabel})</label>
+                                        <div className="relative">
+                                            <Shield size={18} className="absolute left-4 top-3.5 text-gray-400"/>
+                                            <Input {...register("registration_number")} className={`${inputClassName} pl-12`} placeholder="000.000-00" />
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {/* CARD 5: AGENDA E COMISSÃO */}
                     {isMedicalStaff && (
                         <div className={cardClassName}>
                             <h2 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-[0.2em] mb-10 flex items-center gap-3">

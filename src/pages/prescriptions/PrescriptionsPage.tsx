@@ -30,38 +30,36 @@ export function PrescriptionsPage() {
       // 1. Identificar Clínica
       const { data: profile } = await supabase
         .from('profiles')
-        .select('clinicId')
+        .select('clinic_id:clinic_id')
         .eq('id', user.id)
         .single();
 
-      if (!profile?.clinicId) throw new Error("Clínica não identificada");
+      if (!profile?.clinic_id) throw new Error("Clínica não identificada");
 
       // 2. Busca Otimizada com JOIN
-      // ✅ CORREÇÃO: Order by 'created_at' (nome real no banco) e não 'createdAt'
       const { data, error } = await supabase
         .from('prescriptions')
         .select(`
             *,
-            patient:patients!patientId ( name ),
-            professional:profiles!professionalId ( first_name, last_name, email )
+            patient:patients!patient_id ( name ),
+            professional:profiles!professional_id ( first_name, last_name, email )
         `)
-        .eq('clinicId', profile.clinicId)
-        .order('created_at', { ascending: false }); // <--- CORRIGIDO AQUI
+        .eq('clinic_id', profile.clinic_id)
+        .order('created_at', { ascending: false });
 
       if (error) {
-          // Fallback caso o join falhe (nomes de FK incorretos, etc)
-          console.warn("Tentativa de Join falhou, usando busca manual...", error);
+          console.warn("Tentativa de Join falhou, tentando busca manual...", error);
           const { data: rawData, error: rawError } = await supabase
             .from('prescriptions')
             .select('*')
-            .eq('clinicId', profile.clinicId)
-            .order('created_at', { ascending: false }); // <--- CORRIGIDO AQUI TAMBÉM
+            .eq('clinic_id', profile.clinic_id)
+            .order('created_at', { ascending: false });
             
           if (rawError) throw rawError;
           
           if (rawData) {
-              const pIds = rawData.map((r: any) => r.patientId).filter(Boolean);
-              const profIds = rawData.map((r: any) => r.professionalId).filter(Boolean);
+              const pIds = rawData.map((r: any) => r.patient_id).filter(Boolean);
+              const profIds = rawData.map((r: any) => r.professional_id).filter(Boolean);
               
               const [pats, profs] = await Promise.all([
                   supabase.from('patients').select('id, name').in('id', pIds),
@@ -70,8 +68,8 @@ export function PrescriptionsPage() {
               
               const enriched = rawData.map((item: any) => ({
                   ...item,
-                  patient: pats.data?.find((p: any) => p.id === item.patientId),
-                  professional: profs.data?.find((p: any) => p.id === item.professionalId)
+                  patient: pats.data?.find((p: any) => p.id === item.patient_id),
+                  professional: profs.data?.find((p: any) => p.id === item.professional_id)
               }));
               
               setPrescriptions(enriched);
@@ -122,6 +120,25 @@ export function PrescriptionsPage() {
       if (p.first_name) return `Dr(a). ${p.first_name} ${p.last_name || ''}`;
       return p.email || 'Profissional';
   }
+
+  // ✅ CORREÇÃO DE DATA:
+  // Se a string for curta (ex: '2023-10-08'), adicionamos T12:00 para forçar meio-dia
+  // Assim o fuso horário não joga para o dia anterior
+  const formatDateFixed = (dateString: string) => {
+      if (!dateString) return "--/--/----";
+      
+      // Se for formato ISO completo com hora, usa normal
+      if (dateString.includes('T') && dateString.includes('Z')) {
+          return new Date(dateString).toLocaleDateString('pt-BR');
+      }
+      
+      // Se for apenas data (YYYY-MM-DD), adiciona meio dia
+      if (dateString.length === 10) {
+          return new Date(dateString + "T12:00:00").toLocaleDateString('pt-BR');
+      }
+
+      return new Date(dateString).toLocaleDateString('pt-BR');
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700 p-4 md:p-8 max-w-[1400px] mx-auto pb-20">
@@ -227,7 +244,8 @@ export function PrescriptionsPage() {
 
                         <div className="col-span-2 hidden md:block text-center">
                             <span className="text-xs font-black text-gray-400 dark:text-gray-500 tabular-nums">
-                                {new Date(item.date || item.created_at).toLocaleDateString('pt-BR')}
+                                {/* AQUI: Usando a função corrigida */}
+                                {formatDateFixed(item.date || item.created_at)}
                             </span>
                         </div>
 

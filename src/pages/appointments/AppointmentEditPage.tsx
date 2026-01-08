@@ -20,11 +20,12 @@ export default function AppointmentEditPage() {
   const [patientName, setPatientName] = useState("Carregando...");
   const [clinicId, setClinicId] = useState<string | null>(null);
 
+  // CORREÇÃO: Padronizei tudo para snake_case para bater com o banco
   const [formData, setFormData] = useState({
     date: "",
     start_time: "",
-    professionalId: "", 
-    serviceId: "",      
+    professional_id: "", // snake_case
+    service_id: "",      // snake_case (antes estava serviceId)
     notes: ""
   });
 
@@ -41,32 +42,31 @@ export default function AppointmentEditPage() {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('clinicId')
+          .select('clinic_id:clinic_id')
           .eq('id', user.id)
           .single();
 
-        if (!profile?.clinicId) throw new Error("Sem clínica vinculada");
-        setClinicId(profile.clinicId);
+        if (!profile?.clinic_id) throw new Error("Sem clínica vinculada");
+        setClinicId(profile.clinic_id);
 
-        // 2. Carregar Profissionais (Nomes corretos: first_name, last_name)
+        // 2. Carregar Profissionais
         const { data: profs } = await supabase
           .from('profiles')
           .select('id, full_name, first_name, last_name, role') 
-          .eq('clinicId', profile.clinicId)
-          // Filtro mais abrangente para garantir que apareçam
+          .eq('clinic_id', profile.clinic_id)
           .in('role', ['profissional', 'admin', 'doutor', 'esteticista', 'recepcionista']);
         
         // 3. Carregar Serviços
         const { data: servs } = await supabase
           .from('services')
           .select('id, name, duration')
-          .eq('clinicId', profile.clinicId)
+          .eq('clinic_id', profile.clinic_id)
           .eq('isActive', true);
 
         setProfessionals(profs || []);
         setServices(servs || []);
 
-        // 4. Carregar O Agendamento (Usando nomes snake_case do banco)
+        // 4. Carregar O Agendamento
         const { data: appointment, error } = await supabase
           .from('appointments')
           .select(`
@@ -78,9 +78,8 @@ export default function AppointmentEditPage() {
 
         if (error) throw error;
 
-        // 5. Preencher o Estado (Mapeando snake_case -> state)
+        // 5. Preencher o Estado
         if (appointment) {
-          // O banco retorna start_time, não startAt
           const dbDate = new Date(appointment.start_time); 
           const dateStr = dbDate.toISOString().split('T')[0]; 
           const timeStr = dbDate.toTimeString().slice(0, 5);
@@ -88,12 +87,11 @@ export default function AppointmentEditPage() {
           setFormData({
             date: dateStr,
             start_time: timeStr,
-            professionalId: appointment.professional_id, // snake_case
-            serviceId: appointment.service_id,           // snake_case
+            professional_id: appointment.professional_id, // Já vem snake_case do banco
+            service_id: appointment.service_id,           // Já vem snake_case do banco
             notes: appointment.notes || ""
           });
 
-          // Tratamento seguro do nome do paciente
           const pName = Array.isArray(appointment.patient) 
             ? appointment.patient[0]?.name 
             : appointment.patient?.name;
@@ -118,21 +116,21 @@ export default function AppointmentEditPage() {
     
     setSaving(true);
     try {
-      // 1. Reconstruir o start_time (Data + Hora)
+      // 1. Validar e Construir Datas
       const combinedDateTimeString = `${formData.date}T${formData.start_time}:00`;
       const startAt = new Date(combinedDateTimeString);
 
-      // 2. Calcular o end_time (Baseado na duração do serviço)
-      const selectedService = services.find(s => s.id === formData.serviceId);
+      // CORREÇÃO: Usando service_id padronizado
+      const selectedService = services.find(s => s.id === formData.service_id);
       const duration = selectedService?.duration || 30; 
       const endAt = addMinutes(startAt, duration);
 
-      // 3. Payload atualizado (Usando snake_case para o banco)
+      // 2. Payload CORRIGIDO (Estado bate com Banco)
       const payload = {
-        start_time: startAt.toISOString(),      // ✅ Correto
-        end_time: endAt.toISOString(),          // ✅ Correto
-        professional_id: formData.professionalId, // ✅ Correto
-        service_id: formData.serviceId,           // ✅ Correto
+        start_time: startAt.toISOString(),
+        end_time: endAt.toISOString(),
+        professional_id: formData.professional_id, // ✅ Agora existe no state
+        service_id: formData.service_id,           // ✅ Agora existe no state
         notes: formData.notes,
         updated_at: new Date().toISOString()
       };
@@ -210,8 +208,9 @@ export default function AppointmentEditPage() {
                         <Stethoscope size={16} className="text-blue-500"/> Profissional
                     </label>
                     <select 
-                        value={formData.professionalId} 
-                        onChange={e => setFormData({...formData, professionalId: e.target.value})} 
+                        // CORREÇÃO: value e onChange usando professional_id (snake_case)
+                        value={formData.professional_id} 
+                        onChange={e => setFormData({...formData, professional_id: e.target.value})} 
                         className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-pink-500 outline-none transition-all"
                     >
                         <option value="">Selecione...</option>
@@ -227,8 +226,9 @@ export default function AppointmentEditPage() {
                         <Sparkles size={16} className="text-purple-500"/> Procedimento
                     </label>
                     <select 
-                        value={formData.serviceId} 
-                        onChange={e => setFormData({...formData, serviceId: e.target.value})} 
+                        // CORREÇÃO: value e onChange usando service_id (snake_case)
+                        value={formData.service_id} 
+                        onChange={e => setFormData({...formData, service_id: e.target.value})} 
                         className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-pink-500 outline-none transition-all"
                     >
                         <option value="">Selecione...</option>

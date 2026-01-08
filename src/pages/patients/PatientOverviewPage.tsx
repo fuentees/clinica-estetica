@@ -103,7 +103,7 @@ export default function PatientOverviewPage() {
       const { data: bio } = await supabase
         .from("bioimpedance_records") 
         .select("*")
-        .eq("patientId", patient.id)
+        .eq("patient_id", patient.id)
         .order("date", { ascending: false })
         .limit(1);
 
@@ -451,7 +451,7 @@ export default function PatientOverviewPage() {
              id: patientDetails.id,
              name: patientDetails.name,
              email: patientDetails.email,
-             clinicId: patientDetails.clinicId || patientDetails.clinic_id,
+             clinic_id: patientDetails.clinicId || patientDetails.clinic_id,
              cpf: patientDetails.cpf,
              phone: patientDetails.phone
           }} 

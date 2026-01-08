@@ -67,8 +67,8 @@ export function SessionEvolutionPage() {
             // 1. Pega ClinicId do usuário logado
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-                const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
-                if (profile) setClinicId(profile.clinicId);
+                const { data: profile } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
+                if (profile) setClinicId(profile.clinic_id);
             }
 
             // 2. Busca Paciente
@@ -122,8 +122,8 @@ export function SessionEvolutionPage() {
             const { error: sessionError } = await supabase
                 .from('patient_treatments')
                 .insert({
-                    clinicId: clinicId,
-                    patientId: patientId, // CamelCase conforme Prisma
+                    clinic_id: clinicId,
+                    patient_id: patientId, // CamelCase conforme Prisma
                     treatment_id: selectedTreatmentId,
                     notes: `Sessão ${sessionNumber} - ${treatmentName}: ${notes}`,
                     photos: photos,
@@ -139,7 +139,7 @@ export function SessionEvolutionPage() {
                 const { error: bioError } = await supabase
                     .from('patient_bioimpedance')
                     .insert({
-                        patientId: patientId, // CamelCase conforme Prisma
+                        patient_id: patientId, // CamelCase conforme Prisma
                         data: new Date().toISOString(),
                         peso: Number(bioData.peso),
                         altura: Number(bioData.altura),

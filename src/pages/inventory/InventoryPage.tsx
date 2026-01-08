@@ -28,21 +28,21 @@ export function InventoryPage() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('clinicId')
+        .select('clinic_id:clinic_id')
         .eq('id', user.id)
         .single();
 
-      if (!profile?.clinicId) {
+      if (!profile?.clinic_id) {
         toast.error("Clínica não identificada.");
         return;
       }
       
-      setClinicId(profile.clinicId);
+      setClinicId(profile.clinic_id);
 
       const { data, error } = await supabase
         .from('inventory')
         .select('*')
-        .eq('clinicId', profile.clinicId) 
+        .eq('clinic_id', profile.clinic_id) 
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -62,7 +62,7 @@ export function InventoryPage() {
         .from('inventory')
         .delete()
         .eq('id', id)
-        .eq('clinicId', clinicId); 
+        .eq('clinic_id', clinicId); 
 
       if (error) throw error;
       

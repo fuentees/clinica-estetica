@@ -19,7 +19,7 @@ const consentFormSchema = z.object({
 type ConsentFormData = z.infer<typeof consentFormSchema>;
 
 interface ConsentFormProps {
-  patientId: string;
+  patient_id: string;
   treatmentId: string;
   onClose: () => void;
 }
@@ -44,7 +44,7 @@ export function ConsentForm({ patientId, treatmentId, onClose }: ConsentFormProp
       return;
     }
 
-    if (!profile?.clinicId) {
+    if (!profile?.clinic_id) {
       toast.error('Clínica não identificada.');
       return;
     }
@@ -56,9 +56,9 @@ export function ConsentForm({ patientId, treatmentId, onClose }: ConsentFormProp
       const { error } = await supabase
         .from('consent_forms')
         .insert({
-          patientId: data.patient_id,
+          patient_id: data.patient_id,
           treatmentId: data.treatment_id,
-          clinicId: profile.clinicId,
+          clinic_id: profile.clinic_id,
           consentText: data.consent_text,
           signature: signatureData,
           signedAt: new Date().toISOString(),

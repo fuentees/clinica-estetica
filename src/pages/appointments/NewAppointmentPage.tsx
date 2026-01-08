@@ -9,7 +9,7 @@ import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
 import { addMinutes } from "date-fns"; 
 
-// Interfaces Ajustadas para o Banco
+// Interfaces
 interface Professional { 
     id: string; 
     first_name: string; 
@@ -29,12 +29,12 @@ export function NewAppointmentPage() {
     const [patients, setPatients] = useState<Patient[]>([]);
     const [services, setServices] = useState<Service[]>([]);
 
-    // Formulário
+    // Formulário (Tudo snake_case para bater com o banco)
     const [formData, setFormData] = useState({
-        professionalId: "",
-        patientId: "",
-        serviceId: "",
-        date: new Date().toISOString().split('T')[0], // Hoje
+        professional_id: "",
+        patient_id: "",
+        service_id: "",  // Mudei de serviceId para service_id
+        date: new Date().toISOString().split('T')[0],
         time: "09:00",
         notes: ""
     });
@@ -51,31 +51,28 @@ export function NewAppointmentPage() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Não logado");
 
-            const { data: profile } = await supabase.from("profiles").select("clinicId").eq("id", user.id).single();
-            if (!profile?.clinicId) throw new Error("Sem clínica");
+            const { data: profile } = await supabase.from("profiles").select("clinic_id:clinic_id").eq("id", user.id).single();
+            if (!profile?.clinic_id) throw new Error("Sem clínica");
             
-            setClinicId(profile.clinicId);
+            setClinicId(profile.clinic_id);
 
             // 2. Busca TUDO em paralelo
             const [profsReq, patientsReq, servicesReq] = await Promise.all([
-                // Busca Profissionais (com first_name e last_name)
                 supabase.from("profiles")
                     .select("id, first_name, last_name, role")
-                    .eq("clinicId", profile.clinicId)
-                    .eq("is_active", true) // snake_case
+                    .eq("clinic_id", profile.clinic_id)
+                    .eq("is_active", true)
                     .in("role", ["profissional", "esteticista", "doutor", "admin", "recepcionista"])
                     .order("first_name"),
                 
-                // Busca Pacientes
                 supabase.from("patients")
                     .select("id, name")
-                    .eq("clinicId", profile.clinicId)
+                    .eq("clinic_id", profile.clinic_id)
                     .order("name"),
 
-                // Busca Serviços
                 supabase.from("services")
                     .select("id, name, duration")
-                    .eq("clinicId", profile.clinicId)
+                    .eq("clinic_id", profile.clinic_id)
                     .eq("isActive", true)
                     .order("name")
             ]);
@@ -83,8 +80,8 @@ export function NewAppointmentPage() {
             // Formata e Salva nos estados
             if (profsReq.data) {
                 setProfessionals(profsReq.data);
-                // Seleciona o primeiro profissional automaticamente se houver
-                if (profsReq.data.length > 0) setFormData(prev => ({ ...prev, professionalId: profsReq.data[0].id }));
+                // Seleciona o primeiro automaticamente
+                if (profsReq.data.length > 0) setFormData(prev => ({ ...prev, professional_id: profsReq.data[0].id }));
             }
             if (patientsReq.data) setPatients(patientsReq.data);
             if (servicesReq.data) setServices(servicesReq.data);
@@ -100,31 +97,29 @@ export function NewAppointmentPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Validação básica
-        if (!formData.professionalId || !formData.patientId || !formData.serviceId || !formData.date || !formData.time) {
+        // CORREÇÃO: Validando as chaves corretas (snake_case)
+        if (!formData.professional_id || !formData.patient_id || !formData.service_id || !formData.date || !formData.time) {
             toast.error("Preencha todos os campos obrigatórios.");
             return;
         }
 
         setSaving(true);
         try {
-            // 1. Calcular Horários
             const startAt = new Date(`${formData.date}T${formData.time}`);
             
-            // Pega a duração do serviço escolhido (ou 30 min padrão)
-            const selectedService = services.find(s => s.id === formData.serviceId);
+            // CORREÇÃO: Buscando pelo service_id correto
+            const selectedService = services.find(s => s.id === formData.service_id);
             const duration = selectedService?.duration || 30;
-            
             const endAt = addMinutes(startAt, duration);
 
-            // 2. Inserir no Banco (USANDO SNAKE_CASE NAS COLUNAS)
+            // CORREÇÃO: Inserir no Banco (Payload limpo)
             const { error } = await supabase.from("appointments").insert({
-                clinicId: clinicId,
-                patient_id: formData.patientId,         // ✅ Corrigido
-                professional_id: formData.professionalId, // ✅ Corrigido
-                service_id: formData.serviceId,         // ✅ Corrigido
-                start_time: startAt.toISOString(),      // ✅ Corrigido
-                end_time: endAt.toISOString(),          // ✅ Corrigido
+                clinic_id: clinicId,
+                patient_id: formData.patient_id,           // ✅ Agora existe no state
+                professional_id: formData.professional_id, // ✅ Agora existe no state
+                service_id: formData.service_id,           // ✅ Agora existe no state
+                start_time: startAt.toISOString(),
+                end_time: endAt.toISOString(),
                 status: "scheduled",
                 notes: formData.notes
             });
@@ -170,8 +165,9 @@ export function NewAppointmentPage() {
                                 <Stethoscope size={14} className="text-pink-600"/> Profissional
                             </label>
                             <select 
-                                value={formData.professionalId}
-                                onChange={e => setFormData({...formData, professionalId: e.target.value})}
+                                // CORREÇÃO: value snake_case
+                                value={formData.professional_id}
+                                onChange={e => setFormData({...formData, professional_id: e.target.value})}
                                 className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-pink-500 outline-none"
                                 required
                             >
@@ -188,8 +184,9 @@ export function NewAppointmentPage() {
                                 <Sparkles size={14} className="text-purple-600"/> Serviço
                             </label>
                             <select 
-                                value={formData.serviceId}
-                                onChange={e => setFormData({...formData, serviceId: e.target.value})}
+                                // CORREÇÃO: value snake_case (service_id)
+                                value={formData.service_id}
+                                onChange={e => setFormData({...formData, service_id: e.target.value})}
                                 className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-purple-500 outline-none"
                                 required
                             >
@@ -206,8 +203,9 @@ export function NewAppointmentPage() {
                         </label>
                         {patients.length > 0 ? (
                             <select 
-                                value={formData.patientId}
-                                onChange={e => setFormData({...formData, patientId: e.target.value})}
+                                // CORREÇÃO: value snake_case
+                                value={formData.patient_id}
+                                onChange={e => setFormData({...formData, patient_id: e.target.value})}
                                 className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"
                                 required
                             >

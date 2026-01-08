@@ -45,7 +45,7 @@ export function CRMPage() {
     async function getClinic() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+        const { data } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
         if (data?.clinicId) setClinicId(data.clinicId);
       }
     }
@@ -61,7 +61,7 @@ export function CRMPage() {
       let query = supabase
         .from('leads')
         .select('*')
-        .eq('clinicId', clinicId) // SEGURANÇA: Apenas desta clínica
+        .eq('clinic_id', clinicId) // SEGURANÇA: Apenas desta clínica
         .order('created_at', { ascending: false });
 
       if (statusFilter !== 'all') {

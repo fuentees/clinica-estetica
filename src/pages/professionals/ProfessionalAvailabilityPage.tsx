@@ -71,14 +71,14 @@ export function ProfessionalAvailabilityPage() {
             // Busca a ClinicID do usuário logado para garantir o vínculo
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
-                const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
-                if (profile) setClinicId(profile.clinicId);
+                const { data: profile } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
+                if (profile) setClinicId(profile.clinic_id);
             }
 
             const { data, error } = await supabase
                 .from('professional_availability_exceptions')
                 .select('*')
-                .eq('professionalId', professionalId) // Atualizado para o Schema
+                .eq('professional_id', professionalId) // Atualizado para o Schema
                 .gte('end_date', new Date().toISOString().split('T')[0]) 
                 .order('start_date', { ascending: true });
 
@@ -103,8 +103,8 @@ export function ProfessionalAvailabilityPage() {
         setLoading(true);
         try {
             const dataToSave = {
-                professionalId: professionalId, // Atualizado para o Schema
-                clinicId: clinicId,            
+                professional_id: professionalId, // Atualizado para o Schema
+                clinic_id: clinicId,            
                 ...data,
                 start_time: data.is_full_day ? null : data.start_time,
                 end_time: data.is_full_day ? null : data.end_time,

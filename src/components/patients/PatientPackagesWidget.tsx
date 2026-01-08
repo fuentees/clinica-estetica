@@ -3,7 +3,7 @@ import { supabase } from "../../lib/supabase";
 import { Package, Plus, ChevronRight, Zap, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface PatientPackagesWidgetProps {
-  patientId: string;
+  patient_id: string;
 }
 
 interface PatientPackage {

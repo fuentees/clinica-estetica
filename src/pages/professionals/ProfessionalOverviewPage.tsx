@@ -12,7 +12,7 @@ import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// ✅ IMPORTAÇÃO DO MODAL DE ACESSO
+// ✅ IMPORTAÇÃO DO MODAL DE ACESSO (Certifique-se que o caminho está correto)
 import { ProfessionalAccessModal } from '../../components/professionals/ProfessionalAccessModal';
 
 // --- FUNÇÕES DE DATA E HORA SEGURAS ---
@@ -34,8 +34,9 @@ const formatFriendlyDate = (dateStr: string) => {
     if (dateStr === tomorrow) return "Amanhã";
     
     // Corrige problema de fuso horário ao criar data a partir de string YYYY-MM-DD
+    // Cria a data como se fosse meio-dia para evitar virada de dia por fuso
     const dateParts = dateStr.split('-');
-    const dateObj = new Date(Number(dateParts[0]), Number(dateParts[1]) - 1, Number(dateParts[2]));
+    const dateObj = new Date(Number(dateParts[0]), Number(dateParts[1]) - 1, Number(dateParts[2]), 12, 0, 0);
     
     return format(dateObj, 'dd/MM/yyyy');
 };
@@ -76,7 +77,7 @@ export default function ProfessionalOverviewPage() {
     try {
       // 0. ✅ Busca dados do Profissional (Para o botão de acesso)
       const { data: profData } = await supabase
-        .from('profiles') // Assumindo que a tabela é 'profiles'
+        .from('profiles')
         .select('*')
         .eq('id', id)
         .single();
@@ -94,9 +95,13 @@ export default function ProfessionalOverviewPage() {
           .gte('start_time', `${monthStart}T00:00:00`)
           .neq('status', 'canceled');
 
-      // 2. Próximo Paciente
+      // 2. Próximo Paciente (Apenas agendados futuros)
       const { data: futureAppts } = await supabase.from('appointments')
-          .select(`id, start_time, status, patient:patients!patient_id(id, name), service:services!service_id(name)`)
+          .select(`
+            id, start_time, status, 
+            patient:patients!patient_id(id, name), 
+            service:services!service_id(name)
+          `)
           .eq('professional_id', id)
           .gte('start_time', now.toISOString())
           .eq('status', 'scheduled')
@@ -108,8 +113,13 @@ export default function ProfessionalOverviewPage() {
       // 3. Agenda de Hoje
       const startToday = `${todayStr}T00:00:00`;
       const endToday = `${todayStr}T23:59:59`;
+      
       const { data: todays } = await supabase.from('appointments')
-          .select(`id, start_time, status, notes, patient:patients!patient_id(id, name), service:services!service_id(name)`)
+          .select(`
+            id, start_time, status, notes, 
+            patient:patients!patient_id(id, name), 
+            service:services!service_id(name)
+          `)
           .eq('professional_id', id)
           .gte('start_time', startToday)
           .lte('start_time', endToday)
@@ -119,8 +129,10 @@ export default function ProfessionalOverviewPage() {
       // 4. Gráfico (Últimos 7 dias)
       const chartData = [];
       for (let i = 6; i >= 0; i--) {
-          const d = new Date(); d.setDate(d.getDate() - i);
+          const d = new Date(); 
+          d.setDate(d.getDate() - i);
           const dStr = format(d, 'yyyy-MM-dd');
+          
           const { count } = await supabase.from('appointments')
             .select('*', { count: 'exact', head: true })
             .eq('professional_id', id)
@@ -131,13 +143,20 @@ export default function ProfessionalOverviewPage() {
           chartData.push({ day: format(d, 'dd/MM'), appointments: count || 0 });
       }
 
+      // Cálculo estimado de comissão (Valor fixo R$150 por consulta * 30%)
+      // Idealmente isso viria do valor real dos serviços
       const estimatedCommission = (monthCount || 0) * 150 * 0.30; 
       const goalPercent = Math.min((estimatedCommission / MONTHLY_GOAL) * 100, 100);
 
       setStats({ monthCount: monthCount || 0, commission: estimatedCommission, next: nextAppt, chartData, goalPercent });
       setTodayList(todays || []);
 
-    } catch (error) { console.error("Erro Dashboard:", error); } finally { setLoading(false); }
+    } catch (error) { 
+      console.error("Erro Dashboard:", error); 
+      toast.error("Erro ao carregar dados do dashboard.");
+    } finally { 
+      setLoading(false); 
+    }
   }
 
   useEffect(() => { loadDashboard(); }, [id]);
@@ -145,8 +164,13 @@ export default function ProfessionalOverviewPage() {
   const handleCancel = async (e: React.MouseEvent, apptId: string) => {
       e.stopPropagation();
       if (window.confirm("Cancelar este agendamento?")) {
-          await supabase.from('appointments').update({ status: 'canceled' }).eq('id', apptId);
-          toast.success("Cancelado!"); loadDashboard();
+          const { error } = await supabase.from('appointments').update({ status: 'canceled' }).eq('id', apptId);
+          if (error) {
+            toast.error("Erro ao cancelar.");
+          } else {
+            toast.success("Cancelado!"); 
+            loadDashboard();
+          }
       }
   }
 
@@ -155,19 +179,24 @@ export default function ProfessionalOverviewPage() {
       navigate(`/appointments/${apptId}/edit`);
   }
   
-  const handleStartAttendance = (e: React.MouseEvent, patientId: string) => {
+  // CORREÇÃO: patient_id (snake_case) vindo do banco, patientId para uso local se necessário
+  const handleStartAttendance = (e: React.MouseEvent, patientId: string | null) => {
       e.stopPropagation();
       if(patientId) navigate(`/patients/${patientId}/evolution`);
-      else toast.error("Paciente não identificado");
+      else toast.error("Paciente não identificado ou horário bloqueado.");
   }
 
   const getPatientName = (appt: any) => {
       if (appt.status === 'blocked') return 'Horário Bloqueado';
-      return appt.patient?.name || 'Paciente';
+      // Verificação defensiva se patient é array ou objeto
+      const p = Array.isArray(appt.patient) ? appt.patient[0] : appt.patient;
+      return p?.name || 'Paciente não identificado';
   };
   
   const getPatientId = (appt: any) => {
-      return appt.status === 'blocked' ? null : appt.patient?.id;
+      if (appt.status === 'blocked') return null;
+      const p = Array.isArray(appt.patient) ? appt.patient[0] : appt.patient;
+      return p?.id;
   }
 
   if (loading && !professionalDetails) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
@@ -175,9 +204,15 @@ export default function ProfessionalOverviewPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-700 p-2 relative">
       
-      {isBlockModalOpen && <BlockScheduleModal professionalId={id!} onClose={() => setIsBlockModalOpen(false)} onSuccess={() => { setIsBlockModalOpen(false); loadDashboard(); }} />}
+      {isBlockModalOpen && (
+        <BlockScheduleModal 
+          professionalId={id!} 
+          onClose={() => setIsBlockModalOpen(false)} 
+          onSuccess={() => { setIsBlockModalOpen(false); loadDashboard(); }} 
+        />
+      )}
 
-      {/* ✅ NOVO CABEÇALHO DO PROFISSIONAL */}
+      {/* ✅ CABEÇALHO DO PROFISSIONAL */}
       {professionalDetails && (
         <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-8 shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
@@ -235,6 +270,7 @@ export default function ProfessionalOverviewPage() {
                 <Button 
                   className="h-12 w-12 p-0 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg"
                   onClick={() => navigate(`../details`)} 
+                  title="Editar Perfil"
                 >
                   <Edit size={18}/>
                 </Button>
@@ -412,6 +448,7 @@ function BlockScheduleModal({ professionalId, onClose, onSuccess }: any) {
     const [l, setL] = useState(false);
     const [f, setF] = useState({ date: new Date().toISOString().split('T')[0], start: "", end: "", reason: "" });
     
+    // Função para calcular o offset local (ex: -03:00) para garantir que o banco salve a hora certa
     const getLocalOffset = () => {
         const offset = new Date().getTimezoneOffset();
         const sign = offset > 0 ? '-' : '+'; 
@@ -423,6 +460,7 @@ function BlockScheduleModal({ professionalId, onClose, onSuccess }: any) {
         if(!f.start || !f.end || !f.reason) return toast.error("Preencha todos os campos do bloqueio");
         setL(true);
         const offset = getLocalOffset();
+        // Usamos T para separar data e hora e adicionamos o offset do fuso horário
         const { error } = await supabase.from('appointments').insert({ 
             professional_id: professionalId, 
             start_time: `${f.date}T${f.start}:00${offset}`, 
@@ -430,8 +468,13 @@ function BlockScheduleModal({ professionalId, onClose, onSuccess }: any) {
             status: 'blocked', 
             notes: `MOTIVO: ${f.reason}` 
         });
-        if(error) toast.error("Erro ao bloquear");
-        else { toast.success("Agenda bloqueada!"); onSuccess(); }
+        if(error) {
+            toast.error("Erro ao bloquear horário.");
+            console.error(error);
+        } else { 
+            toast.success("Agenda bloqueada!"); 
+            onSuccess(); 
+        }
         setL(false);
     }
 

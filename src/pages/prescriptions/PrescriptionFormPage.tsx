@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
-// --- TIPAGEM (INTEGRAL) ---
+// --- TIPAGEM ---
 type ComponentItem = { name: string; quantity: string };
 type TreatmentItem = { name: string; components: ComponentItem[]; observations: string };
 type PrescriptionForm = {
@@ -17,6 +17,15 @@ type PrescriptionForm = {
   date: string;
   title: string;
   treatments: TreatmentItem[];
+};
+
+// --- FUNÇÃO AUXILIAR DE DATA SEGURA (Para input type="date") ---
+const getLocalDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 };
 
 export function PrescriptionFormPage() {
@@ -40,7 +49,7 @@ export function PrescriptionFormPage() {
     formState: { errors },
   } = useForm<PrescriptionForm>({
     defaultValues: {
-      date: new Date().toISOString().split("T")[0],
+      date: getLocalDateString(), // ✅ Data de hoje correta (Local)
       title: "Recomendação Terapêutica",
       treatments: [
         {
@@ -58,7 +67,7 @@ export function PrescriptionFormPage() {
   const watchedValues = watch();
 
   // ---------------------------
-  // CARREGAMENTO DOS DADOS (SaaS READY)
+  // CARREGAMENTO DOS DADOS
   // ---------------------------
   useEffect(() => {
     async function initPage() {
@@ -71,17 +80,17 @@ export function PrescriptionFormPage() {
         // 1. Pega ClinicID
         const { data: profile } = await supabase
             .from("profiles")
-            .select("clinicId")
+            .select("clinic_id:clinic_id")
             .eq("id", user.id)
             .single();
 
-        if (!profile?.clinicId) throw new Error("Sem clínica vinculada");
-        setClinicId(profile.clinicId);
+        if (!profile?.clinic_id) throw new Error("Sem clínica vinculada");
+        setClinicId(profile.clinic_id);
 
         // 2. Carrega Listas
         const [patsRes, profsRes] = await Promise.all([
-          supabase.from("patients").select("*").eq("clinicId", profile.clinicId).order("name", { ascending: true }),
-          supabase.from("profiles").select("*").eq("clinicId", profile.clinicId), 
+          supabase.from("patients").select("*").eq("clinic_id", profile.clinic_id).order("name", { ascending: true }),
+          supabase.from("profiles").select("*").eq("clinic_id", profile.clinic_id), 
         ]);
 
         setPatientsList(patsRes.data || []);
@@ -96,15 +105,21 @@ export function PrescriptionFormPage() {
             .single();
 
           if (pres) {
+            // ✅ CORREÇÃO DE DATA E SNAKE_CASE
+            // Pega a string do banco (YYYY-MM-DD...) e corta no T.
+            // Isso evita que o navegador converta para o dia anterior devido ao fuso.
+            const safeDate = pres.date ? String(pres.date).split("T")[0] : "";
+
             reset({
-              patient_id: pres.patientId,       
-              professional_id: pres.professionalId,
-              date: pres.date ? new Date(pres.date).toISOString().split("T")[0] : "",
+              patient_id: pres.patient_id, // snake_case      
+              professional_id: pres.professional_id, // snake_case
+              date: safeDate, 
               title: pres.notes,
               treatments: pres.medications || [],
             });
           }
         } else {
+          // Se for novo, seleciona o usuário atual como profissional padrão
           const prof = profsRes.data?.find((p: any) => p.id === user.id);
           if (prof) setValue("professional_id", prof.id);
         }
@@ -131,12 +146,12 @@ export function PrescriptionFormPage() {
       if (!clinicId) return toast.error("Erro de identificação da clínica.");
 
       const payload = {
-        clinicId: clinicId,
-        patientId: data.patient_id,
-        professionalId: data.professional_id,
+        clinic_id: clinicId,
+        patient_id: data.patient_id,
+        professional_id: data.professional_id,
         notes: data.title,
         medications: data.treatments,
-        date: new Date(data.date).toISOString(),
+        date: data.date, // Salva a string YYYY-MM-DD direto (o Supabase aceita Date como string)
       };
 
       if (editId) {
@@ -182,7 +197,7 @@ export function PrescriptionFormPage() {
   };
 
   // -----------------------------------------------------
-  // LOGICA DE IMPRESSÃO (AJUSTADA: ASSINATURA + FONTE)
+  // LOGICA DE IMPRESSÃO
   // -----------------------------------------------------
   const handlePrint = () => {
     const content = document.getElementById("print-area")?.innerHTML;
@@ -203,19 +218,17 @@ export function PrescriptionFormPage() {
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             .print-hidden { display: none !important; }
             
-            /* --- AJUSTES DA ASSINATURA --- */
             .signature-img-print {
                 max-height: 80px; 
                 display: block; 
-                margin: 0 auto 10px auto; /* Margem positiva para afastar da linha */
+                margin: 0 auto 10px auto;
                 position: relative; 
                 z-index: 10;
-                transform: translateY(-5px); /* Ajuste fino para subir */
+                transform: translateY(-5px);
             }
 
-            /* --- AJUSTES DO NOME DO PACIENTE --- */
             .patient-name-print {
-                font-size: 14px !important; /* Fonte reduzida conforme solicitado */
+                font-size: 14px !important; 
             }
           </style>
         </head>
@@ -230,6 +243,17 @@ export function PrescriptionFormPage() {
         printWindow.close();
       }, 500);
     };
+  };
+
+  // Helper para formatar data visualmente na folha A4
+  const formatDisplayDate = (dateString: string) => {
+      if (!dateString) return "--/--/----";
+      const parts = dateString.split('-');
+      if (parts.length === 3) {
+          const [year, month, day] = parts;
+          return `${day}/${month}/${year}`;
+      }
+      return dateString;
   };
 
   if (initializing)
@@ -366,15 +390,14 @@ export function PrescriptionFormPage() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Emissão</p>
-                <p className="text-sm font-black italic">{new Date(watchedValues.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                {/* DATA VISUAL BLINDADA */}
+                <p className="text-sm font-black italic">{formatDisplayDate(watchedValues.date)}</p>
               </div>
             </div>
 
             {/* Cabeçalho Paciente */}
             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 mb-12">
-              {/* Mudado de Destinatário para Paciente */}
               <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-2">Paciente</p>
-              {/* Classe nova para impressão reduzir a fonte */}
               <p className="text-2xl font-black text-gray-900 italic tracking-tighter uppercase patient-name-print">{getPatientName(watchedValues.patient_id)}</p>
             </div>
 
@@ -416,7 +439,6 @@ export function PrescriptionFormPage() {
           <div className="mt-20 text-center">
             {profDetails?.signature_data ? (
                <div className="flex justify-center -mb-6 relative z-10">
-                  {/* Classe para impressão ajustar posição */}
                   <img src={profDetails.signature_data} className="h-24 object-contain signature-img-print" alt="Assinatura" />
                </div>
             ) : (

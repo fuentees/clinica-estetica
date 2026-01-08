@@ -9,7 +9,7 @@ interface NewLeadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  clinicId: string;
+  clinic_id: string;
 }
 
 export function NewLeadModal({ isOpen, onClose, onSuccess, clinicId }: NewLeadModalProps) {

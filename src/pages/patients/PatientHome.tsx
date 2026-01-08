@@ -32,14 +32,14 @@ export default function PatientPortalHistory() {
               *,
               professional:profiles!professionalId ( first_name, last_name, signature_data, registration_number, formacao )
             `)
-            .eq('patientId', patient.id)
+            .eq('patient_id', patient.id)
             .order('created_at', { ascending: false });
 
           // 3. Busca Galeria (do tratamento ativo)
           const { data: treat } = await supabase
             .from('patient_treatments')
             .select('photos')
-            .eq('patientId', patient.id)
+            .eq('patient_id', patient.id)
             .eq('status', 'active')
             .maybeSingle();
 

@@ -94,6 +94,7 @@ export function PatientFormPage() {
   
   const patientAge = calculateAge(dateOfBirth);
 
+  // Busca de CEP automática
   const checkCEP = async (e: React.FocusEvent<HTMLInputElement>) => {
     const cep = e.target.value.replace(/\D/g, "");
     if (cep.length !== 8) return;
@@ -157,6 +158,7 @@ export function PatientFormPage() {
         setValue("cidade", data.cidade || "");
         setValue("estado", data.estado || "");
 
+        // Fallback para endereço antigo que salvava tudo junto
         if (!data.rua && data.address) {
             setValue("rua", data.address); 
         }
@@ -179,22 +181,23 @@ export function PatientFormPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Sessão expirada.");
 
-      // Busca o clinicId corretamente (usando aspas se necessário no select, mas aqui no insert usamos o objeto)
+      // Busca o clinicId garantindo a tipagem correta
       const { data: profile } = await supabase
         .from("profiles")
-        .select(`"clinicId"`) // Aspas duplas caso o banco esteja sensível
+        .select("clinic_id:clinic_id") // Alias explícito para garantir retorno
         .eq("id", user.id)
         .single();
 
-      // Ajuste para ler clinicId independente do formato (camel ou snake)
-      const userClinicId = profile?.clinicId || (profile as any)?.clinic_id;
+      // Ajuste de segurança para tipagem do retorno
+      const userClinicId = profile?.clinic_id || (profile as any)?.clinic_id;
 
       if (!userClinicId) {
         throw new Error("Usuário sem clínica vinculada.");
       }
 
+      // Payload preparado com chaves snake_case para o Supabase
       const patientDataToSave = {
-        clinicId: userClinicId, // ID da clínica garantido
+        clinic_id: userClinicId,
         name: fullName, 
         email: data.email || null,
         phone: data.phone,
@@ -211,7 +214,7 @@ export function PatientFormPage() {
         cidade: data.cidade,
         estado: data.estado,
         address: fullAddress,
-        // REMOVIDO: updatedAt: new Date().toISOString(), <-- ISSO CAUSAVA O ERRO
+        // Removido updatedAt para evitar erros (Supabase gerencia via trigger se configurado)
       };
 
       if (isEditing) {
@@ -241,6 +244,8 @@ export function PatientFormPage() {
 
   return (
     <div className="max-w-5xl mx-auto p-6 pb-20 animate-in fade-in duration-700">
+      
+      {/* CABEÇALHO */}
       <div className="flex items-center justify-between mb-10 bg-white dark:bg-gray-800 p-6 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate("/patients")} className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-2xl text-gray-400 transition-colors">
@@ -256,6 +261,8 @@ export function PatientFormPage() {
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
+        
+        {/* SEÇÃO 1: DADOS PESSOAIS */}
         <Section title="Identificação Pessoal" icon={User}>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <InputWithLabel label="Primeiro Nome" {...register("first_name")} error={errors.first_name?.message} placeholder="Ex: Maria" />
@@ -296,6 +303,7 @@ export function PatientFormPage() {
           </div>
         </Section>
 
+        {/* SEÇÃO 2: LOCALIZAÇÃO E CONTATO */}
         <Section title="Localização e Contato" icon={MapPin}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <InputWithLabel 
@@ -341,6 +349,7 @@ export function PatientFormPage() {
           </div>
         </Section>
 
+        {/* RODAPÉ DE AÇÃO */}
         <div className="flex justify-end gap-4 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-xl">
           <Button type="button" variant="outline" onClick={() => navigate("/patients")} className="h-14 px-8 rounded-2xl font-bold">
             Descartar

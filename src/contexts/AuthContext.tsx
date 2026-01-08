@@ -6,8 +6,9 @@ import {
   ReactNode,
 } from "react";
 import { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../lib/supabase"; // Confirme se o caminho do supabase está certo
 
+// Tipos de usuários aceitos
 export type UserRole = "admin" | "profissional" | "recepcionista" | "paciente";
 
 interface Role {
@@ -20,7 +21,7 @@ interface Profile {
   email: string;
   fullName: string;
   role: UserRole;
-  clinicId: string | null;
+  clinic_id: string | null;
   avatarUrl?: string | null;
   roleObject?: Role[] | null;
 }
@@ -35,9 +36,12 @@ interface AuthContextData {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
+  // Permissões
   isAdmin: boolean;
   isProfessional: boolean;
+  isReceptionist: boolean;
   isPatient: boolean;
+  // Ações
   signIn: (credentials: SignInData) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -50,50 +54,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- BUSCA PERFIL (MODO ROBUSTO) ---
+  // Busca os dados da tabela 'profiles'
   async function fetchProfile(userId: string) {
     try {
-      console.log("🔍 Buscando perfil para ID:", userId);
-
-      // Usamos select('*') para trazer TODAS as colunas e evitar erro de nome
       const { data, error } = await supabase
         .from("profiles")
-        .select('*') 
+        .select("*")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
       if (error) {
-        console.error("❌ Erro ao buscar perfil:", error);
-        setProfile(null);
+        console.error("❌ Erro ao buscar perfil:", error.message);
+      }
+
+      if (data) {
+        mountProfile(data);
         return;
       }
 
-      console.log("✅ Dados brutos do banco:", data);
-
-      if (data) {
-        // Mapeamento Inteligente: Tenta pegar clinicId de várias formas
-        // O Postgres pode retornar "clinicId" ou "clinic_id"
-        const rawClinicId = data["clinicId"] || data["clinic_id"] || data.clinicId;
+      // Fallback: Tenta buscar nos metadados do Auth se não achar na tabela
+      const userMeta = (await supabase.auth.getUser()).data.user?.user_metadata;
+      if (userMeta && userMeta.profileId) {
+        const { data: fallbackData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userMeta.profileId)
+          .maybeSingle();
         
-        // Mapeamento de Role
-        const userRole = (data.roleLegacy || data.role || "paciente") as UserRole;
-
-        const userProfile: Profile = {
-          id: data.id,
-          email: data.email,
-          fullName: data.full_name || data.fullName || "Usuário",
-          role: userRole,
-          clinicId: rawClinicId || null,
-          avatarUrl: data.avatar_url || data.avatarUrl || null,
-          roleObject: [], 
-        };
-
-        console.log("👤 Perfil montado:", userProfile);
-        setProfile(userProfile);
-      } else {
-        console.warn("⚠️ Perfil não encontrado (data é null)");
-        setProfile(null);
+        if (fallbackData) {
+            mountProfile(fallbackData);
+            return;
+        }
       }
+
+      setProfile(null);
+
     } catch (err) {
       console.error("❌ Erro interno no AuthContext:", err);
       setProfile(null);
@@ -102,6 +97,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Monta o objeto perfil tratando variações de nome de coluna
+  function mountProfile(data: any) {
+    const rawClinicId = data.clinic_id || data.clinicId || null;
+    const userRole = (data.role || "paciente") as UserRole;
+
+    const userProfile: Profile = {
+      id: data.id,
+      email: data.email,
+      fullName: data.full_name || data.fullName || "Usuário",
+      role: userRole,
+      clinic_id: rawClinicId,
+      avatarUrl: data.avatar_url || data.avatarUrl || null,
+      roleObject: [],
+    };
+
+    setProfile(userProfile);
+  }
+
+  // Monitora o estado da autenticação (Login/Logout)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -128,10 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function signIn({ email, password }: SignInData) {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
   }
 
@@ -142,10 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }
 
+  // Lógica de Permissões: ADMIN VÊ TUDO
   const role = profile?.role ?? "paciente";
-  const isAdmin = role === "admin";
-  const isProfessional = role === "profissional" || role === "admin";
-  const isPatient = role === "paciente";
+  const isSuperUser = role === "admin";
 
   return (
     <AuthContext.Provider
@@ -154,9 +164,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         profile,
         loading,
-        isAdmin,
-        isProfessional,
-        isPatient,
+        // Admin é Admin
+        isAdmin: isSuperUser,
+        // Profissional: É quem tem cargo 'profissional' OU é Admin
+        isProfessional: role === "profissional" || isSuperUser,
+        // Recepcionista: É quem tem cargo 'recepcionista' OU é Admin
+        isReceptionist: role === "recepcionista" || isSuperUser,
+        // Paciente: Apenas paciente
+        isPatient: role === "paciente",
         signIn,
         signOut,
       }}
@@ -168,8 +183,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth deve ser usado dentro de AuthProvider");
-  }
+  if (!context) throw new Error("useAuth deve ser usado dentro de AuthProvider");
   return context;
 }

@@ -9,7 +9,7 @@ interface NewContractModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  clinicId: string;
+  clinic_id: string;
 }
 
 export function NewContractModal({ isOpen, onClose, onSuccess, clinicId }: NewContractModalProps) {
@@ -17,7 +17,7 @@ export function NewContractModal({ isOpen, onClose, onSuccess, clinicId }: NewCo
   const [patients, setPatients] = useState<{ id: string; name: string }[]>([]);
   
   const [formData, setFormData] = useState({
-    patientId: '',
+    patient_id: '',
     title: '',
     contractType: 'consentimento',
   });
@@ -29,7 +29,7 @@ export function NewContractModal({ isOpen, onClose, onSuccess, clinicId }: NewCo
         const { data } = await supabase
           .from('patients')
           .select('id, name')
-          .eq('clinicId', clinicId)
+          .eq('clinic_id', clinicId)
           .order('name');
         setPatients(data || []);
       };
@@ -59,7 +59,7 @@ export function NewContractModal({ isOpen, onClose, onSuccess, clinicId }: NewCo
       toast.success('Contrato criado com sucesso!');
       onSuccess();
       onClose();
-      setFormData({ patientId: '', title: '', contractType: 'consentimento' });
+      setFormData({ patient_id: '', title: '', contractType: 'consentimento' });
     } catch (error: any) {
       console.error(error);
       toast.error('Erro ao criar contrato.');
@@ -94,7 +94,7 @@ export function NewContractModal({ isOpen, onClose, onSuccess, clinicId }: NewCo
               className="w-full h-11 px-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               value={formData.patientId}
               // Tipagem explícita do evento corrigida aqui
-              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, patientId: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, patient_id: e.target.value })}
             >
               <option value="">Selecione um paciente...</option>
               {patients.map((p) => (

@@ -190,13 +190,13 @@ export function InjectablesPlanningPage() {
         if (!user) throw new Error("Usuário não autenticado");
 
         // 2. Busca o clinicId do usuário logado
-        const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
-        if (!profile?.clinicId) throw new Error("Clínica não identificada");
+        const { data: profile } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
+        if (!profile?.clinic_id) throw new Error("Clínica não identificada");
 
         // 3. Salva no banco (usando snake_case conforme Prisma @map)
         const { error } = await supabase.from('injectable_plans').insert({
-            patientId: id,
-            clinicId: profile.clinicId,
+            patient_id: id,
+            clinic_id: profile.clinic_id,
             created_by: user.id,
             toxina_unidades: manualPlan.toxina,
             preenchimento: manualPlan.preenchimento,

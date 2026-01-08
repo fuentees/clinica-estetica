@@ -15,7 +15,7 @@ model Clinic {
   id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name     String
   slug     String  @unique
-  isActive Boolean @default(true)
+  isActive Boolean @default(true) @map("is_active")
 
   logoUrl      String? @map("logo_url")
   primaryColor String? @map("primary_color")
@@ -25,6 +25,7 @@ model Clinic {
   email   String?
   website String?
 
+  // Endereço (Mantendo os nomes em PT-BR como você tinha, mas padronizados)
   cep         String?
   rua         String?
   numero      String?
@@ -32,12 +33,12 @@ model Clinic {
   cidade      String?
   estado      String?
   complemento String?
-  address     String?
+  address     String? // Caso use endereço formatado
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
-  // Relacionamentos Principais
+  // Relacionamentos
   profiles           Profile[]
   patients           Patient[]
   services           Service[]
@@ -53,8 +54,6 @@ model Clinic {
   settings           SystemSetting[]
   terms              Term[]
   auditLogs          AuditLog[]
-  
-  // Módulo de Estoque (Adicionado para funcionar o InventoryPage)
   inventory          Inventory[]
   productConsumption ProductConsumption[]
 
@@ -75,32 +74,47 @@ model Profile {
   avatarUrl String? @map("avatar_url")
   phone     String?
 
+  // --- NOVOS CAMPOS: DOCUMENTAÇÃO ---
+  cpf       String? @map("cpf")
+  rg        String? @map("rg")
+  cnpj      String? @map("cnpj")
+  birthDate DateTime? @map("birth_date") @db.Date
+  pixKey    String? @map("pix_key")
+
+  // --- NOVOS CAMPOS: ENDEREÇO DETALHADO ---
+  zipCode      String? @map("zip_code")
+  street       String? @map("street")
+  number       String? @map("number")
+  complement   String? @map("complement")
+  neighborhood String? @map("neighborhood")
+  city         String? @map("city")
+  state        String? @map("state")
+  address      String? @map("address") // Campo para endereço formatado/legado
+
   // Dados Profissionais
   formacao           String?
   registrationNumber String? @map("registration_number")
   bio                String?
-  
-  commissionRate     Decimal? @default(0) @db.Decimal(10, 2) @map("commission_rate")
+
+  commissionRate Decimal? @default(0) @db.Decimal(10, 2) @map("commission_rate")
 
   // Configurações de Agenda
-  startTime   String? @default("09:00") @map("start_time")
-  endTime     String? @default("18:00") @map("end_time")
-  agendaColor String? @default("#db2777") @map("agenda_color")
-  
+  startTime   String?  @default("09:00") @map("start_time")
+  endTime     String?  @default("18:00") @map("end_time")
+  agendaColor String?  @default("#db2777") @map("agenda_color")
   workingDays String[] @default(["Mon", "Tue", "Wed", "Thu", "Fri"]) @map("working_days")
-  
-  signatureData String?  @map("signature_data")
 
-  // Relacionamentos
-  clinicId String? @db.Uuid
+  signatureData String? @map("signature_data")
+
+  // Relacionamentos e FKs
+  clinicId String? @map("clinic_id") @db.Uuid
   clinic   Clinic? @relation(fields: [clinicId], references: [id])
 
-  roleId String?
+  roleId String? @map("role_id")
   role   Role?   @relation(fields: [roleId], references: [id])
 
-  roleLegacy String @default("paciente") @map("role")
-
-  isActive Boolean @default(true) @map("is_active")
+  roleLegacy String  @default("paciente") @map("role")
+  isActive   Boolean @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
@@ -114,7 +128,7 @@ model Profile {
   prescriptions          Prescription[]
   serviceProfessionals   ServiceProfessional[]
   auditLogs              AuditLog[]
-  productConsumptions    ProductConsumption[] // Baixas de estoque realizadas
+  productConsumptions    ProductConsumption[]
 
   @@map("profiles")
 }
@@ -147,8 +161,8 @@ model Permission {
 
 model RolePermission {
   id           String @id @default(uuid())
-  roleId       String
-  permissionId String
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
 
   role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
@@ -162,26 +176,26 @@ model RolePermission {
 // ======================================================
 model Patient {
   id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId String @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
   clinic   Clinic @relation(fields: [clinicId], references: [id])
 
-  // Vínculo com Login (Adicionado para o Portal do Paciente)
-  accountId String? @unique 
+  accountId String? @unique @map("account_id")
 
   name  String
   phone String
   email String?
 
-  cpf           String?
-  date_of_birth String?
-  avatar_url    String?
+  cpf         String?
+  dateOfBirth String? @map("date_of_birth") // Corrigido de date_of_birth
+  avatarUrl   String? @map("avatar_url")    // Corrigido de avatar_url
 
-  rg           String?
-  idade        Int?
-  profissao    String?
-  sexo         String?
-  estado_civil String?
+  rg          String?
+  idade       Int?
+  profissao   String?
+  sexo        String?
+  estadoCivil String? @map("estado_civil")
 
+  // Endereço
   cep     String?
   rua     String?
   numero  String?
@@ -190,9 +204,9 @@ model Patient {
   estado  String?
   address String?
 
-  termo_aceito   Boolean @default(false)
-  autoriza_foto  Boolean @default(false)
-  autoriza_midia Boolean @default(false)
+  termoAceito   Boolean @default(false) @map("termo_aceito")
+  autorizaFoto  Boolean @default(false) @map("autoriza_foto")
+  autorizaMidia Boolean @default(false) @map("autoriza_midia")
 
   // === BIOMETRIA ===
   peso            Decimal? @db.Decimal(10, 2)
@@ -200,7 +214,7 @@ model Patient {
   imc             Decimal? @db.Decimal(10, 2)
   pressaoArterial String?  @map("pressao_arterial")
 
-  // === ANAMNESE: HISTÓRICO E QUEIXA ===
+  // === ANAMNESE: GERAL E QUEIXA ===
   queixaPrincipal          String? @map("queixa_principal")
   queixaPrincipalDetalhada String? @map("queixa_principal_detalhada")
   tempoQueixa              String? @map("tempo_queixa")
@@ -215,18 +229,18 @@ model Patient {
   horarioPior              String? @map("horario_pior")
   historicoFamiliar        String? @map("historico_familiar")
 
-  // === ANAMNESE: SAÚDE GERAL ===
+  // === ANAMNESE: SAÚDE ===
   doencasCronicas        String? @map("doencas_cronicas")
   alergiasMedicamentosas String? @map("alergias_medicamentosas")
   procedimentosPrevios   String? @map("procedimentos_previos")
   rotinaSkincare         String? @map("rotina_skincare")
-  
-  alteracoesHormonais    String? @map("alteracoes_hormonais")
-  gestante               Boolean? @default(false)
-  lactante               Boolean? @default(false)
-  cicloMenstrual         String? @map("ciclo_menstrual")
-  metodoContraceptivo    String? @map("metodo_contraceptivo")
-  
+
+  alteracoesHormonais String? @map("alteracoes_hormonais")
+  gestante            Boolean? @default(false)
+  lactante            Boolean? @default(false)
+  cicloMenstrual      String? @map("ciclo_menstrual")
+  metodoContraceptivo String? @map("metodo_contraceptivo")
+
   fumante                 Boolean? @default(false)
   consumoAlcool           String? @map("consumo_alcool")
   atividadeFisica         Boolean? @default(false) @map("atividade_fisica")
@@ -236,62 +250,61 @@ model Patient {
   ingestaoAgua            String? @map("ingestao_agua")
   ingestaoAguaQtd         String? @map("ingestao_agua_qtd")
   funcionamentoIntestinal String? @map("funcionamento_intestinal")
-  alimentacao             String?  
-  
-  cirurgiasPrevias   String? @map("cirurgias_previas")
-  jaFezCirurgia      Boolean? @default(false) @map("ja_fez_cirurgia")
-  detalhesCirurgia   String? @map("detalhes_cirurgia")
-  oncologico         String? 
+  alimentacao             String?
+
+  cirurgiasPrevias String?  @map("cirurgias_previas")
+  jaFezCirurgia    Boolean? @default(false) @map("ja_fez_cirurgia")
+  detalhesCirurgia String?  @map("detalhes_cirurgia")
+  oncologico       String?
 
   // Medicamentos
-  usaMedicacaoContinua   Boolean? @default(false) @map("usa_medicacao_continua")
-  listaMedicacoes        String? @map("lista_medicacoes")
-  outrasAlergias         String? @map("outras_alergias")
+  usaMedicacaoContinua Boolean? @default(false) @map("usa_medicacao_continua")
+  listaMedicacoes      String?  @map("lista_medicacoes")
+  outrasAlergias       String?  @map("outras_alergias")
 
-  // Doenças Específicas
+  // Doenças
   possuiDiabetes            Boolean? @default(false) @map("possui_diabetes")
   possuiHipertensao         Boolean? @default(false) @map("possui_hipertensao")
   doencaHepatica            Boolean? @default(false) @map("doenca_hepatica")
-  doencaRenal               String? @map("doenca_renal")
-  doencaCardiaca            String? @map("doenca_cardiaca")
-  doencaAutoimune           String? @map("doenca_autoimune")
-  outrasPatologiasDescricao String? @map("outras_patologias_descricao")
-  
-  disturbioCirculatorio   String? @map("disturbio_circulatorio")
-  disturbioTireoide       String? @map("disturbio_tireoide")
-  epilepsia               String? @map("epilepsia")
-  
+  doencaRenal               String?  @map("doenca_renal")
+  doencaCardiaca            String?  @map("doenca_cardiaca")
+  doencaAutoimune           String?  @map("doenca_autoimune")
+  outrasPatologiasDescricao String?  @map("outras_patologias_descricao")
+
+  disturbioCirculatorio String? @map("disturbio_circulatorio")
+  disturbioTireoide     String? @map("disturbio_tireoide")
+  epilepsia             String?
+
   // Fatores de Risco
-  marcaPasso              Boolean? @default(false) @map("marca_passo")
-  portadorMarcapasso      String? @map("portador_marcapasso")
-  usoAnticoagulante       Boolean? @default(false) @map("uso_anticoagulante")
-  usoRetinoide            Boolean? @default(false) @map("uso_retinoide")
-  historicoQueloide       Boolean? @default(false) @map("historico_queloide")
-  implantesMetalicos      Boolean? @default(false) @map("implantes_metalicos")
-  portadorPinosMetalicos  String? @map("portador_pinos_metalicos")
-  lentesContato           String? @map("lentes_contato")
-  filtroSolarDiario       Boolean? @default(false) @map("filtro_solar_diario")
+  marcaPasso             Boolean? @default(false) @map("marca_passo")
+  portadorMarcapasso     String?  @map("portador_marcapasso")
+  usoAnticoagulante      Boolean? @default(false) @map("uso_anticoagulante")
+  usoRetinoide           Boolean? @default(false) @map("uso_retinoide")
+  historicoQueloide      Boolean? @default(false) @map("historico_queloide")
+  implantesMetalicos     Boolean? @default(false) @map("implantes_metalicos")
+  portadorPinosMetalicos String?  @map("portador_pinos_metalicos")
+  lentesContato          String?  @map("lentes_contato")
+  filtroSolarDiario      Boolean? @default(false) @map("filtro_solar_diario")
 
   // === ANAMNESE: FACIAL ===
-  facialFitzpatrick          String? @map("facial_fitzpatrick")
-  facialBaumann              String? @map("facial_baumann")
-  biotipoCutaneo             String? @map("biotipo_cutaneo")
-  facialTextura              String? @map("facial_textura")
-  facialAcneGrau             String? @map("facial_acne_grau")
-  facialOlheirasTipo         String? @map("facial_olheiras_tipo")
-  produtosEmUso              String? @map("produtos_em_uso")
-  
-  facialLesoes               String? @map("facial_lesoes")
-  facialPatologias           String? @map("facial_patologias")
-  facialDiscromias           String? @map("facial_discromias")
-  facialEnvelhecimento       String? @map("facial_envelhecimento")
+  facialFitzpatrick          String?  @map("facial_fitzpatrick")
+  facialBaumann              String?  @map("facial_baumann")
+  biotipoCutaneo             String?  @map("biotipo_cutaneo")
+  facialTextura              String?  @map("facial_textura")
+  facialAcneGrau             String?  @map("facial_acne_grau")
+  facialOlheirasTipo         String?  @map("facial_olheiras_tipo")
+  produtosEmUso              String?  @map("produtos_em_uso")
+  facialLesoes               String?  @map("facial_lesoes")
+  facialPatologias           String?  @map("facial_patologias")
+  facialDiscromias           String?  @map("facial_discromias")
+  facialEnvelhecimento       String?  @map("facial_envelhecimento")
   temTelangiectasias         Boolean? @default(false) @map("tem_telangiectasias")
-  facialTelangiectasiasLocal String? @map("facial_telangiectasias_local")
-  facialDiscromiasLocal      String? @map("facial_discromias_local")
-  facialRugasLocal           String? @map("facial_rugas_local")
-  locaisManchas              String? @map("locais_manchas")
-  locaisAcne                 String? @map("locais_acne")
-  locaisFlacidezFacial       String? @map("locais_flacidez_facial")
+  facialTelangiectasiasLocal String?  @map("facial_telangiectasias_local")
+  facialDiscromiasLocal      String?  @map("facial_discromias_local")
+  facialRugasLocal           String?  @map("facial_rugas_local")
+  locaisManchas              String?  @map("locais_manchas")
+  locaisAcne                 String?  @map("locais_acne")
+  locaisFlacidezFacial       String?  @map("locais_flacidez_facial")
 
   // === ANAMNESE: CORPORAL ===
   corporalPostura       String? @map("corporal_postura")
@@ -300,7 +313,7 @@ model Patient {
   corporalFlacidezTipo  String? @map("corporal_flacidez_tipo")
   corporalCeluliteGrau  String? @map("corporal_celulite_grau")
   corporalObservacoes   String? @map("corporal_observacoes")
-  
+
   corporalGorduraLocal   String? @map("corporal_gordura_local")
   corporalCeluliteLocal  String? @map("corporal_celulite_local")
   corporalEstriasLocal   String? @map("corporal_estrias_local")
@@ -311,20 +324,18 @@ model Patient {
   locaisFlacidezCorporal String? @map("locais_flacidez_corporal")
 
   // === ANAMNESE: CAPILAR ===
-  capilarTipo              String? @map("capilar_tipo")
-  capilarFrequenciaLavagem String? @map("capilar_frequencia_lavagem")
-  capilarDiametro          String? @map("capilar_diametro")
-  capilarOleosidadeFio     String? @map("capilar_oleosidade_fio")
-  capilarOleosidadeCouro   String? @map("capilar_oleosidade_couro")
-  capilarElasticidade      String? @map("capilar_elasticidade")
-  capilarEscalaSavin       String? @map("capilar_escala_savin")
-  capilarEscalaNorwood     String? @map("capilar_escala_norwood")
-  
-  capilarUsaBone     Boolean? @default(false) @map("capilar_usa_bone")
-  capilarUsaPreso    Boolean? @default(false) @map("capilar_usa_preso")
-  capilarUsaSecador  Boolean? @default(false) @map("capilar_usa_secador")
-  capilarUsaChapinha Boolean? @default(false) @map("capilar_usa_chapinha")
-  
+  capilarTipo                String?  @map("capilar_tipo")
+  capilarFrequenciaLavagem   String?  @map("capilar_frequencia_lavagem")
+  capilarDiametro            String?  @map("capilar_diametro")
+  capilarOleosidadeFio       String?  @map("capilar_oleosidade_fio")
+  capilarOleosidadeCouro     String?  @map("capilar_oleosidade_couro")
+  capilarElasticidade        String?  @map("capilar_elasticidade")
+  capilarEscalaSavin         String?  @map("capilar_escala_savin")
+  capilarEscalaNorwood       String?  @map("capilar_escala_norwood")
+  capilarUsaBone             Boolean? @default(false) @map("capilar_usa_bone")
+  capilarUsaPreso            Boolean? @default(false) @map("capilar_usa_preso")
+  capilarUsaSecador          Boolean? @default(false) @map("capilar_usa_secador")
+  capilarUsaChapinha         Boolean? @default(false) @map("capilar_usa_chapinha")
   capilarDisplasiasCongenitas String? @map("capilar_displasias_congenitas")
   capilarDisplasiasAdquiridas String? @map("capilar_displasias_adquiridas")
   capilarAlopeciaAreata       String? @map("capilar_alopecia_areata")
@@ -333,11 +344,11 @@ model Patient {
   corporalAdipometriaDados Json? @map("corporal_adipometria_dados")
   corporalPerimetriaDados  Json? @map("corporal_perimetria_dados")
   anamnesisBodyMapping     Json? @map("anamnesis_body_mapping")
-  
+
   // Legados
-  anamnese_body_mapping Json?
-  facial_dados          Json?
-  corporal_dados        Json?
+  anamneseBodyMapping Json? @map("anamnese_body_mapping_legacy") // Renomeado para evitar conflito
+  facialDados         Json? @map("facial_dados")
+  corporalDados       Json? @map("corporal_dados")
 
   // === RELACIONAMENTOS ===
   consents          PatientTerm[]
@@ -359,29 +370,28 @@ model Patient {
   @@map("patients")
 }
 
-
 // ======================================================
 // 5. MÓDULOS CLÍNICOS E SERVIÇOS
 // ======================================================
 model Anamnesis {
   id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId       String @db.Uuid
-  patientId      String @db.Uuid
-  professionalId String @db.Uuid
+  clinicId       String @map("clinic_id") @db.Uuid
+  patientId      String @map("patient_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
 
   clinic       Clinic  @relation(fields: [clinicId], references: [id])
   patient      Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
   professional Profile @relation(fields: [professionalId], references: [id])
 
-  mainComplaint    String? @db.Text
-  complaintDetails String? @db.Text
+  mainComplaint    String? @map("main_complaint") @db.Text
+  complaintDetails String? @map("complaint_details") @db.Text
 
-  facialData       Json?
-  bodyData         Json?
-  capilarData      Json?
-  lifestyleData    Json?
-  bioimpedanceData Json?
-  visualMapData    Json?
+  facialData       Json? @map("facial_data")
+  bodyData         Json? @map("body_data")
+  capilarData      Json? @map("capilar_data")
+  lifestyleData    Json? @map("lifestyle_data")
+  bioimpedanceData Json? @map("bioimpedance_data")
+  visualMapData    Json? @map("visual_map_data")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
@@ -391,9 +401,9 @@ model Anamnesis {
 
 model EvolutionRecord {
   id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId       String @db.Uuid
-  patientId      String @db.Uuid
-  professionalId String @db.Uuid
+  clinicId       String @map("clinic_id") @db.Uuid
+  patientId      String @map("patient_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
 
   clinic       Clinic  @relation(fields: [clinicId], references: [id])
   patient      Patient @relation(fields: [patientId], references: [id])
@@ -413,15 +423,15 @@ model EvolutionRecord {
 
 model Service {
   id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId String @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
   clinic   Clinic @relation(fields: [clinicId], references: [id])
 
   name        String
   category    String
-  description String? 
+  description String?
   price       Decimal @db.Decimal(10, 2)
   duration    Int
-  isActive    Boolean @default(true)
+  isActive    Boolean @default(true) @map("is_active")
 
   professionals     ServiceProfessional[]
   appointments      Appointment[]
@@ -433,39 +443,39 @@ model Service {
 
 model ServiceProfessional {
   id        String @id @default(uuid())
-  serviceId String @db.Uuid
-  profileId String @db.Uuid
+  serviceId String @map("service_id") @db.Uuid
+  profileId String @map("profile_id") @db.Uuid
 
   service Service @relation(fields: [serviceId], references: [id])
   profile Profile @relation(fields: [profileId], references: [id])
 
-  commissionRate Decimal? @db.Decimal(5, 2)
+  commissionRate Decimal? @db.Decimal(5, 2) @map("commission_rate")
 
   @@unique([serviceId, profileId])
   @@map("service_professionals")
 }
 
 model BioimpedanceRecord {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  patientId String   @db.Uuid @map("patient_id")
-  patient   Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  date                 DateTime
-  weight               Decimal? @db.Decimal(5, 2)
-  height               Decimal? @db.Decimal(5, 2)
-  bmi                  Decimal? @db.Decimal(5, 2)
-  body_fat_percent     Decimal? @db.Decimal(5, 2)
-  muscle_mass_kg       Decimal? @db.Decimal(5, 2)
-  body_water_percent   Decimal? @db.Decimal(5, 2)
-  visceral_fat_level   Int?
-  metabolic_age        Int?
-  basal_metabolic_rate Int?
-  
-  cintura              Decimal? @db.Decimal(5, 2)
-  abdomen              Decimal? @db.Decimal(5, 2)
-  quadril              Decimal? @db.Decimal(5, 2)
-  braco_dir            Decimal? @db.Decimal(5, 2)
-  coxa_dir             Decimal? @db.Decimal(5, 2)
+  date              DateTime
+  weight            Decimal? @db.Decimal(5, 2)
+  height            Decimal? @db.Decimal(5, 2)
+  bmi               Decimal? @db.Decimal(5, 2)
+  bodyFatPercent    Decimal? @map("body_fat_percent") @db.Decimal(5, 2)
+  muscleMassKg      Decimal? @map("muscle_mass_kg") @db.Decimal(5, 2)
+  bodyWaterPercent  Decimal? @map("body_water_percent") @db.Decimal(5, 2)
+  visceralFatLevel  Int?     @map("visceral_fat_level")
+  metabolicAge      Int?     @map("metabolic_age")
+  basalMetabolicRate Int?    @map("basal_metabolic_rate")
+
+  cintura  Decimal? @db.Decimal(5, 2)
+  abdomen  Decimal? @db.Decimal(5, 2)
+  quadril  Decimal? @db.Decimal(5, 2)
+  bracoDir Decimal? @map("braco_dir") @db.Decimal(5, 2)
+  coxaDir  Decimal? @map("coxa_dir") @db.Decimal(5, 2)
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -474,19 +484,19 @@ model BioimpedanceRecord {
 
 model Appointment {
   id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId String @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
   clinic   Clinic @relation(fields: [clinicId], references: [id])
 
-  startAt   DateTime @map("start_time") 
-  endAt     DateTime @map("end_time")
+  startAt DateTime @map("start_time") // Mantive start_time no banco
+  endAt   DateTime @map("end_time")
 
-  status    String   @default("scheduled")
-  notes     String?
-  price     Decimal? @db.Decimal(10, 2) // Campo necessário para comissões
+  status String   @default("scheduled")
+  notes  String?
+  price  Decimal? @db.Decimal(10, 2)
 
-  patientId      String  @db.Uuid @map("patient_id")
-  professionalId String  @db.Uuid @map("professional_id")
-  serviceId      String? @db.Uuid @map("service_id")
+  patientId      String  @map("patient_id") @db.Uuid
+  professionalId String  @map("professional_id") @db.Uuid
+  serviceId      String? @map("service_id") @db.Uuid
 
   // Relacionamentos
   patient      Patient  @relation(fields: [patientId], references: [id])
@@ -498,26 +508,24 @@ model Appointment {
 
   @@index([clinicId, startAt])
   @@index([professionalId, startAt])
-  
   @@map("appointments")
 }
 
 // ======================================================
-// 6. TRATAMENTOS, PLANOS E EVOLUÇÕES
+// 6. TRATAMENTOS E EVOLUÇÕES
 // ======================================================
 
-// IA e Planejamento de Injetáveis
 model InjectablePlan {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId    String   @db.Uuid
-  patientId   String   @db.Uuid
-  createdById String?  @db.Uuid @map("created_by")
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId    String  @map("clinic_id") @db.Uuid
+  patientId   String  @map("patient_id") @db.Uuid
+  createdById String? @map("created_by") @db.Uuid
 
-  date             DateTime @default(now())
-  toxinaUnidades   Json?    @map("toxina_unidades")
-  preenchimento    Json?    @map("preenchimento")
-  recomendacaoIA   Json?    @map("recomendacao_ia")
-  observacoes      String?  @db.Text
+  date           DateTime @default(now())
+  toxinaUnidades Json?    @map("toxina_unidades")
+  preenchimento  Json?    @map("preenchimento")
+  recomendacaoIA Json?    @map("recomendacao_ia")
+  observacoes    String?  @db.Text
 
   clinic    Clinic   @relation(fields: [clinicId], references: [id])
   patient   Patient  @relation(fields: [patientId], references: [id])
@@ -528,40 +536,38 @@ model InjectablePlan {
   @@map("injectable_plans")
 }
 
-// Monitoramento Contínuo (Galeria de Fotos / Pacotes)
 model PatientTreatment {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId  String   @db.Uuid
-  patientId String   @db.Uuid
-  serviceId String?  @db.Uuid @map("service_id")
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String  @map("clinic_id") @db.Uuid
+  patientId String  @map("patient_id") @db.Uuid
+  serviceId String? @map("service_id") @db.Uuid
 
-  status    String   @default("active") 
+  status    String   @default("active")
   startDate DateTime @default(now()) @map("start_date")
   notes     String?
 
-  photos    String[] @default([]) 
+  photos String[] @default([])
 
-  clinic    Clinic   @relation(fields: [clinicId], references: [id])
-  patient   Patient  @relation(fields: [patientId], references: [id])
-  service   Service? @relation(fields: [serviceId], references: [id])
+  clinic  Clinic   @relation(fields: [clinicId], references: [id])
+  patient Patient  @relation(fields: [patientId], references: [id])
+  service Service? @relation(fields: [serviceId], references: [id])
 
   progressRecords TreatmentProgress[]
 
   @@map("patient_treatments")
 }
 
-// Evolução Diária (Registro de Sessões)
 model TreatmentProgress {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  treatmentId String   @db.Uuid @map("treatment_id")
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  treatmentId String @map("treatment_id") @db.Uuid
 
-  progressNotes    String   @map("progress_notes")
-  measurements     String? 
-  sideEffects      String?  @map("side_effects")
-  recommendations  String? 
-  nextSessionNotes String?  @map("next_session_notes")
+  progressNotes    String  @map("progress_notes")
+  measurements     String?
+  sideEffects      String? @map("side_effects")
+  recommendations  String?
+  nextSessionNotes String? @map("next_session_notes")
 
-  recordedAt       DateTime @default(now()) @map("recorded_at")
+  recordedAt DateTime @default(now()) @map("recorded_at")
 
   treatment PatientTreatment @relation(fields: [treatmentId], references: [id], onDelete: Cascade)
 
@@ -569,38 +575,38 @@ model TreatmentProgress {
 }
 
 // ======================================================
-// 7. INVENTÁRIO E CONSUMO (ESTOQUE)
+// 7. INVENTÁRIO
 // ======================================================
 model Inventory {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId         String   @db.Uuid
-  name             String
-  description      String?
-  quantity         Int      @default(0)
-  minimum_quantity Int      @default(0)
-  unit_price       Decimal  @default(0) @db.Decimal(10, 2)
-  
-  clinic           Clinic   @relation(fields: [clinicId], references: [id])
-  consumption      ProductConsumption[]
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId        String  @map("clinic_id") @db.Uuid
+  name            String
+  description     String?
+  quantity        Int     @default(0)
+  minimumQuantity Int     @default(0) @map("minimum_quantity")
+  unitPrice       Decimal @default(0) @map("unit_price") @db.Decimal(10, 2)
 
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+  clinic      Clinic               @relation(fields: [clinicId], references: [id])
+  consumption ProductConsumption[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("inventory")
 }
 
 model ProductConsumption {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId        String   @db.Uuid
-  inventoryId     String   @db.Uuid
-  professionalId  String?  @db.Uuid
-  quantity        Int
-  notes           String?
-  createdAt       DateTime @default(now()) @map("created_at")
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String  @map("clinic_id") @db.Uuid
+  inventoryId    String  @map("inventory_id") @db.Uuid
+  professionalId String? @map("professional_id") @db.Uuid
+  quantity       Int
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
 
-  clinic          Clinic    @relation(fields: [clinicId], references: [id])
-  inventory       Inventory @relation(fields: [inventoryId], references: [id])
-  profiles        Profile?  @relation(fields: [professionalId], references: [id])
+  clinic    Clinic    @relation(fields: [clinicId], references: [id])
+  inventory Inventory @relation(fields: [inventoryId], references: [id])
+  profiles  Profile?  @relation(fields: [professionalId], references: [id])
 
   @@map("product_consumption")
 }
@@ -609,22 +615,21 @@ model ProductConsumption {
 // 8. RECEITUÁRIO
 // ======================================================
 model Prescription {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId       String   @db.Uuid
-  patientId      String   @db.Uuid
-  professionalId String   @db.Uuid
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String @map("clinic_id") @db.Uuid
+  patientId      String @map("patient_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
 
-  clinic       Clinic    @relation(fields: [clinicId], references: [id])
-  patient      Patient   @relation(fields: [patientId], references: [id])
-  professional Profile   @relation(fields: [professionalId], references: [id])
+  clinic       Clinic  @relation(fields: [clinicId], references: [id])
+  patient      Patient @relation(fields: [patientId], references: [id])
+  professional Profile @relation(fields: [professionalId], references: [id])
 
-  date         DateTime @default(now())
-  // Estrutura do JSON: [{ name, dosage, frequency, duration, instructions }]
-  medications Json      
+  date        DateTime @default(now())
+  medications Json
   notes       String?  @db.Text
-  
-  validUntil  DateTime? @map("valid_until")
-  signature   String?   
+
+  validUntil DateTime? @map("valid_until")
+  signature  String?
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -636,9 +641,9 @@ model Prescription {
 // ======================================================
 model Budget {
   id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId       String @db.Uuid
-  patientId      String @db.Uuid
-  professionalId String @db.Uuid
+  clinicId       String @map("clinic_id") @db.Uuid
+  patientId      String @map("patient_id") @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
 
   clinic       Clinic  @relation(fields: [clinicId], references: [id])
   patient      Patient @relation(fields: [patientId], references: [id])
@@ -649,8 +654,8 @@ model Budget {
   discount Decimal @default(0) @db.Decimal(10, 2)
   total    Decimal @db.Decimal(10, 2)
 
-  status       String    @default("pending")
-  valid_until DateTime?
+  status     String    @default("pending")
+  validUntil DateTime? @map("valid_until")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
@@ -660,20 +665,20 @@ model Budget {
 
 model Transaction {
   id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId  String  @db.Uuid
-  patientId String? @db.Uuid
+  clinicId  String  @map("clinic_id") @db.Uuid
+  patientId String? @map("patient_id") @db.Uuid
 
   clinic  Clinic   @relation(fields: [clinicId], references: [id])
   patient Patient? @relation(fields: [patientId], references: [id])
 
-  type           String
-  category       String?
-  description    String
-  amount         Decimal @db.Decimal(10, 2)
-  payment_method String?
+  type          String
+  category      String?
+  description   String
+  amount        Decimal @db.Decimal(10, 2)
+  paymentMethod String? @map("payment_method")
 
-  due_date DateTime
-  paid_at  DateTime?
+  dueDate DateTime  @map("due_date")
+  paidAt  DateTime? @map("paid_at")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -682,15 +687,15 @@ model Transaction {
 
 model AnamnesisAIAnalysis {
   id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  patientId String  @db.Uuid
+  patientId String  @map("patient_id") @db.Uuid
   patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  anamnesis_data       Json
-  ai_suggestions       String? @db.Text
-  risk_factors         Json?
-  suggested_treatments Json?
-  confidence_score     Int     @default(0)
-  status               String  @default("completed")
+  anamnesisData       Json    @map("anamnesis_data")
+  aiSuggestions       String? @map("ai_suggestions") @db.Text
+  riskFactors         Json?   @map("risk_factors")
+  suggestedTreatments Json?   @map("suggested_treatments")
+  confidenceScore     Int     @default(0) @map("confidence_score")
+  status              String  @default("completed")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -698,18 +703,18 @@ model AnamnesisAIAnalysis {
 }
 
 model AppointmentReminder {
-  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  appointment_id String @db.Uuid
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  appointmentId String @map("appointment_id") @db.Uuid
 
-  patient_id String  @db.Uuid
-  patient    Patient @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  patientId String  @map("patient_id") @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  to            String
-  status        String    @default("pending")
-  retry_count   Int       @default(0)
-  error_message String?
-  scheduled_for DateTime
-  sent_at       DateTime?
+  to           String
+  status       String    @default("pending")
+  retryCount   Int       @default(0) @map("retry_count")
+  errorMessage String?   @map("error_message")
+  scheduledFor DateTime  @map("scheduled_for")
+  sentAt       DateTime? @map("sent_at")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -718,14 +723,14 @@ model AppointmentReminder {
 
 model Term {
   id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId String @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
   clinic   Clinic @relation(fields: [clinicId], references: [id])
 
   type     String
   title    String
-  content  String @db.Text
+  content  String  @db.Text
   version  String
-  isActive Boolean @default(true)
+  isActive Boolean @default(true) @map("is_active")
 
   acceptedBy PatientTerm[]
   createdAt  DateTime      @default(now()) @map("created_at")
@@ -735,12 +740,12 @@ model Term {
 
 model PatientTerm {
   id        String @id @default(uuid())
-  patientId String @db.Uuid
-  termId    String @db.Uuid
+  patientId String @map("patient_id") @db.Uuid
+  termId    String @map("term_id") @db.Uuid
 
   patient    Patient  @relation(fields: [patientId], references: [id])
   term       Term     @relation(fields: [termId], references: [id])
-  acceptedAt DateTime @default(now())
+  acceptedAt DateTime @default(now()) @map("accepted_at")
 
   @@map("patient_terms")
 }
@@ -748,7 +753,7 @@ model PatientTerm {
 model SystemSetting {
   key      String
   value    String
-  clinicId String @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
   clinic   Clinic @relation(fields: [clinicId], references: [id])
 
   @@id([clinicId, key])
@@ -757,15 +762,15 @@ model SystemSetting {
 
 model AuditLog {
   id        String  @id @default(uuid())
-  clinicId  String  @db.Uuid
-  profileId String? @db.Uuid
+  clinicId  String  @map("clinic_id") @db.Uuid
+  profileId String? @map("profile_id") @db.Uuid
 
   clinic  Clinic   @relation(fields: [clinicId], references: [id])
   profile Profile? @relation(fields: [profileId], references: [id])
 
   action    String
   entity    String
-  entityId  String?
+  entityId  String?  @map("entity_id")
   severity  String   @default("INFO")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -775,23 +780,23 @@ model AuditLog {
 
 model ProfessionalAvailabilityException {
   id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  professionalId String @db.Uuid
+  professionalId String @map("professional_id") @db.Uuid
 
-  start_date  String
-  end_date    String
-  start_time  String?
-  end_time    String?
-  is_full_day Boolean @default(true)
-  reason      String?
+  startDate String   @map("start_date")
+  endDate   String   @map("end_date")
+  startTime String?  @map("start_time")
+  endTime   String?  @map("end_time")
+  isFullDay Boolean  @default(true) @map("is_full_day")
+  reason    String?
 
-  created_at DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("professional_availability_exceptions")
 }
 
 model Procedure {
   id       String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId String? @db.Uuid
+  clinicId String? @map("clinic_id") @db.Uuid
   clinic   Clinic? @relation(fields: [clinicId], references: [id])
 
   name        String

@@ -29,10 +29,10 @@ export function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    if (profile?.clinicId) {
+    if (profile?.clinic_id) {
       fetchPatients();
     }
-  }, [profile?.clinicId]);
+  }, [profile?.clinic_id]);
 
   async function fetchPatients() {
     try {
@@ -52,7 +52,7 @@ export function PatientsPage() {
           clinicId
         `)
         // Utilizando clinicId (CamelCase) conforme padrão do Prisma
-        .eq('clinicId', profile?.clinicId) 
+        .eq('clinic_id', profile?.clinic_id) 
         .order('name', { ascending: true });
 
       if (error) throw error;

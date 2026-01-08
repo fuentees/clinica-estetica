@@ -182,7 +182,7 @@ export class AnamnesisAIService {
   }
 
   // --- 4. FUNÇÃO PRINCIPAL ---
-  static async analyzeAnamnesis(patientId: string, anamnesisData: ComprehensiveAnamnesisData): Promise<AIAnalysisResult> {
+  static async analyzeAnamnesis(patient_id: string, anamnesisData: ComprehensiveAnamnesisData): Promise<AIAnalysisResult> {
     try {
       const deepAlerts = this.deepSafetyCheck(anamnesisData);
       const safetyAlerts = [
@@ -247,7 +247,7 @@ export class AnamnesisAIService {
     return alerts;
   }
 
-  static async getPatientAnalysis(patientId: string) {
+  static async getPatientAnalysis(patient_id: string) {
       const { data } = await supabase.from('anamnesis_ai_analysis')
         .select('*')
         .eq('patient_id', patientId)

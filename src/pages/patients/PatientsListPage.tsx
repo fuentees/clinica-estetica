@@ -22,14 +22,13 @@ import {
 import { Button } from "../../components/ui/button"; 
 
 // --- TIPAGEM ---
-// Ajustada para snake_case (padrão do banco) para evitar erros
 interface Patient {
   id: string;
   name: string;
   cpf?: string;
   email?: string;
   phone?: string;
-  created_at?: string; // Corrigido de createdAt para created_at
+  created_at?: string;
 }
 
 export function PatientsListPage() {
@@ -55,7 +54,7 @@ export function PatientsListPage() {
     setCurrentPage(1);
   }, [searchTerm, itemsPerPage]);
 
-  // --- FETCH DATA (SaaS INTEGRADO) ---
+  // --- FETCH DATA (CORRIGIDO) ---
   async function fetchPatients() {
     try {
       setLoading(true);
@@ -63,27 +62,27 @@ export function PatientsListPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Busca o clinicId. Tenta pegar tanto 'clinicId' quanto 'clinic_id' para garantir
+      // 1. Buscamos o ID da clínica usando o nome real do banco (snake_case)
       const { data: profile } = await supabase
         .from("profiles")
-        .select(`"clinicId"`) // Aspas para garantir caso seja case-sensitive
+        .select("clinic_id") 
         .eq("id", user.id)
         .single();
 
-      // Fallback seguro para pegar o ID da clínica
-      const userClinicId = profile?.clinicId || (profile as any)?.clinic_id;
+      // 2. Lemos a propriedade correta (clinic_id)
+      const userClinicId = profile?.clinic_id;
 
       if (!userClinicId) {
         toast.error("Erro: Usuário sem clínica vinculada.");
         return;
       }
 
-      // IMPORTANTE: Aqui usamos 'created_at' (snake_case) na ordenação
+      // 3. Fazemos a busca dos pacientes filtrando pela clínica correta
       const { data, error } = await supabase
         .from("patients")
         .select("*")
-        .eq("clinicId", userClinicId) 
-        .order("created_at", { ascending: false }); // <--- CORREÇÃO CRÍTICA AQUI
+        .eq("clinic_id", userClinicId) 
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       setPatients(data || []);
@@ -259,8 +258,8 @@ export function PatientsListPage() {
                                   onClick={(e) => e.stopPropagation()}
                                   className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-pink-600 transition-colors max-w-[200px] truncate"
                                 >
-                                   <Mail size={12} />
-                                   {email}
+                                    <Mail size={12} />
+                                    {email}
                                 </a>
                              )}
                           </div>

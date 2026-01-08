@@ -21,7 +21,7 @@ interface PatientTreatment {
   };
 }
 
-export function usePatientTreatments(patientId: string) {
+export function usePatientTreatments(patient_id: string) {
   return useQuery({
     queryKey: ['patient-treatments', patientId],
     queryFn: async () => {

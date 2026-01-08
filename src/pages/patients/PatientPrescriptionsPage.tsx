@@ -67,7 +67,7 @@ export function PatientPrescriptionsPage() {
              first_name, last_name, role, registration_number, formacao, signature_data
           )
         `)
-        .eq("patientId", patient.id) // <--- CORRIGIDO
+        .eq("patient_id", patient.id) // <--- CORRIGIDO
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -76,7 +76,7 @@ export function PatientPrescriptionsPage() {
           const { data: rawData } = await supabase
             .from("prescriptions")
             .select("*")
-            .eq("patientId", patient.id) // <--- CORRIGIDO
+            .eq("patient_id", patient.id) // <--- CORRIGIDO
             .order("created_at", { ascending: false });
             
           if (rawData) {

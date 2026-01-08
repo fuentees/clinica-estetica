@@ -77,7 +77,7 @@ export function LGPDPage() {
     },
   });
 
-  const exportPatientData = async (patientId: string) => {
+  const exportPatientData = async (patient_id: string) => {
     try {
       const { data: patient } = await supabase
         .from('patients')

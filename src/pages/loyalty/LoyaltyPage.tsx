@@ -16,7 +16,7 @@ interface LoyaltyReward {
   reward_value: number;
   image_url: string | null;
   active: boolean;
-  clinicId: string;
+  clinic_id: string;
 }
 
 export function LoyaltyPage() {
@@ -34,13 +34,13 @@ export function LoyaltyPage() {
   });
 
   const { data: rewards, isLoading: loadingRewards } = useQuery({
-    queryKey: ['loyalty-rewards', profile?.clinicId],
-    enabled: !!profile?.clinicId,
+    queryKey: ['loyalty-rewards', profile?.clinic_id],
+    enabled: !!profile?.clinic_id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('loyalty_rewards')
         .select('*')
-        .eq('clinicId', profile?.clinicId)
+        .eq('clinic_id', profile?.clinic_id)
         .order('points_required');
       if (error) throw error;
       return data as LoyaltyReward[];
@@ -48,12 +48,12 @@ export function LoyaltyPage() {
   });
 
   const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ['loyalty-stats', profile?.clinicId],
-    enabled: !!profile?.clinicId,
+    queryKey: ['loyalty-stats', profile?.clinic_id],
+    enabled: !!profile?.clinic_id,
     queryFn: async () => {
       const [pointsRes, redemptionsRes] = await Promise.all([
-        supabase.from('loyalty_points').select('points, transaction_type, patient_id').eq('clinicId', profile?.clinicId),
-        supabase.from('loyalty_redemptions').select('points_used, status').eq('clinicId', profile?.clinicId).eq('status', 'used')
+        supabase.from('loyalty_points').select('points, transaction_type, patient_id').eq('clinic_id', profile?.clinic_id),
+        supabase.from('loyalty_redemptions').select('points_used, status').eq('clinic_id', profile?.clinic_id).eq('status', 'used')
       ]);
       const totalEarned = pointsRes.data?.filter((p) => p.transaction_type === 'earn').reduce((sum, p) => sum + p.points, 0) || 0;
       const totalRedeemed = redemptionsRes.data?.reduce((sum, r) => sum + r.points_used, 0) || 0;
@@ -66,7 +66,7 @@ export function LoyaltyPage() {
     mutationFn: async (reward: Partial<LoyaltyReward>) => {
       const { error } = await supabase.from('loyalty_rewards').insert({
         ...reward,
-        clinicId: profile?.clinicId
+        clinic_id: profile?.clinic_id
       });
       if (error) throw error;
     },

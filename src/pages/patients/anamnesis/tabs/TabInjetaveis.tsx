@@ -39,13 +39,13 @@ export function TabInjetaveis() {
       return toast.error("Selecione áreas no mapa ou adicione produtos.");
     }
     
-    if (!profile?.clinicId) return toast.error("Clínica não identificada.");
+    if (!profile?.clinic_id) return toast.error("Clínica não identificada.");
 
     setIsSaving(true);
     try {
         const { error } = await supabase.from('injectable_plans').insert([{ 
           patient_id: patientId, 
-          clinicId: profile.clinicId, 
+          clinic_id: profile.clinic_id, 
           date, 
           products, 
           areas: currentPlanAreas, 

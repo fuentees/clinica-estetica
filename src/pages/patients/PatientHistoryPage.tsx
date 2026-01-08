@@ -69,7 +69,7 @@ export function PatientEvolutionPage() {
       if (user) {
         const { data: profile } = await supabase.from('profiles').select('id, clinicId').eq('id', user.id).single();
         if (profile) {
-          setClinicId(profile.clinicId);
+          setClinicId(profile.clinic_id);
           setProfId(profile.id);
         }
       }
@@ -78,7 +78,7 @@ export function PatientEvolutionPage() {
       const { data: hist, error } = await supabase
         .from("evolution_records")
         .select("*")
-        .eq("patientId", id)
+        .eq("patient_id", id)
         .order("date", { ascending: false });
 
       if (error) throw error;
@@ -108,9 +108,9 @@ export function PatientEvolutionPage() {
     setIsSaving(true);
     try {
       const { error } = await supabase.from("evolution_records").insert({
-        clinicId: clinicId,
-        patientId: id,
-        professionalId: profId,
+        clinic_id: clinicId,
+        patient_id: id,
+        professional_id: profId,
         date: new Date(newDate).toISOString(),
         subject: newType,
         description: newDesc,

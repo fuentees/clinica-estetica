@@ -39,19 +39,19 @@ export function InventoryFormPage() {
 
         const { data: profile } = await supabase
           .from('profiles')
-          .select('clinicId')
+          .select('clinic_id:clinic_id')
           .eq('id', user.id)
           .single();
 
-        if (profile?.clinicId) {
-          setClinicId(profile.clinicId);
+        if (profile?.clinic_id) {
+          setClinicId(profile.clinic_id);
 
           if (isEditing && id) {
             const { data: item, error } = await supabase
               .from('inventory')
               .select('*')
               .eq('id', id)
-              .eq('clinicId', profile.clinicId) 
+              .eq('clinic_id', profile.clinic_id) 
               .single();
 
             if (!error && item) {
@@ -80,7 +80,7 @@ export function InventoryFormPage() {
     try {
       const payload = { 
         ...data, 
-        clinicId: clinicId 
+        clinic_id: clinicId 
       };
       
       if (isEditing) {
@@ -88,7 +88,7 @@ export function InventoryFormPage() {
           .from('inventory')
           .update(payload)
           .eq('id', id)
-          .eq('clinicId', clinicId);
+          .eq('clinic_id', clinicId);
         
         if (error) throw error;
         toast.success("Estoque atualizado!");

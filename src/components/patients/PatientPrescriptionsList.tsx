@@ -6,7 +6,7 @@ import { FileText, Calendar, Stethoscope, ChevronRight, Plus, Printer } from "lu
 import { Button } from "../ui/button";
 
 interface Props {
-  patientId: string;
+  patient_id: string;
 }
 
 export function PatientPrescriptionsList({ patientId }: Props) {

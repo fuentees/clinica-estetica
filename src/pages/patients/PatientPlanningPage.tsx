@@ -9,9 +9,7 @@ import {
   Syringe, 
   Zap, 
   ShoppingBag, 
-  ChevronRight,
   Loader2,
-  Calculator,
   Tag
 } from "lucide-react";
 import { useParams } from "react-router-dom";
@@ -19,11 +17,11 @@ import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
 
-// Interface do Procedimento (Vindo do Banco)
+// Interface alinhada com a tabela 'services'
 interface Procedure {
   id: string;
   name: string;
-  category: 'toxina' | 'preenchedor' | 'bioestimulador' | 'tecnologia' | 'facial' | 'corporal' | 'outros';
+  category: string; // Flexibilizado para aceitar o que vier do banco
   price: number;
   description?: string;
 }
@@ -47,45 +45,43 @@ export function PatientPlanningPage() {
   const [discount, setDiscount] = useState<number>(0);
   const [saving, setSaving] = useState(false);
 
-  // 1. CARREGAR PROCEDIMENTOS E DADOS DA CLÍNICA
+  // 1. CARREGAR PROCEDIMENTOS REAIS (Tabela 'services')
   useEffect(() => {
     async function initPage() {
       try {
         setLoading(true);
         
-        // Identificar Clínica do Usuário
+        // Identificar Usuário e Clínica
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            const { data: profile } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
-            if (profile) setClinicId(profile.clinicId);
+        if (!user) return;
+
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('clinic_id:clinic_id')
+            .eq('id', user.id)
+            .single();
+
+        if (profile?.clinic_id) {
+            setClinicId(profile.clinic_id);
+
+            // BUSCA OS SERVIÇOS CADASTRADOS NA OUTRA TELA
+            const { data, error } = await supabase
+              .from('services') // ✅ Tabela correta (mesma do catálogo)
+              .select('*')
+              .eq('clinic_id', profile.clinic_id) // ✅ Filtro de segurança
+              .eq('is_active', true) // ✅ Snake_case correto
+              .order('name');
+
+            if (error) throw error;
+
+            if (data) {
+              setProcedures(data);
+            }
         }
 
-        // Buscar Procedimentos
-        const { data, error } = await supabase
-          .from('procedures')
-          .select('*')
-          .eq('active', true) 
-          .order('name');
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          setProcedures(data);
-        } else {
-          // DADOS DE FALLBACK (PARA TESTE IMEDIATO)
-          setProcedures([
-             { id: '1', name: 'Toxina Botulínica (3 Regiões)', category: 'toxina', price: 1200 },
-             { id: '2', name: 'Preenchimento Labial (1ml)', category: 'preenchedor', price: 1500 },
-             { id: '3', name: 'Bioestimulador Sculptra', category: 'bioestimulador', price: 2800 },
-             { id: '4', name: 'Laser Lavieen (Face)', category: 'tecnologia', price: 800 },
-             { id: '5', name: 'Ultraformer (Full Face)', category: 'tecnologia', price: 2500 },
-             { id: '6', name: 'Limpeza de Pele Profunda', category: 'facial', price: 250 },
-             { id: '7', name: 'Enzimas Corporais', category: 'corporal', price: 350 },
-          ]);
-        }
       } catch (err) {
         console.error("Erro ao carregar:", err);
-        toast.error("Erro ao carregar catálogo.");
+        toast.error("Erro ao carregar catálogo de serviços.");
       } finally {
         setLoading(false);
       }
@@ -126,11 +122,13 @@ export function PatientPlanningPage() {
   // Filtros
   const filteredProcedures = procedures.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = activeCategory === "todos" || p.category === activeCategory;
+    // Normaliza a categoria para comparação (ignora maiúsculas/minúsculas)
+    const pCat = p.category?.toLowerCase() || '';
+    const matchesCategory = activeCategory === "todos" || pCat.includes(activeCategory);
     return matchesSearch && matchesCategory;
   });
 
-  // 3. SALVAR ORÇAMENTO (ALINHADO COM SCHEMA PRISMA)
+  // 3. SALVAR ORÇAMENTO
   const handleSaveBudget = async () => {
      if(selectedItems.length === 0) return toast.error("O orçamento está vazio.");
      if(!clinicId) return toast.error("Clínica não identificada.");
@@ -138,8 +136,8 @@ export function PatientPlanningPage() {
      setSaving(true);
      try {
         const { error } = await supabase.from('treatment_plans').insert({
-            clinicId: clinicId,
-            patientId: patientId, // CamelCase conforme Prisma
+            clinic_id: clinicId,
+            patient_id: patientId, 
             notes: `Orçamento gerado via painel de planejamento`,
             items: selectedItems, // JSON com os itens
             subtotal,
@@ -161,14 +159,13 @@ export function PatientPlanningPage() {
      }
   };
 
-  // Helper de Ícones
+  // Helper de Ícones (Normalizado para minúsculas)
   const getIcon = (cat: string) => {
-     switch(cat) {
-        case 'toxina': case 'preenchedor': case 'bioestimulador': return <Syringe size={18}/>;
-        case 'tecnologia': return <Zap size={18}/>;
-        case 'facial': case 'corporal': return <Sparkles size={18}/>;
-        default: return <ShoppingBag size={18}/>;
-     }
+     const c = cat?.toLowerCase() || '';
+     if (c.includes('toxina') || c.includes('preenchedor') || c.includes('bioestimulador') || c.includes('injet')) return <Syringe size={18}/>;
+     if (c.includes('tecnologia') || c.includes('laser')) return <Zap size={18}/>;
+     if (c.includes('facial') || c.includes('corporal')) return <Sparkles size={18}/>;
+     return <ShoppingBag size={18}/>;
   };
 
   const categories = [
@@ -181,10 +178,12 @@ export function PatientPlanningPage() {
     { id: 'corporal', label: 'Corporais' },
   ];
 
-  if (loading) return <div className="p-10 h-96 flex flex-col items-center justify-center gap-4">
+  if (loading) return (
+    <div className="p-10 h-96 flex flex-col items-center justify-center gap-4">
       <Loader2 className="animate-spin text-pink-500 w-10 h-10"/>
-      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Carregando Catálogo...</p>
-  </div>;
+      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Sincronizando Catálogo...</p>
+    </div>
+  );
 
   return (
     <div className="h-[calc(100vh-140px)] flex flex-col xl:flex-row gap-6 animate-in fade-in duration-500">
@@ -222,36 +221,40 @@ export function PatientPlanningPage() {
          </div>
 
          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
-                {filteredProcedures.map((proc) => (
-                   <button 
-                      key={proc.id} 
-                      onClick={() => addItem(proc)}
-                      className="flex flex-col text-left bg-white dark:bg-gray-800 p-5 rounded-3xl border border-gray-100 dark:border-gray-700 hover:border-pink-300 dark:hover:border-pink-700 hover:shadow-md transition-all group"
-                   >
-                      <div className="flex justify-between items-start w-full mb-3">
-                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                            proc.category === 'tecnologia' ? 'bg-blue-50 text-blue-500' :
-                            proc.category === 'toxina' ? 'bg-purple-50 text-purple-500' :
-                            'bg-pink-50 text-pink-500'
-                         }`}>
-                            {getIcon(proc.category)}
-                         </div>
-                         <span className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-1 rounded-lg text-xs font-bold border border-gray-200 dark:border-gray-700">
-                            R$ {proc.price.toLocaleString('pt-BR')}
-                         </span>
-                      </div>
-                      <h4 className="font-bold text-gray-900 dark:text-white text-sm group-hover:text-pink-600 transition-colors line-clamp-2">
-                         {proc.name}
-                      </h4>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-wider">{proc.category}</p>
-                   </button>
-                ))}
-             </div>
+             {filteredProcedures.length === 0 ? (
+                 <div className="h-64 flex flex-col items-center justify-center text-center opacity-50">
+                    <ShoppingBag size={48} className="text-gray-300 mb-4"/>
+                    <p className="text-gray-400 font-bold uppercase text-xs tracking-widest">Nenhum serviço encontrado.</p>
+                    <p className="text-gray-400 text-[10px] mt-1">Cadastre novos itens no menu "Serviços".</p>
+                 </div>
+             ) : (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
+                    {filteredProcedures.map((proc) => (
+                       <button 
+                          key={proc.id} 
+                          onClick={() => addItem(proc)}
+                          className="flex flex-col text-left bg-white dark:bg-gray-800 p-5 rounded-3xl border border-gray-100 dark:border-gray-700 hover:border-pink-300 dark:hover:border-pink-700 hover:shadow-md transition-all group"
+                       >
+                          <div className="flex justify-between items-start w-full mb-3">
+                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors bg-pink-50 text-pink-500`}>
+                                {getIcon(proc.category)}
+                             </div>
+                             <span className="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white px-3 py-1 rounded-lg text-xs font-bold border border-gray-200 dark:border-gray-700">
+                                R$ {Number(proc.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                             </span>
+                          </div>
+                          <h4 className="font-bold text-gray-900 dark:text-white text-sm group-hover:text-pink-600 transition-colors line-clamp-2">
+                             {proc.name}
+                          </h4>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-wider">{proc.category}</p>
+                       </button>
+                    ))}
+                 </div>
+             )}
          </div>
       </div>
 
-      {/* --- COLUNA DIREITA: O CONTRATO --- */}
+      {/* --- COLUNA DIREITA: O ORÇAMENTO --- */}
       <div className="xl:w-[450px] shrink-0 flex flex-col h-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-[2.5rem] shadow-xl overflow-hidden relative">
           
           <div className="p-6 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
@@ -274,22 +277,22 @@ export function PatientPlanningPage() {
                 selectedItems.map((item) => (
                    <div key={item.internalId} className="group flex items-center justify-between animate-in slide-in-from-right-4">
                       <div className="flex-1">
-                         <p className="text-xs font-bold text-gray-900 dark:text-white line-clamp-1">{item.name}</p>
-                         <p className="text-[10px] text-gray-400 font-bold">R$ {item.price.toLocaleString('pt-BR')} un.</p>
+                          <p className="text-xs font-bold text-gray-900 dark:text-white line-clamp-1">{item.name}</p>
+                          <p className="text-[10px] text-gray-400 font-bold">R$ {Number(item.price).toLocaleString('pt-BR')} un.</p>
                       </div>
                       
                       <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 rounded-lg p-1 border border-gray-100 dark:border-gray-700">
-                         <button onClick={() => updateQty(item.internalId, -1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-white rounded-md transition-all">
-                            <Minus size={12}/>
-                         </button>
-                         <span className="text-xs font-bold w-4 text-center">{item.qty}</span>
-                         <button onClick={() => updateQty(item.internalId, 1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-green-500 hover:bg-white rounded-md transition-all">
-                            <Plus size={12}/>
-                         </button>
+                          <button onClick={() => updateQty(item.internalId, -1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-white rounded-md transition-all">
+                             <Minus size={12}/>
+                          </button>
+                          <span className="text-xs font-bold w-4 text-center">{item.qty}</span>
+                          <button onClick={() => updateQty(item.internalId, 1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-green-500 hover:bg-white rounded-md transition-all">
+                             <Plus size={12}/>
+                          </button>
                       </div>
 
                       <button onClick={() => removeItem(item.internalId)} className="ml-3 text-gray-300 hover:text-red-500 transition-colors">
-                         <Trash2 size={16}/>
+                          <Trash2 size={16}/>
                       </button>
                    </div>
                 ))

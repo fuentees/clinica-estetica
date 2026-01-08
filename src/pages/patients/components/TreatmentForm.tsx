@@ -24,7 +24,7 @@ const treatmentFormSchema = z.object({
 type TreatmentFormData = z.infer<typeof treatmentFormSchema>;
 
 interface TreatmentFormProps {
-  patientId: string;
+  patient_id: string;
   treatmentId: string;
   onClose: () => void;
 }
@@ -42,7 +42,7 @@ export function TreatmentForm({ patientId, treatmentId, onClose }: TreatmentForm
   });
 
   const onSubmit = async (data: TreatmentFormData) => {
-    if (!profile?.clinicId) {
+    if (!profile?.clinic_id) {
       toast.error('Clínica não identificada');
       return;
     }
@@ -52,8 +52,8 @@ export function TreatmentForm({ patientId, treatmentId, onClose }: TreatmentForm
         .from('treatment_forms')
         .insert({
           ...data,
-          clinicId: profile.clinicId,
-          professionalId: profile.id,
+          clinic_id: profile.clinic_id,
+          professional_id: profile.id,
           createdAt: new Date().toISOString()
         });
 

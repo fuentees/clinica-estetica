@@ -76,14 +76,14 @@ export default function PatientAnamnesisPage() {
   // --- CARREGAR DADOS DO PACIENTE E ANAMNESE ---
   useEffect(() => {
     async function fetchAnamnesis() {
-      if (!id || !profile?.clinicId) return; // Garante que temos o ID da clínica
+      if (!id || !profile?.clinic_id) return; // Garante que temos o ID da clínica
 
       try {
         const { data, error } = await supabase
             .from("patients")
             .select("*")
             .eq("id", id)
-            .eq("clinicId", profile.clinicId) // Segurança: Só carrega se for da mesma clínica
+            .eq("clinic_id", profile.clinic_id) // Segurança: Só carrega se for da mesma clínica
             .single();
 
         if (error) throw error;
@@ -126,11 +126,11 @@ export default function PatientAnamnesisPage() {
       }
     }
     fetchAnamnesis();
-  }, [id, methods, profile?.clinicId]);
+  }, [id, methods, profile?.clinic_id]);
 
   // --- PERSISTÊNCIA DOS DADOS ---
   const onSubmitAnamnesis = async (data: any) => {
-    if (!profile?.clinicId) return;
+    if (!profile?.clinic_id) return;
     setSaving(true);
 
     try {
@@ -161,7 +161,7 @@ export default function PatientAnamnesisPage() {
         .from("patients")
         .update(payload)
         .eq("id", id)
-        .eq("clinicId", profile.clinicId); // Segurança dupla
+        .eq("clinic_id", profile.clinic_id); // Segurança dupla
 
       if (error) throw error;
 

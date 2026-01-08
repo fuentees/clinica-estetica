@@ -33,7 +33,7 @@ export function DigitalContractsPage() {
     async function getClinic() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase.from('profiles').select('clinicId').eq('id', user.id).single();
+        const { data } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
         if (data?.clinicId) setClinicId(data.clinicId);
       }
     }
@@ -48,7 +48,7 @@ export function DigitalContractsPage() {
       let query = supabase
         .from('digital_contracts')
         .select(`*, patients (name)`)
-        .eq('clinicId', clinicId)
+        .eq('clinic_id', clinicId)
         .order('created_at', { ascending: false });
 
       if (statusFilter !== 'all') {

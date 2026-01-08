@@ -13,7 +13,7 @@ interface InventoryItem {
   id: string;
   name: string;
   quantity: number;
-  clinicId: string;
+  clinic_id: string;
 }
 
 const consumptionSchema = z.object({
@@ -59,7 +59,7 @@ export function ConsumptionForm({ item, onClose }: ConsumptionFormProps) {
         .from('product_consumption')
         .insert({
           inventoryId: item.id,
-          clinicId: item.clinicId,
+          clinic_id: item.clinicId,
           quantity: Number(data.quantity),
           notes: data.notes,
           createdAt: new Date().toISOString(),
@@ -72,7 +72,7 @@ export function ConsumptionForm({ item, onClose }: ConsumptionFormProps) {
         .from('inventory')
         .update({ quantity: item.quantity - Number(data.quantity) })
         .eq('id', item.id)
-        .eq('clinicId', item.clinicId);
+        .eq('clinic_id', item.clinicId);
 
       if (updateError) throw updateError;
 

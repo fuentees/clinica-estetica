@@ -67,7 +67,7 @@ async function main() {
     update: {
       email: MY_EMAIL,
       roleLegacy: 'admin',
-      clinicId: clinic.id,
+      clinic_id: clinic.id,
       roleId: roleAdmin.id,
       isActive: true,
     },
@@ -79,7 +79,7 @@ async function main() {
       lastName: 'Fuentes',
       roleLegacy: 'admin',
       isActive: true,
-      clinicId: clinic.id,
+      clinic_id: clinic.id,
       roleId: roleAdmin.id,
       workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
       startTime: '08:00',
@@ -99,10 +99,10 @@ async function main() {
 
   for (const s of services) {
     const service = await prisma.service.upsert({
-      where: { clinicId_name: { clinicId: clinic.id, name: s.name } },
+      where: { clinicId_name: { clinic_id: clinic.id, name: s.name } },
       update: {},
       create: {
-        clinicId: clinic.id,
+        clinic_id: clinic.id,
         name: s.name,
         category: s.category,
         price: s.price,
@@ -126,10 +126,10 @@ async function main() {
   // ======================================================
   await prisma.systemSetting.createMany({
     data: [
-      { clinicId: clinic.id, key: 'system_status', value: 'active' },
-      { clinicId: clinic.id, key: 'ai_engine', value: 'enabled' },
-      { clinicId: clinic.id, key: 'calendar_start', value: '08:00' },
-      { clinicId: clinic.id, key: 'calendar_end', value: '20:00' },
+      { clinic_id: clinic.id, key: 'system_status', value: 'active' },
+      { clinic_id: clinic.id, key: 'ai_engine', value: 'enabled' },
+      { clinic_id: clinic.id, key: 'calendar_start', value: '08:00' },
+      { clinic_id: clinic.id, key: 'calendar_end', value: '20:00' },
     ],
     skipDuplicates: true,
   })

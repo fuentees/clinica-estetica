@@ -45,11 +45,10 @@ export function AppointmentsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    // Timeout de segurança para não travar a tela
     const timeout = setTimeout(() => {
         if (isMounted && loading) {
             setLoading(false);
-            toast.error("Demora na resposta do servidor.");
+            // toast.error("Demora na resposta do servidor."); // Opcional
         }
     }, 10000);
 
@@ -60,28 +59,28 @@ export function AppointmentsPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // 1. Pega ClinicId
+        // 1. Pega ClinicId (snake_case)
         const { data: profile } = await supabase
             .from('profiles')
-            .select('clinicId')
+            .select('clinic_id:clinic_id')
             .eq('id', user.id)
             .single();
             
-        if (!profile?.clinicId) {
+        if (!profile?.clinic_id) {
             toast.error("Clínica não encontrada.");
             return;
         }
 
-        // 2. Busca Agendamentos
-        // Ajuste: 'profiles' em vez de 'professionals' e 'first_name' em vez de 'name'
+        // 2. Busca Agendamentos (JOIN CORRIGIDO)
+        // O Supabase precisa saber qual FK usar. Usamos !professional_id e !patient_id
         const { data: appointments, error } = await supabase
           .from('appointments')
           .select(`
             id, start_time, end_time, status, notes,
-            patient:patients ( name ),
-            professional:profiles ( first_name, last_name )
+            patient:patients!patient_id ( name ),
+            professional:profiles!professional_id ( first_name, last_name )
           `) 
-          .eq('clinicId', profile.clinicId);
+          .eq('clinic_id', profile.clinic_id);
 
         if (error) throw error;
         if (!appointments) return;
@@ -98,6 +97,8 @@ export function AppointmentsPage() {
           return {
             id: appt.id,
             title: `${patientName} (${profName})`,
+            // O Banco retorna ISO String (ex: "2023-10-05T09:00:00")
+            // O Calendar precisa de Objeto Date
             start: new Date(appt.start_time), 
             end: new Date(appt.end_time),
             resource: { 
@@ -151,6 +152,7 @@ export function AppointmentsPage() {
 
   const handleSelectSlot = (slotInfo: { start: Date; end: Date }) => {
     // Redireciona para criação com a data pré-selecionada
+    // ISOString é seguro para passar na URL
     navigate(`/appointments/new?date=${slotInfo.start.toISOString()}`);
   };
 

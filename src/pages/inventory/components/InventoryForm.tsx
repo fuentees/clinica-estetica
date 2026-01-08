@@ -46,13 +46,13 @@ export function InventoryForm({ itemId, onClose }: InventoryFormProps) {
 
   // Carregar dados se for edição
   useEffect(() => {
-    if (itemId && profile?.clinicId) {
+    if (itemId && profile?.clinic_id) {
       setLoadingData(true);
       supabase
         .from('inventory')
         .select('*')
         .eq('id', itemId)
-        .eq('clinicId', profile.clinicId) // Segurança SaaS
+        .eq('clinic_id', profile.clinic_id) // Segurança SaaS
         .single()
         .then(({ data, error }) => {
           if (!error && data) {
@@ -67,10 +67,10 @@ export function InventoryForm({ itemId, onClose }: InventoryFormProps) {
           setLoadingData(false);
         });
     }
-  }, [itemId, reset, profile?.clinicId]);
+  }, [itemId, reset, profile?.clinic_id]);
 
   const onSubmit = async (data: InventoryFormData) => {
-    if (!profile?.clinicId) {
+    if (!profile?.clinic_id) {
       toast.error('Clínica não identificada');
       return;
     }
@@ -78,7 +78,7 @@ export function InventoryForm({ itemId, onClose }: InventoryFormProps) {
     try {
       const payload = {
         ...data,
-        clinicId: profile.clinicId // Vincula obrigatoriamente à clínica
+        clinic_id: profile.clinic_id // Vincula obrigatoriamente à clínica
       };
 
       if (itemId) {
@@ -86,7 +86,7 @@ export function InventoryForm({ itemId, onClose }: InventoryFormProps) {
           .from('inventory')
           .update(payload)
           .eq('id', itemId)
-          .eq('clinicId', profile.clinicId); // Segurança extra
+          .eq('clinic_id', profile.clinic_id); // Segurança extra
 
         if (error) throw error;
         toast.success('Estoque atualizado!');

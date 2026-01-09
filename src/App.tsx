@@ -66,7 +66,7 @@ import { PatientHomePage } from "./pages/portal/PatientHomePage";
 import { PatientLoginPage } from "./pages/portal/PatientLoginPage";
 import { PatientProfilePage } from "./pages/portal/PatientProfilePage"; 
 import { PatientAppointmentsPage } from "./pages/portal/PatientAppointmentsPage"; 
-import { PatientPackagesPage } from "./pages/portal/PatientPackagesPage"; // <--- NOVO IMPORT AQUI
+import { PatientPackagesPage } from "./pages/portal/PatientPackagesPage"; 
 
 const queryClient = new QueryClient();
 
@@ -186,7 +186,7 @@ function App() {
                   
                   {/* Rotas filhas */}
                   <Route path="agendamentos" element={<PatientAppointmentsPage />} />
-                  <Route path="pacotes" element={<PatientPackagesPage />} /> {/* ✅ ROTA ADICIONADA */}
+                  <Route path="pacotes" element={<PatientPackagesPage />} /> 
                   <Route path="perfil" element={<PatientProfilePage />} />
                   
                   <Route path="financeiro" element={<div className="p-8 text-center text-gray-400 font-bold uppercase">Financeiro em breve</div>} />

@@ -1,109 +1,118 @@
-import React, { useState } from "react";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { 
+  Loader2, 
+  LogIn, 
+  Mail, 
+  Lock, 
+  ArrowRight
+  // CheckCircle2 removido pois não estava em uso
+} from "lucide-react";
 import { toast } from "react-hot-toast";
-import { Eye, EyeOff, Loader2, Sparkles } from "lucide-react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
 
 export function LoginPage() {
-  const { signIn } = useAuth();
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      toast.error("Preencha todos os campos");
+      toast.error("Por favor, preencha todos os campos.");
       return;
     }
 
     setLoading(true);
     try {
-      // --- AQUI ESTAVA O ERRO, AGORA ESTÁ CORRIGIDO ---
-      // Passamos um objeto { email, password } em vez de argumentos separados
-      await signIn({ email, password }); 
+      // CORREÇÃO 1: Passar como objeto { email, password }
+      // CORREÇÃO 2: Não esperar retorno 'error', mas sim aguardar a Promise.
+      await signIn({ email, password });
+
+      // Se a linha acima não der erro, significa que logou:
+      toast.success("Login realizado com sucesso!");
       
-      toast.success("Bem-vindo de volta!");
-      navigate("/dashboard");
-    } catch (error: any) {
+      // Redireciona para a raiz e deixa o App.tsx decidir o destino
+      navigate("/", { replace: true });
+
+    } catch (error) {
+      // Se der erro no signIn, cai aqui
       console.error(error);
-      toast.error("Erro ao entrar. Verifique suas credenciais.");
+      toast.error("Email ou senha incorretos.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
-      <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden border border-gray-100 dark:border-gray-700">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-4">
+      <div className="w-full max-w-md bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800 animate-in fade-in zoom-in duration-500">
         
-        {/* Header com Gradiente */}
-        <div className="bg-gradient-to-r from-pink-500 to-purple-600 p-8 text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-full bg-white opacity-10 transform -skew-y-6 scale-150"></div>
-          <Sparkles className="mx-auto text-white/90 w-12 h-12 mb-2 animate-pulse" />
-          <h1 className="text-3xl font-bold text-white mb-1">VF Estética</h1>
-          <p className="text-pink-100 text-sm">Gestão Inteligente & Avançada</p>
+        {/* Cabeçalho Visual */}
+        <div className="relative h-48 bg-gradient-to-br from-pink-600 to-purple-700 flex flex-col items-center justify-center text-white p-6">
+          <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>
+          <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-4 shadow-inner border border-white/30">
+            <LogIn size={32} className="text-white" />
+          </div>
+          <h1 className="text-3xl font-black tracking-tighter italic uppercase">VF Clinic</h1>
+          <p className="text-pink-100 text-sm font-medium mt-1">Acesse seu painel exclusivo</p>
         </div>
 
-        <div className="p-8">
-          <div className="mb-6 text-center">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Acesse sua conta</h2>
-            <p className="text-gray-500 text-sm">Digite seus dados para continuar</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Email</label>
-              <Input 
-                type="email" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com"
-                className="h-12 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-pink-500"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 ml-1">Senha</label>
-              <div className="relative">
-                <Input 
-                  type={showPassword ? "text" : "password"} 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="h-12 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:ring-pink-500 pr-10"
+        {/* Formulário */}
+        <div className="p-8 pt-10">
+          <form onSubmit={handleLogin} className="space-y-6">
+            
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-500 uppercase ml-3">E-mail</label>
+              <div className="relative group">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-pink-600 transition-colors" size={20} />
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-pink-500 rounded-2xl outline-none transition-all font-medium text-gray-700 dark:text-gray-200"
+                  placeholder="seu@email.com"
                   required
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3.5 text-gray-400 hover:text-pink-600 transition-colors"
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
               </div>
             </div>
 
-            <div className="pt-2">
-              <Button 
-                type="submit" 
-                disabled={loading}
-                className="w-full h-12 text-base font-bold bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 shadow-lg shadow-pink-500/20 transition-all hover:scale-[1.02]"
-              >
-                {loading ? <Loader2 className="animate-spin mr-2" /> : "Entrar no Sistema"}
-              </Button>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-500 uppercase ml-3">Senha</label>
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-purple-600 transition-colors" size={20} />
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-purple-500 rounded-2xl outline-none transition-all font-medium text-gray-700 dark:text-gray-200"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
             </div>
+
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full py-4 bg-gray-900 hover:bg-black text-white font-bold rounded-2xl shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+            >
+              {loading ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <>
+                  Entrar no Sistema <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
+                </>
+              )}
+            </button>
           </form>
 
-          <div className="mt-8 text-center border-t border-gray-100 dark:border-gray-700 pt-6">
-            <p className="text-xs text-gray-400">
-              © {new Date().getFullYear()} VF Estética Avançada. Todos os direitos reservados.
+          <div className="mt-8 text-center">
+            <p className="text-sm text-gray-400">
+              Esqueceu sua senha? <Link to="/forgot-password" className="text-pink-600 font-bold hover:underline">Recuperar</Link>
             </p>
           </div>
         </div>

@@ -3,7 +3,7 @@ import { useAuth, UserRole } from '../contexts/AuthContext';
 import { Loader2, AlertTriangle, LogOut } from 'lucide-react';
 
 interface ProtectedRouteProps {
-  allowedRoles?: UserRole[]; // Ex: ['admin', 'profissional']
+  allowedRoles?: UserRole[]; // Ex: ['admin', 'recepcionista']
 }
 
 export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
@@ -19,12 +19,12 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     );
   }
 
-  // 2. NÃO AUTENTICADO (Sem sessão no Supabase)
+  // 2. NÃO AUTENTICADO (Sessão expirada ou sem login)
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  // 3. ERRO DE SINCRONIZAÇÃO (Usuário existe no Auth mas não no banco Profiles)
+  // 3. ERRO DE PERFIL (Usuário logado mas sem registro na tabela public.profiles)
   if (!profile) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-gray-50 dark:bg-gray-950 p-8 text-center">
@@ -33,12 +33,12 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
         </div>
         
         <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">
-          Acesso Restrito
+          Perfil não localizado
         </h2>
         
         <p className="mt-4 max-w-sm text-xs font-bold leading-relaxed text-gray-500 dark:text-gray-400 uppercase tracking-widest">
-          Sua conta foi autenticada, mas o seu perfil clínico não foi localizado. 
-          Entre em contato com a administração da VF Clinic.
+          Sua conta existe, mas não encontramos seu cadastro clínico. 
+          Contate o administrador para vincular seu perfil à clínica.
         </p>
         
         <button 
@@ -46,24 +46,28 @@ export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
           className="mt-10 flex items-center gap-3 rounded-2xl bg-gray-900 px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white shadow-2xl transition-all hover:scale-[1.02] active:scale-95 dark:bg-white dark:text-gray-900"
         >
           <LogOut size={16} className="text-pink-600" />
-          Reiniciar Sessão
+          Tentar outro login
         </button>
       </div>
     );
   }
 
-  // 4. PROTEÇÃO POR CARGO (Role-Based Access Control)
+  // 4. BLOQUEIO POR CARGO (AQUI ESTÁ A PROTEÇÃO)
+  // Se a rota exige cargos específicos e o cargo do usuário NÃO está nessa lista...
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    // Redirecionamento inteligente:
-    // Se um paciente tentar entrar no painel adm, vai para o portal dele.
+    
+    console.warn(`⛔ BLOQUEIO: Usuário ${profile.role} tentou acessar rota permitida apenas para: ${allowedRoles}`);
+
+    // Se for um paciente perdido, manda para o portal dele
     if (profile.role === 'paciente') {
       return <Navigate to="/portal" replace />;
     }
     
-    // Se um profissional tentar acessar algo proibido (como configurações master), volta pro Dashboard.
+    // Se for Profissional ou Recepcionista tentando entrar no Financeiro/Config do Admin:
+    // Manda de volta para o Dashboard com segurança
     return <Navigate to="/dashboard" replace />;
   }
 
-  // 5. ACESSO PERMITIDO
+  // 5. TUDO OK: Libera a página
   return <Outlet />;
 }

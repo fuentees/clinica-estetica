@@ -12,21 +12,13 @@ import {
   Pencil,
   Ban,
   DollarSign,
-  User,
   ShieldCheck,
-  Plus,
-  Lock, 
-  Mail, 
-  MapPin, 
-  Edit 
+  Plus
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { PatientPackagesWidget } from "../../components/patients/PatientPackagesWidget";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-
-// Importação do Modal
-import { PatientAccessModal } from "../../components/patients/PatientAccessModal";
 
 interface PatientContext {
   patient: {
@@ -60,9 +52,6 @@ export default function PatientOverviewPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
-  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-  const [patientDetails, setPatientDetails] = useState<any>(null);
-  
   const [data, setData] = useState<OverviewData>({
     appointments: [], 
     lastBio: [],
@@ -72,16 +61,7 @@ export default function PatientOverviewPage() {
   async function loadOverview() {
     if (!patient?.id) return;
     try {
-      // 1. Busca dados completos do paciente (CPF, Senha, Foto)
-      const { data: pDetails } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('id', patient.id)
-        .single();
-        
-      if (pDetails) setPatientDetails(pDetails);
-
-      // 2. Busca Agendamentos
+      // 1. Busca Agendamentos
       const { data: appts } = await supabase
         .from("appointments")
         .select(`
@@ -99,7 +79,7 @@ export default function PatientOverviewPage() {
         professional: Array.isArray(item.professional) ? item.professional[0] : item.professional
       }));
 
-      // 3. Busca Bioimpedância
+      // 2. Busca Bioimpedância
       const { data: bio } = await supabase
         .from("bioimpedance_records") 
         .select("*")
@@ -155,7 +135,7 @@ export default function PatientOverviewPage() {
     }
   };
 
-  if (loading && !patientDetails) return (
+  if (loading) return (
     <div className="h-96 flex flex-col items-center justify-center gap-4">
       <Loader2 className="animate-spin text-pink-600" size={40} />
       <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Carregando Prontuário...</p>
@@ -175,77 +155,6 @@ export default function PatientOverviewPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       
-      {/* --- CABEÇALHO DO PACIENTE (Agora aparece sempre) --- */}
-      <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-8 shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-pink-500 to-purple-600"></div>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
-              <div className="flex items-center gap-6">
-                <div className="w-20 h-20 rounded-[2rem] bg-gray-100 dark:bg-gray-700 overflow-hidden border-4 border-white dark:border-gray-800 shadow-xl flex items-center justify-center text-gray-400">
-                  {patientDetails?.avatar_url ? (
-                    <img src={patientDetails.avatar_url} alt={patient.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <User size={32} />
-                  )}
-                </div>
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase">
-                        {patient.name}
-                    </h1>
-                    
-                    {/* Badge de Status (Só aparece se já carregou os detalhes) */}
-                    {patientDetails && (
-                        patientDetails.accountId ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 text-[9px] font-black uppercase tracking-widest border border-green-200">
-                                <ShieldCheck size={10}/> Portal Ativo
-                            </span>
-                        ) : (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 text-[9px] font-black uppercase tracking-widest border border-gray-200">
-                                <Lock size={10}/> Sem Acesso
-                            </span>
-                        )
-                    )}
-                  </div>
-                  
-                  {patientDetails && (
-                      <div className="flex flex-wrap gap-4 mt-2 text-xs text-gray-500 font-medium">
-                        <span className="flex items-center gap-1.5"><MapPin size={12} className="text-pink-400"/> {patientDetails.cidade || "Local não informado"}</span>
-                        {patientDetails.email && <span className="flex items-center gap-1.5"><Mail size={12} className="text-pink-400"/> {patientDetails.email}</span>}
-                      </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                {/* BOTÃO DE ACESSO */}
-                <Button 
-                  onClick={() => setIsAccessModalOpen(true)}
-                  disabled={!patientDetails} // Desabilita enquanto carrega
-                  className={`h-12 px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 ${
-                    patientDetails?.accountId 
-                    ? "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-pink-200 hover:text-pink-600" 
-                    : "bg-gray-900 text-white hover:bg-black"
-                  }`}
-                >
-                  {!patientDetails ? (
-                      <Loader2 className="animate-spin mr-2" size={14} />
-                  ) : patientDetails.accountId ? (
-                      <><Lock size={14} className="mr-2"/> Redefinir Senha</>
-                  ) : (
-                      <><ShieldCheck size={14} className="mr-2 text-pink-500"/> Gerar Acesso</>
-                  )}
-                </Button>
-                
-                <Button 
-                  className="h-12 w-12 p-0 rounded-2xl bg-pink-600 hover:bg-pink-700 text-white shadow-lg"
-                  onClick={() => navigate(`../details`)} 
-                >
-                  <Edit size={18}/>
-                </Button>
-              </div>
-            </div>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* COLUNA PRINCIPAL */}
@@ -397,7 +306,8 @@ export default function PatientOverviewPage() {
 
         {/* COLUNA LATERAL */}
         <div className="lg:col-span-1 space-y-8">
-            <PatientPackagesWidget patientId={patient.id} />
+            {/* CORREÇÃO DO ERRO AQUI: MUDAMOS DE patientId PARA patient_id */}
+            <PatientPackagesWidget patient_id={patient.id} />
             
             {/* STATUS FINANCEIRO */}
             <div className="bg-gray-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden group">
@@ -409,12 +319,12 @@ export default function PatientOverviewPage() {
                 </h3>
                 <div className="space-y-6 relative z-10">
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                     <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">Aberto</span>
-                     <span className="text-2xl font-black italic tracking-tighter">R$ 0,00</span>
+                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">Aberto</span>
+                      <span className="text-2xl font-black italic tracking-tighter">R$ 0,00</span>
                   </div>
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                     <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">LTV</span>
-                     <span className="text-2xl font-black italic tracking-tighter text-emerald-400">R$ --</span>
+                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">LTV</span>
+                      <span className="text-2xl font-black italic tracking-tighter text-emerald-400">R$ --</span>
                   </div>
                   <button 
                     onClick={() => navigate("../financial")}
@@ -443,24 +353,6 @@ export default function PatientOverviewPage() {
             </div>
         </div>
       </div>
-
-      {/* ✅ O MODAL (Janela que abre ao clicar) */}
-      {isAccessModalOpen && patientDetails && (
-        <PatientAccessModal 
-          patient={{
-             id: patientDetails.id,
-             name: patientDetails.name,
-             email: patientDetails.email,
-             clinic_id: patientDetails.clinicId || patientDetails.clinic_id,
-             cpf: patientDetails.cpf,
-             phone: patientDetails.phone
-          }} 
-          onClose={() => {
-            setIsAccessModalOpen(false);
-            loadOverview(); 
-          }} 
-        />
-      )}
 
     </div>
   );

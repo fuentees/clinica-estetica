@@ -2,14 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
-  CalendarPlus, 
-  UserCog, 
-  Clock, 
-  MapPin, 
-  Wallet, 
-  MessageCircle, 
-  ChevronRight,
-  Sparkles
+  CalendarPlus, UserCog, Clock, MapPin, 
+  Wallet, MessageCircle, Sparkles
 } from "lucide-react";
 
 export function PatientHomePage() {
@@ -17,11 +11,15 @@ export function PatientHomePage() {
   const [patientName, setPatientName] = useState("Visitante");
   const [nextAppt, setNextAppt] = useState<any>(null);
 
+  // --- CONFIGURAÇÕES DE LINKS (SUBSTITUA PELOS SEUS REAIS) ---
+  const WHATSAPP_NUMBER = "5511999999999"; // Coloque o número da clínica aqui
+  const WHATSAPP_MSG = encodeURIComponent("Olá! Estou no Portal do Paciente e gostaria de agendar um horário.");
+  const GOOGLE_MAPS_LINK = "https://www.google.com/maps/search/?api=1&query=VILAGI+Estética+Avançada"; // Link de busca inteligente
+
   useEffect(() => {
     async function loadData() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        // Busca nome do paciente
         const { data: profile } = await supabase
           .from('patients')
           .select('name, id')
@@ -29,9 +27,8 @@ export function PatientHomePage() {
           .single();
         
         if (profile) {
-            setPatientName(profile.name.split(' ')[0]); // Pega só o primeiro nome
-
-            // Busca próximo agendamento (Exemplo simples)
+            setPatientName(profile.name.split(' ')[0]);
+            
             const { data: appt } = await supabase
                 .from('appointments')
                 .select('start_time')
@@ -48,10 +45,14 @@ export function PatientHomePage() {
     loadData();
   }, []);
 
+  const handleOpenWhatsapp = () => {
+    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MSG}`, '_blank');
+  };
+
   return (
     <div className="space-y-8 pb-10">
       
-      {/* 1. SAUDAÇÃO AMIGÁVEL */}
+      {/* SAUDAÇÃO */}
       <div className="flex justify-between items-end">
         <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Bem-vindo(a) de volta,</p>
@@ -64,11 +65,10 @@ export function PatientHomePage() {
         </div>
       </div>
 
-      {/* 2. CARD DESTAQUE (PRÓXIMO COMPROMISSO OU AGENDAR) */}
+      {/* CARD DESTAQUE */}
       <div className="relative group">
         <div className="absolute -inset-1 bg-gradient-to-r from-pink-600 to-purple-600 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
         <div className="relative bg-white dark:bg-gray-800 rounded-[2rem] p-8 border border-gray-100 dark:border-gray-700 shadow-xl">
-            
             {nextAppt ? (
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                     <div>
@@ -96,8 +96,9 @@ export function PatientHomePage() {
                     <p className="text-xs text-gray-500 font-medium mb-6 max-w-xs mx-auto">
                         Você não tem agendamentos futuros. Que tal reservar um horário agora mesmo?
                     </p>
+                    {/* ✅ BOTÃO CORRIGIDO: ABRE O WHATSAPP */}
                     <button 
-                        onClick={() => navigate('/portal/agendar')} // Rota fictícia, ou abre modal de contato
+                        onClick={handleOpenWhatsapp} 
                         className="w-full md:w-auto h-14 px-8 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-2xl font-black uppercase text-sm tracking-widest hover:scale-105 transition-transform shadow-xl shadow-pink-500/30 flex items-center justify-center gap-2 mx-auto"
                     >
                         <CalendarPlus size={20} /> Agendar Agora
@@ -107,12 +108,11 @@ export function PatientHomePage() {
         </div>
       </div>
 
-      {/* 3. MENU RÁPIDO (GRID DE AÇÕES) */}
+      {/* GRID DE AÇÕES */}
       <div>
           <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-4 ml-2">Acesso Rápido</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               
-              {/* Meus Dados */}
               <button onClick={() => navigate('/portal/perfil')} className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-lg hover:border-pink-200 transition-all group text-left">
                   <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform">
                       <UserCog size={24} />
@@ -121,7 +121,6 @@ export function PatientHomePage() {
                   <span className="text-sm font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">Meus Dados</span>
               </button>
 
-              {/* Financeiro */}
               <button onClick={() => navigate('/portal/financeiro')} className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-lg hover:border-pink-200 transition-all group text-left">
                   <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl flex items-center justify-center text-emerald-600 mb-4 group-hover:scale-110 transition-transform">
                       <Wallet size={24} />
@@ -130,9 +129,9 @@ export function PatientHomePage() {
                   <span className="text-sm font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">Financeiro</span>
               </button>
 
-              {/* Localização / Como Chegar */}
+              {/* ✅ LINK DO MAPA CORRIGIDO */}
               <a 
-                href="https://maps.google.com/?q=Sua+Clinica+Aqui" 
+                href={GOOGLE_MAPS_LINK} 
                 target="_blank" 
                 rel="noreferrer"
                 className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-lg hover:border-pink-200 transition-all group text-left block"
@@ -144,9 +143,9 @@ export function PatientHomePage() {
                   <span className="text-sm font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">Como Chegar</span>
               </a>
 
-              {/* Fale Conosco (WhatsApp) */}
+              {/* ✅ LINK DO WHATSAPP CORRIGIDO */}
               <a 
-                href="https://wa.me/5511999999999" 
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent("Olá, preciso de ajuda com o Portal do Paciente.")}`} 
                 target="_blank" 
                 rel="noreferrer"
                 className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-lg hover:border-pink-200 transition-all group text-left block"
@@ -160,28 +159,6 @@ export function PatientHomePage() {
 
           </div>
       </div>
-
-      {/* 4. BANNER PROMOCIONAL / INFORMATIVO (O "ALGO A MAIS") */}
-      <div className="bg-gray-900 rounded-[2.5rem] p-8 relative overflow-hidden text-white shadow-2xl">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-pink-600/20 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
-          
-          <div className="relative z-10">
-              <span className="px-3 py-1 bg-white/10 rounded-lg text-[10px] font-black uppercase tracking-widest backdrop-blur-sm border border-white/10">
-                  Clube VILAGI
-              </span>
-              <h3 className="mt-4 text-xl font-black italic uppercase tracking-tighter">
-                  Indique uma amiga e ganhe 10% OFF
-              </h3>
-              <p className="text-xs text-gray-300 font-medium mt-2 mb-6 max-w-sm leading-relaxed">
-                  Traga alguém especial para conhecer a clínica e ambas ganham desconto no próximo procedimento.
-              </p>
-              
-              <button className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:text-pink-400 transition-colors">
-                  Gerar Convite <ChevronRight size={14} />
-              </button>
-          </div>
-      </div>
-
     </div>
   );
 }

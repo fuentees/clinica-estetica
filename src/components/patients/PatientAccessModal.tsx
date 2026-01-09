@@ -5,15 +5,14 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Lock, Key, Mail, Loader2, X, CheckCircle, Fingerprint, Wand2, Phone } from 'lucide-react';
 
-// ✅ CORREÇÃO AQUI: Adicionamos 'phone' na tipagem
 interface Props {
   patient: {
     id: string;
     name: string;
     email?: string | null;
-    clinic_id: string;
+    clinic_id: string; // Definido com underline
     cpf?: string | null;
-    phone?: string | null; // <--- O erro sumirá com essa linha
+    phone?: string | null;
   };
   onClose: () => void;
 }
@@ -50,7 +49,7 @@ export function PatientAccessModal({ patient, onClose }: Props) {
         email_input: formData.email,
         password_input: formData.password,
         patient_id_input: patient.id,
-        clinic_id_input: patient.clinicId
+        clinic_id_input: patient.clinic_id // ✅ CORRIGIDO AQUI (era patient.clinicId)
       });
 
       if (error) throw error;

@@ -21,9 +21,10 @@ interface PatientTreatment {
   };
 }
 
-export function usePatientTreatments(patient_id: string) {
+// ✅ CORREÇÃO: Argumento renomeado para 'patientId' para bater com o uso interno
+export function usePatientTreatments(patientId: string) {
   return useQuery({
-    queryKey: ['patient-treatments', patientId],
+    queryKey: ['patient-treatments', patientId], // Agora funciona
     queryFn: async () => {
       const { data, error } = await supabase
         .from('patient_treatments')
@@ -39,12 +40,12 @@ export function usePatientTreatments(patient_id: string) {
             status
           )
         `)
-        .eq('patient_id', patientId)
+        .eq('patient_id', patientId) // Coluna do banco (snake_case) vs Variável (camelCase)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       return data as PatientTreatment[];
     },
-    enabled: !!patientId,
+    enabled: !!patientId, // Agora funciona
   });
 }

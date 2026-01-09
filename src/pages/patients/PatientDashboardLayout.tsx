@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Outlet, useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { toast } from "react-hot-toast"; // ✅ Import necessário
 import {
   Loader2,
   ArrowLeft,
@@ -15,7 +16,9 @@ import {
   Sparkles,
   BrainCircuit,
   Scale,
-  Settings
+  Settings,
+  Lock,        // ✅ Ícone novo
+  ShieldCheck  // ✅ Ícone novo
 } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
@@ -37,6 +40,10 @@ export function PatientDashboardLayout() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // ✅ NOVOS ESTADOS PARA O ACESSO
+  const [loadingAccess, setLoadingAccess] = useState(false);
+  const [hasAccess, setHasAccess] = useState(false);
+
   useEffect(() => {
     async function fetchPatient() {
       if (!id) return;
@@ -49,6 +56,13 @@ export function PatientDashboardLayout() {
 
         if (error) throw error;
         setPatient(data);
+
+        // ✅ VERIFICAÇÃO SE JÁ TEM ACESSO
+        if (data.email) {
+            const { data: profile } = await supabase.from('profiles').select('id').eq('email', data.email).single();
+            if (profile) setHasAccess(true);
+        }
+
       } catch (error) {
         console.error("Erro ao carregar paciente:", error);
         navigate("/patients");
@@ -58,6 +72,35 @@ export function PatientDashboardLayout() {
     }
     fetchPatient();
   }, [id, navigate]);
+
+  // ✅ FUNÇÃO DE CRIAR ACESSO
+  const handleCreateAccess = async () => {
+    if (!patient?.email) {
+      toast.error("O paciente precisa de um e-mail cadastrado (Vá em Dados).");
+      return;
+    }
+
+    if (!confirm(`Gerar acesso para ${patient.name}? \nLogin: ${patient.email}\nSenha Padrão: 123456`)) return;
+
+    setLoadingAccess(true);
+    try {
+      const { data, error } = await supabase.rpc('create_patient_user', {
+        email_input: patient.email,
+        password_input: '123456',
+        patient_id_input: id
+      });
+
+      if (error) throw error;
+      if (data && data.status === 'error') throw new Error(data.message);
+
+      toast.success("Acesso criado com sucesso!");
+      setHasAccess(true);
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao criar acesso.");
+    } finally {
+      setLoadingAccess(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -130,7 +173,8 @@ export function PatientDashboardLayout() {
                             )}
                         </div>
                     </div>
-                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-[3px] border-white dark:border-gray-900 rounded-full"></div>
+                    {/* Indicador se tem acesso ou não */}
+                    <div className={`absolute -bottom-1 -right-1 w-5 h-5 border-[3px] border-white dark:border-gray-900 rounded-full ${hasAccess ? 'bg-emerald-500' : 'bg-gray-300'}`}></div>
                 </div>
 
                 <div>
@@ -150,7 +194,25 @@ export function PatientDashboardLayout() {
                 </div>
             </div>
 
+            {/* AQUI FICAM OS BOTÕES DE AÇÃO */}
             <div className="flex gap-2">
+              
+              {/* ✅ BOTÃO NOVO: GERAR ACESSO */}
+              <Button 
+                onClick={handleCreateAccess}
+                disabled={loadingAccess || hasAccess}
+                className={`
+                   h-10 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all shadow-sm
+                   ${hasAccess 
+                     ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200" 
+                     : "bg-gray-900 text-white hover:bg-pink-600"
+                   }
+                `}
+              >
+                 {loadingAccess ? <Loader2 size={14} className="animate-spin mr-2"/> : hasAccess ? <ShieldCheck size={14} className="mr-2"/> : <Lock size={14} className="mr-2"/>}
+                 {hasAccess ? "Acesso Ativo" : "Gerar Acesso"}
+              </Button>
+
               <Button variant="outline" size="sm" className="rounded-xl border-gray-200 text-gray-500 hover:bg-gray-50 font-bold text-xs h-10">
                 <Settings size={16} className="mr-2"/> Configurar
               </Button>

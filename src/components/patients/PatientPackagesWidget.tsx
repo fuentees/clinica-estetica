@@ -3,7 +3,7 @@ import { supabase } from "../../lib/supabase";
 import { Package, Plus, ChevronRight, Zap, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface PatientPackagesWidgetProps {
-  patient_id: string;
+  patient_id: string; // ✅ Definido com underline
 }
 
 interface PatientPackage {
@@ -14,29 +14,28 @@ interface PatientPackage {
   status: string;
 }
 
-export function PatientPackagesWidget({ patientId }: PatientPackagesWidgetProps) {
+// ✅ CORREÇÃO: Recebemos 'patient_id' aqui para bater com a interface
+export function PatientPackagesWidget({ patient_id }: PatientPackagesWidgetProps) {
   const [packages, setPackages] = useState<PatientPackage[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (patientId) fetchPackages();
-  }, [patientId]);
+    if (patient_id) fetchPackages();
+  }, [patient_id]); // ✅ Dependência atualizada
 
   async function fetchPackages() {
     try {
-      // SUA LÓGICA DE BUSCA DO SUPABASE
       const { data, error } = await supabase
         .from('patient_packages')
         .select('*')
-        .eq('patient_id', patientId)
-        .eq('status', 'active'); // Busca apenas ativos
+        .eq('patient_id', patient_id) // ✅ Uso da variável correta
+        .eq('status', 'active'); 
 
       if (error) {
-         // Se a tabela ainda não existir, usamos dados fictícios para não quebrar o layout
-         console.warn("Tabela não encontrada, usando dados mock para visualização.");
+         console.warn("Tabela não encontrada, usando dados mock.");
          setPackages([
-            { id: '1', title: 'Protocolo Glúteo (Mock)', total_sessions: 10, used_sessions: 4, status: 'active' },
-            { id: '2', title: 'Botox Preventivo (Mock)', total_sessions: 3, used_sessions: 1, status: 'active' }
+           { id: '1', title: 'Protocolo Glúteo (Mock)', total_sessions: 10, used_sessions: 4, status: 'active' },
+           { id: '2', title: 'Botox Preventivo (Mock)', total_sessions: 3, used_sessions: 1, status: 'active' }
          ]);
       } else if (data) {
          setPackages(data);
@@ -69,7 +68,7 @@ export function PatientPackagesWidget({ patientId }: PatientPackagesWidgetProps)
 
         <div className="space-y-8">
           {loading ? (
-             // Skeleton Loading (Mais bonito que o spinner)
+             // Skeleton Loading
              [1, 2].map(i => (
                <div key={i} className="animate-pulse space-y-3">
                  <div className="h-3 w-2/3 bg-gray-100 dark:bg-gray-800 rounded-full"></div>
@@ -106,7 +105,7 @@ export function PatientPackagesWidget({ patientId }: PatientPackagesWidgetProps)
                     </span>
                   </div>
                   
-                  {/* Barra de Progresso Customizada (Gradiente Rosa) */}
+                  {/* Barra de Progresso Customizada */}
                   <div className="h-2.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden p-[2px]">
                     <div 
                       className={`h-full rounded-full transition-all duration-1000 ease-out group-hover/item:brightness-110 shadow-lg ${

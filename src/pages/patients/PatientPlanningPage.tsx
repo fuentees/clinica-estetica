@@ -10,18 +10,23 @@ import {
   Zap, 
   ShoppingBag, 
   Loader2,
-  Tag
+  Tag,
+  Calendar, // <--- Novo ícone
+  CheckCircle2 // <--- Novo ícone
 } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
 
+// IMPORT DO SEU MODAL (Verifique se a pasta é 'modal' ou 'modals')
+import ModalAgendarSessao from "../../components/modal/ModalAgendarSessao";
+
 // Interface alinhada com a tabela 'services'
 interface Procedure {
   id: string;
   name: string;
-  category: string; // Flexibilizado para aceitar o que vier do banco
+  category: string;
   price: number;
   description?: string;
 }
@@ -32,20 +37,36 @@ interface BudgetItem extends Procedure {
   internalId: string;
 }
 
+// Interface para os Planos que o cliente JÁ TEM (Vindo do SQL que criamos)
+interface ClientPlan {
+  id: string;
+  nome_plano: string;
+  sessoes_totais: number;
+  sessoes_restantes: number;
+}
+
 export function PatientPlanningPage() {
   const { id: patientId } = useParams();
   const [loading, setLoading] = useState(true);
   const [procedures, setProcedures] = useState<Procedure[]>([]);
+  
+  // Estado dos Planos Ativos (Pacotes comprados)
+  const [activePlans, setActivePlans] = useState<ClientPlan[]>([]);
+  
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("todos");
   const [clinicId, setClinicId] = useState<string | null>(null);
   
-  // Estado do Orçamento
+  // Estado do Orçamento (Carrinho)
   const [selectedItems, setSelectedItems] = useState<BudgetItem[]>([]);
   const [discount, setDiscount] = useState<number>(0);
   const [saving, setSaving] = useState(false);
 
-  // 1. CARREGAR PROCEDIMENTOS REAIS (Tabela 'services')
+  // ESTADOS DO MODAL DE AGENDAMENTO
+  const [modalAberto, setModalAberto] = useState(false);
+  const [planoParaAgendar, setPlanoParaAgendar] = useState<ClientPlan | null>(null);
+
+  // 1. CARREGAR DADOS (Serviços + Planos do Cliente)
   useEffect(() => {
     async function initPage() {
       try {
@@ -64,30 +85,54 @@ export function PatientPlanningPage() {
         if (profile?.clinic_id) {
             setClinicId(profile.clinic_id);
 
-            // BUSCA OS SERVIÇOS CADASTRADOS NA OUTRA TELA
-            const { data, error } = await supabase
-              .from('services') // ✅ Tabela correta (mesma do catálogo)
+            // A. BUSCA OS SERVIÇOS (CATÁLOGO)
+            const { data: servicesData } = await supabase
+              .from('services')
               .select('*')
-              .eq('clinic_id', profile.clinic_id) // ✅ Filtro de segurança
-              .eq('is_active', true) // ✅ Snake_case correto
+              .eq('clinic_id', profile.clinic_id)
+              .eq('is_active', true)
               .order('name');
 
-            if (error) throw error;
+            if (servicesData) setProcedures(servicesData);
 
-            if (data) {
-              setProcedures(data);
+            // B. BUSCA OS PLANOS ATIVOS DO CLIENTE (Novo!)
+            // Só busca se tiver patientId
+            if (patientId) {
+                const { data: plansData, error: plansError } = await supabase
+                    .from('planos_clientes') // A tabela que criamos no SQL
+                    .select('*')
+                    .eq('cliente_id', patientId)
+                    .gt('sessoes_restantes', 0); // Só traz o que tem saldo
+
+                if (!plansError && plansData) {
+                    setActivePlans(plansData);
+                }
             }
         }
 
       } catch (err) {
         console.error("Erro ao carregar:", err);
-        toast.error("Erro ao carregar catálogo de serviços.");
+        toast.error("Erro ao carregar dados.");
       } finally {
         setLoading(false);
       }
     }
     initPage();
-  }, []);
+  }, [patientId]);
+
+  // Função para abrir o modal
+  const handleAgendarClick = (plano: ClientPlan) => {
+    setPlanoParaAgendar(plano);
+    setModalAberto(true);
+  };
+
+  // Função chamada quando o modal fecha (para atualizar o saldo na tela)
+  const handleModalClose = () => {
+    setModalAberto(false);
+    setPlanoParaAgendar(null);
+    // Opcional: Recarregar a página ou fazer um fetch novo para atualizar o saldo visualmente
+    window.location.reload(); 
+  };
 
   // 2. LÓGICA DO CARRINHO
   const addItem = (proc: Procedure) => {
@@ -122,7 +167,6 @@ export function PatientPlanningPage() {
   // Filtros
   const filteredProcedures = procedures.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    // Normaliza a categoria para comparação (ignora maiúsculas/minúsculas)
     const pCat = p.category?.toLowerCase() || '';
     const matchesCategory = activeCategory === "todos" || pCat.includes(activeCategory);
     return matchesSearch && matchesCategory;
@@ -139,7 +183,7 @@ export function PatientPlanningPage() {
             clinic_id: clinicId,
             patient_id: patientId, 
             notes: `Orçamento gerado via painel de planejamento`,
-            items: selectedItems, // JSON com os itens
+            items: selectedItems,
             subtotal,
             discount,
             total,
@@ -159,7 +203,7 @@ export function PatientPlanningPage() {
      }
   };
 
-  // Helper de Ícones (Normalizado para minúsculas)
+  // Helper de Ícones
   const getIcon = (cat: string) => {
      const c = cat?.toLowerCase() || '';
      if (c.includes('toxina') || c.includes('preenchedor') || c.includes('bioestimulador') || c.includes('injet')) return <Syringe size={18}/>;
@@ -188,15 +232,46 @@ export function PatientPlanningPage() {
   return (
     <div className="h-[calc(100vh-140px)] flex flex-col xl:flex-row gap-6 animate-in fade-in duration-500">
       
-      {/* --- COLUNA ESQUERDA: CATÁLOGO --- */}
+      {/* --- COLUNA ESQUERDA: CATÁLOGO + PLANOS ATIVOS --- */}
       <div className="flex-1 flex flex-col gap-6 h-full overflow-hidden">
          
+         {/* --- SEÇÃO NOVA: PLANOS ATIVOS DO CLIENTE --- */}
+         {activePlans.length > 0 && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 p-6 rounded-3xl border border-blue-100 dark:border-gray-700 shrink-0">
+                <div className="flex items-center gap-2 mb-4">
+                    <CheckCircle2 className="text-blue-600" size={20} />
+                    <h3 className="font-bold text-blue-900 dark:text-blue-100">Planos Contratados (Disponíveis)</h3>
+                </div>
+                
+                <div className="flex gap-4 overflow-x-auto pb-2 custom-scrollbar">
+                    {activePlans.map(plano => (
+                        <div key={plano.id} className="min-w-[220px] bg-white dark:bg-gray-900 p-4 rounded-2xl border border-blue-100 dark:border-gray-700 shadow-sm flex flex-col justify-between">
+                            <div>
+                                <h4 className="font-bold text-gray-900 dark:text-white text-sm line-clamp-1">{plano.nome_plano}</h4>
+                                <div className="mt-2 flex items-baseline gap-1">
+                                    <span className="text-2xl font-black text-blue-600">{plano.sessoes_restantes}</span>
+                                    <span className="text-xs text-gray-500 font-medium">/ {plano.sessoes_totais} sessões</span>
+                                </div>
+                            </div>
+                            <Button 
+                                onClick={() => handleAgendarClick(plano)}
+                                className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
+                            >
+                                <Calendar size={14} /> Agendar
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+         )}
+         {/* ----------------------------------------------- */}
+
          <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm shrink-0">
              <div className="relative mb-6">
                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                  <input 
                     type="text" 
-                    placeholder="Buscar procedimento (ex: Botox, Lavieen)..." 
+                    placeholder="Buscar novo procedimento para venda..." 
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20 transition-all font-medium text-gray-900 dark:text-white"
@@ -225,7 +300,6 @@ export function PatientPlanningPage() {
                  <div className="h-64 flex flex-col items-center justify-center text-center opacity-50">
                     <ShoppingBag size={48} className="text-gray-300 mb-4"/>
                     <p className="text-gray-400 font-bold uppercase text-xs tracking-widest">Nenhum serviço encontrado.</p>
-                    <p className="text-gray-400 text-[10px] mt-1">Cadastre novos itens no menu "Serviços".</p>
                  </div>
              ) : (
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
@@ -333,8 +407,17 @@ export function PatientPlanningPage() {
                 Gerar Proposta
              </Button>
           </div>
-
       </div>
+
+      {/* --- RENDERIZA O MODAL FLUTUANTE AQUI --- */}
+      {modalAberto && planoParaAgendar && patientId && (
+        <ModalAgendarSessao 
+            clienteSelecionado={{ id: patientId, nome: 'Paciente Atual' }} 
+            planoSelecionado={planoParaAgendar}
+            onClose={handleModalClose}
+        />
+      )}
+
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
+import { useAuth } from "../../contexts/AuthContext"; // Importação adicionada
 import { 
     CalendarCheck, User, Clock, Stethoscope, ArrowLeft, Loader2, Calendar, 
     Sparkles, FileText, CheckCircle2
@@ -20,43 +21,38 @@ interface Service { id: string; name: string; duration: number; }
 
 export function NewAppointmentPage() {
     const navigate = useNavigate();
+    const { profile, user, isProfessional, isAdmin } = useAuth(); // Hooks de permissão
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [clinicId, setClinicId] = useState<string | null>(null);
-
+    
     // Listas de Dados
     const [professionals, setProfessionals] = useState<Professional[]>([]);
     const [patients, setPatients] = useState<Patient[]>([]);
     const [services, setServices] = useState<Service[]>([]);
 
-    // Formulário (Tudo snake_case para bater com o banco)
+    // Formulário
     const [formData, setFormData] = useState({
         professional_id: "",
         patient_id: "",
-        service_id: "",  // Mudei de serviceId para service_id
+        service_id: "",
         date: new Date().toISOString().split('T')[0],
         time: "09:00",
         notes: ""
     });
 
     useEffect(() => {
-        loadAllData();
-    }, []);
+        if (profile?.clinic_id) {
+            loadAllData();
+        }
+    }, [profile]);
 
     async function loadAllData() {
         try {
             setLoading(true);
             
-            // 1. Pega usuário e clínica
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error("Não logado");
+            if (!profile?.clinic_id) return;
 
-            const { data: profile } = await supabase.from("profiles").select("clinic_id:clinic_id").eq("id", user.id).single();
-            if (!profile?.clinic_id) throw new Error("Sem clínica");
-            
-            setClinicId(profile.clinic_id);
-
-            // 2. Busca TUDO em paralelo
+            // Busca TUDO em paralelo
             const [profsReq, patientsReq, servicesReq] = await Promise.all([
                 supabase.from("profiles")
                     .select("id, first_name, last_name, role")
@@ -77,14 +73,20 @@ export function NewAppointmentPage() {
                     .order("name")
             ]);
 
-            // Formata e Salva nos estados
-            if (profsReq.data) {
-                setProfessionals(profsReq.data);
-                // Seleciona o primeiro automaticamente
-                if (profsReq.data.length > 0) setFormData(prev => ({ ...prev, professional_id: profsReq.data[0].id }));
-            }
             if (patientsReq.data) setPatients(patientsReq.data);
             if (servicesReq.data) setServices(servicesReq.data);
+
+            if (profsReq.data) {
+                setProfessionals(profsReq.data);
+                
+                // LÓGICA DE SEGURANÇA: 
+                // Se for profissional (Larissa), trava o ID dela. Se for Admin, permite escolher.
+                if (isProfessional && !isAdmin) {
+                    setFormData(prev => ({ ...prev, professional_id: user?.id || "" }));
+                } else if (profsReq.data.length > 0) {
+                    setFormData(prev => ({ ...prev, professional_id: profsReq.data[0].id }));
+                }
+            }
 
         } catch (error) {
             console.error(error);
@@ -97,7 +99,6 @@ export function NewAppointmentPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        // CORREÇÃO: Validando as chaves corretas (snake_case)
         if (!formData.professional_id || !formData.patient_id || !formData.service_id || !formData.date || !formData.time) {
             toast.error("Preencha todos os campos obrigatórios.");
             return;
@@ -106,18 +107,15 @@ export function NewAppointmentPage() {
         setSaving(true);
         try {
             const startAt = new Date(`${formData.date}T${formData.time}`);
-            
-            // CORREÇÃO: Buscando pelo service_id correto
             const selectedService = services.find(s => s.id === formData.service_id);
             const duration = selectedService?.duration || 30;
             const endAt = addMinutes(startAt, duration);
 
-            // CORREÇÃO: Inserir no Banco (Payload limpo)
             const { error } = await supabase.from("appointments").insert({
-                clinic_id: clinicId,
-                patient_id: formData.patient_id,           // ✅ Agora existe no state
-                professional_id: formData.professional_id, // ✅ Agora existe no state
-                service_id: formData.service_id,           // ✅ Agora existe no state
+                clinic_id: profile?.clinic_id,
+                patient_id: formData.patient_id,
+                professional_id: formData.professional_id,
+                service_id: formData.service_id,
                 start_time: startAt.toISOString(),
                 end_time: endAt.toISOString(),
                 status: "scheduled",
@@ -137,7 +135,7 @@ export function NewAppointmentPage() {
         }
     };
 
-    if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-pink-600 size-10"/></div>;
+    if (loading) return <div className="h-screen flex items-center justify-center bg-white dark:bg-gray-900"><Loader2 className="animate-spin text-pink-600 size-10"/></div>;
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6 flex items-center justify-center">
@@ -158,17 +156,17 @@ export function NewAppointmentPage() {
                 <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 space-y-6 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 to-purple-600"></div>
 
-                    {/* Linha 1: Profissional e Serviço */}
                     <div className="grid md:grid-cols-2 gap-6">
                         <div>
                             <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
                                 <Stethoscope size={14} className="text-pink-600"/> Profissional
                             </label>
                             <select 
-                                // CORREÇÃO: value snake_case
                                 value={formData.professional_id}
                                 onChange={e => setFormData({...formData, professional_id: e.target.value})}
-                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-pink-500 outline-none"
+                                // Desabilita se for profissional ( Larissa não muda o próprio nome)
+                                disabled={isProfessional && !isAdmin}
+                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-pink-500 outline-none disabled:opacity-70 disabled:cursor-not-allowed"
                                 required
                             >
                                 <option value="">Selecione...</option>
@@ -184,7 +182,6 @@ export function NewAppointmentPage() {
                                 <Sparkles size={14} className="text-purple-600"/> Serviço
                             </label>
                             <select 
-                                // CORREÇÃO: value snake_case (service_id)
                                 value={formData.service_id}
                                 onChange={e => setFormData({...formData, service_id: e.target.value})}
                                 className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-purple-500 outline-none"
@@ -196,30 +193,21 @@ export function NewAppointmentPage() {
                         </div>
                     </div>
 
-                    {/* Linha 2: Paciente */}
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
                             <User size={14} className="text-blue-600"/> Paciente
                         </label>
-                        {patients.length > 0 ? (
-                            <select 
-                                // CORREÇÃO: value snake_case
-                                value={formData.patient_id}
-                                onChange={e => setFormData({...formData, patient_id: e.target.value})}
-                                className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"
-                                required
-                            >
-                                <option value="">Selecione o paciente...</option>
-                                {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                        ) : (
-                            <div className="p-3 bg-yellow-50 text-yellow-700 text-sm rounded-lg border border-yellow-200">
-                                Nenhum paciente cadastrado. Cadastre um paciente primeiro.
-                            </div>
-                        )}
+                        <select 
+                            value={formData.patient_id}
+                            onChange={e => setFormData({...formData, patient_id: e.target.value})}
+                            className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 outline-none"
+                            required
+                        >
+                            <option value="">Selecione o paciente...</option>
+                            {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
                     </div>
 
-                    {/* Linha 3: Data e Hora */}
                     <div className="grid grid-cols-2 gap-6">
                         <div>
                             <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
@@ -247,7 +235,6 @@ export function NewAppointmentPage() {
                         </div>
                     </div>
 
-                    {/* Notas */}
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase mb-2 flex items-center gap-2">
                             <FileText size={14} className="text-gray-400"/> Observações

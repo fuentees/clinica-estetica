@@ -13,7 +13,8 @@ import {
   Menu,
   X,
   Package,
-  Sparkles // ✅ Ícone adicionado
+  Sparkles,
+  ClipboardList // ✅ Ícone novo para prescrições
 } from "lucide-react";
 
 // IMPORTAÇÕES DOS CONTEXTOS
@@ -21,26 +22,38 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 
 export function Layout() {
-  const { profile, signOut } = useAuth();
+  // ✅ Pegamos as flags de cargo aqui
+  const { profile, signOut, isAdmin, isProfessional, user } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // ✅ MENU ATUALIZADO COM "SERVIÇOS"
-  const menuItems = [
-    { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-    { icon: Calendar, label: "Agenda", path: "/appointments" },
-    { icon: Users, label: "Pacientes", path: "/patients" },
-    { icon: Stethoscope, label: "Profissionais", path: "/professionals" },
-    
-    // 👇 ADICIONADO AQUI
-    { icon: Sparkles, label: "Serviços", path: "/services" }, 
-    
-    { icon: Package, label: "Estoque", path: "/inventory" },
-    { icon: Wallet, label: "Financeiro", path: "/payments" },
-    { icon: Settings, label: "Ajustes", path: "/settings" },
-  ];
+  // ✅ LÓGICA DE MENU DINÂMICO
+  // Se for Profissional (Larissa), vê um menu. Se for Admin, vê outro.
+  let menuItems = [];
+
+  if (isProfessional && !isAdmin) {
+    // === MENU DO PROF===
+    menuItems = [
+      { icon: LayoutDashboard, label: "Meu Painel", path: `/professionals/${user?.id}` },
+      { icon: ClipboardList, label: "Prescrições", path: "/prescriptions" }, // Atalho útil
+      { icon: Calendar, label: "Minha Agenda", path: "/appointments" }, // Agenda filtrada
+    ];
+  } else {
+    // === MENU DO ADMIN / GERAL ===
+    menuItems = [
+      { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+      { icon: Calendar, label: "Agenda", path: "/appointments" },
+      { icon: Users, label: "Pacientes", path: "/patients" },
+      { icon: Stethoscope, label: "Profissionais", path: "/professionals" },
+      { icon: ClipboardList, label: "Prescrições", path: "/prescriptions" }, // Atalho útil
+      { icon: Sparkles, label: "Serviços", path: "/services" }, 
+      { icon: Package, label: "Estoque", path: "/inventory" },
+      { icon: Wallet, label: "Financeiro", path: "/payments" },
+      { icon: Settings, label: "Ajustes", path: "/settings" },
+    ];
+  }
 
   const handleLogout = async () => {
     try {

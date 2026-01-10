@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Outlet, useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
-import { toast } from "react-hot-toast"; // ✅ Import necessário
+import { toast } from "react-hot-toast"; 
 import {
   Loader2,
   ArrowLeft,
@@ -17,11 +17,20 @@ import {
   BrainCircuit,
   Scale,
   Settings,
-  Lock,        // ✅ Ícone novo
-  ShieldCheck  // ✅ Ícone novo
+  Lock,        
+  ShieldCheck,
+  KeyRound 
 } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
+
+// ✅ Mantendo a estrutura de pasta duplicada conforme solicitado
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../components/components/ui/dropdown-menu";
 
 interface Patient {
   id: string;
@@ -40,14 +49,16 @@ export function PatientDashboardLayout() {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ NOVOS ESTADOS PARA O ACESSO
+  // Estados para controle de acesso do paciente à VILAGI
   const [loadingAccess, setLoadingAccess] = useState(false);
   const [hasAccess, setHasAccess] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchPatient() {
       if (!id) return;
       try {
+        // 1. Busca os dados base do paciente
         const { data, error } = await supabase
           .from("patients")
           .select("*")
@@ -57,14 +68,22 @@ export function PatientDashboardLayout() {
         if (error) throw error;
         setPatient(data);
 
-        // ✅ VERIFICAÇÃO SE JÁ TEM ACESSO
+        // 2. Verifica se o e-mail já possui um perfil de usuário vinculado
         if (data.email) {
-            const { data: profile } = await supabase.from('profiles').select('id').eq('email', data.email).single();
-            if (profile) setHasAccess(true);
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('id')
+                .eq('email', data.email)
+                .maybeSingle(); 
+            
+            if (profile) {
+                setHasAccess(true);
+                setUserId(profile.id);
+            }
         }
-
       } catch (error) {
-        console.error("Erro ao carregar paciente:", error);
+        console.error("Erro ao carregar prontuário:", error);
+        toast.error("Paciente não encontrado.");
         navigate("/patients");
       } finally {
         setLoading(false);
@@ -73,28 +92,27 @@ export function PatientDashboardLayout() {
     fetchPatient();
   }, [id, navigate]);
 
-  // ✅ FUNÇÃO DE CRIAR ACESSO
   const handleCreateAccess = async () => {
     if (!patient?.email) {
-      toast.error("O paciente precisa de um e-mail cadastrado (Vá em Dados).");
+      toast.error("O paciente precisa de um e-mail cadastrado.");
       return;
     }
-
-    if (!confirm(`Gerar acesso para ${patient.name}? \nLogin: ${patient.email}\nSenha Padrão: 123456`)) return;
+    if (!confirm(`Gerar acesso para ${patient.name}?\nLogin: ${patient.email}\nSenha: 123456`)) return;
 
     setLoadingAccess(true);
     try {
       const { data, error } = await supabase.rpc('create_patient_user', {
         email_input: patient.email,
         password_input: '123456',
-        patient_id_input: id
+        patient_id_input: id 
       });
 
       if (error) throw error;
       if (data && data.status === 'error') throw new Error(data.message);
 
-      toast.success("Acesso criado com sucesso!");
+      toast.success("Acesso VILAGI criado com sucesso!");
       setHasAccess(true);
+      window.location.reload();
     } catch (err: any) {
       toast.error(err.message || "Erro ao criar acesso.");
     } finally {
@@ -102,36 +120,50 @@ export function PatientDashboardLayout() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sincronizando Prontuário...</p>
-        </div>
+  const handleResetPassword = async () => {
+    if (!userId) return;
+    const newPassword = prompt("Defina a nova senha para o paciente (mín. 6 caracteres):");
+    
+    if (!newPassword || newPassword.length < 6) {
+        if (newPassword) toast.error("A senha deve ter pelo menos 6 caracteres.");
+        return;
+    }
+
+    setLoadingAccess(true);
+    try {
+        const { error } = await supabase.rpc('admin_reset_password', {
+            target_user_id: userId,
+            new_password: newPassword
+        });
+
+        if (error) throw error;
+        toast.success("Senha atualizada com sucesso!");
+    } catch (err: any) {
+        toast.error("Erro ao resetar: " + err.message);
+    } finally {
+        setLoadingAccess(false);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+      <div className="flex flex-col items-center gap-3">
+        <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
+        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Carregando VILAGI...</span>
       </div>
-    );
-  }
+    </div>
+  );
 
   if (!patient) return null;
 
-  // ✅ LISTA DE NAVEGAÇÃO OTIMIZADA
   const navItems = [
     { label: "Visão Geral", path: "", icon: LayoutDashboard },
-    
-    // Bloco Clínico
     { label: "Anamnese", path: "anamnesis", icon: ClipboardList },
     { label: "Bioimpedância", path: "bioimpedance", icon: Scale }, 
     { label: "Auditoria IA", path: "ai-analysis", icon: BrainCircuit }, 
-    
-    // Bloco Comercial/Tratamento
     { label: "Planejamento", path: "treatment-plans", icon: Sparkles },
-    
-    // Bloco Administrativo
     { label: "Financeiro", path: "financial", icon: DollarSign },
-    { label: "Receitas", path: "prescriptions", icon: ScrollText }, // Rota de receitas
-    
-    // Bloco Histórico/Docs
+    { label: "Receitas", path: "prescriptions", icon: ScrollText },
     { label: "Evolução", path: "evolution", icon: Activity },
     { label: "Galeria", path: "gallery", icon: ImageIcon },
     { label: "Termos", path: "terms", icon: FileText },
@@ -141,28 +173,20 @@ export function PatientDashboardLayout() {
   const initials = patient.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-950 font-sans">
-      
-      {/* --- HEADER FIXO --- */}
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-950">
       <header className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 sticky top-0 z-40 shadow-sm transition-all">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 opacity-80"></div>
-
         <div className="max-w-[1600px] mx-auto px-6 pt-6 pb-0">
-          
-          <div className="flex flex-col md:flex-row items-start md:items-center gap-6 mb-6">
-            
+          <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
             <button 
               onClick={() => navigate("/patients")} 
-              className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-pink-600 hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-all group border border-transparent hover:border-pink-100"
-              title="Voltar para a lista"
+              className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800 text-gray-400 hover:text-pink-600 transition-all group"
             >
               <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
             </button>
 
-            {/* Avatar & Nome */}
             <div className="flex items-center gap-5 flex-1">
-                <div className="relative group cursor-pointer">
-                    <div className="w-16 h-16 rounded-2xl p-0.5 bg-gradient-to-br from-pink-200 to-purple-200 group-hover:from-pink-500 group-hover:to-purple-600 transition-all">
+                <div className="relative">
+                    <div className="w-16 h-16 rounded-2xl p-0.5 bg-gradient-to-br from-pink-200 to-purple-200">
                         <div className="w-full h-full rounded-2xl bg-white dark:bg-gray-900 flex items-center justify-center overflow-hidden">
                             {patient.avatar_url ? (
                                 <img src={patient.avatar_url} alt={patient.name} className="w-full h-full object-cover"/>
@@ -173,75 +197,64 @@ export function PatientDashboardLayout() {
                             )}
                         </div>
                     </div>
-                    {/* Indicador se tem acesso ou não */}
-                    <div className={`absolute -bottom-1 -right-1 w-5 h-5 border-[3px] border-white dark:border-gray-900 rounded-full ${hasAccess ? 'bg-emerald-500' : 'bg-gray-300'}`}></div>
+                    <div className={`absolute -bottom-1 -right-1 w-5 h-5 border-[3px] border-white dark:border-gray-900 rounded-full ${hasAccess ? 'bg-emerald-500' : 'bg-gray-300'}`} />
                 </div>
-
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight leading-tight">
-                        {patient.name}
-                    </h1>
-                    <div className="flex items-center gap-3 mt-1">
-                        <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-[10px] font-bold text-gray-500 rounded-md uppercase tracking-wider border border-gray-200 dark:border-gray-700">
-                            ID: {patient.id.substring(0,6)}
-                        </span>
-                        {patient.phone && (
-                            <span className="text-xs font-medium text-gray-500 flex items-center gap-1">
-                                <div className="w-1 h-1 rounded-full bg-gray-400"></div> {patient.phone}
-                            </span>
-                        )}
-                    </div>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">{patient.name}</h1>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Paciente VILAGI</span>
                 </div>
             </div>
 
-            {/* AQUI FICAM OS BOTÕES DE AÇÃO */}
             <div className="flex gap-2">
-              
-              {/* ✅ BOTÃO NOVO: GERAR ACESSO */}
-              <Button 
-                onClick={handleCreateAccess}
-                disabled={loadingAccess || hasAccess}
-                className={`
-                   h-10 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all shadow-sm
-                   ${hasAccess 
-                     ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200" 
-                     : "bg-gray-900 text-white hover:bg-pink-600"
-                   }
-                `}
-              >
-                 {loadingAccess ? <Loader2 size={14} className="animate-spin mr-2"/> : hasAccess ? <ShieldCheck size={14} className="mr-2"/> : <Lock size={14} className="mr-2"/>}
-                 {hasAccess ? "Acesso Ativo" : "Gerar Acesso"}
-              </Button>
-
-              <Button variant="outline" size="sm" className="rounded-xl border-gray-200 text-gray-500 hover:bg-gray-50 font-bold text-xs h-10">
-                <Settings size={16} className="mr-2"/> Configurar
+              {!hasAccess ? (
+                  <Button 
+                    onClick={handleCreateAccess} 
+                    disabled={loadingAccess} 
+                    className="h-10 rounded-xl font-bold text-[10px] uppercase tracking-widest bg-gray-900 text-white hover:bg-pink-600"
+                  >
+                      {loadingAccess ? <Loader2 size={14} className="animate-spin mr-2"/> : <Lock size={14} className="mr-2"/>}
+                      Gerar Acesso
+                  </Button>
+              ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button 
+                          className="h-10 rounded-xl font-bold text-[10px] uppercase tracking-widest bg-emerald-50 text-emerald-600 border border-emerald-200"
+                        >
+                            {loadingAccess ? <Loader2 size={14} className="animate-spin mr-2"/> : <ShieldCheck size={14} className="mr-2"/>}
+                            Acesso Ativo
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-gray-900 border rounded-xl p-1 z-[100] shadow-xl">
+                        <DropdownMenuItem onClick={handleResetPassword} className="cursor-pointer py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg text-xs font-bold flex items-center">
+                            <KeyRound size={14} className="mr-2 text-pink-500"/> Redefinir Senha
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+              )}
+              <Button variant="outline" className="rounded-xl border-gray-200 text-gray-500 font-bold text-xs h-10 px-4">
+                <Settings size={16} />
               </Button>
             </div>
           </div>
 
-          {/* NAVEGAÇÃO POR ABAS */}
           <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar -mb-[1px]">
             {navItems.map((item) => {
               const isActive = item.path === "" 
                 ? location.pathname.endsWith(id!) || location.pathname.endsWith(`${id}/`)
                 : location.pathname.includes(item.path);
-
               return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`
-                    group flex items-center gap-2 px-5 py-4 border-b-[3px] text-[11px] font-bold uppercase tracking-wider transition-all whitespace-nowrap
+                <Link 
+                  key={item.path} 
+                  to={item.path} 
+                  className={`group flex items-center gap-2 px-5 py-4 border-b-[3px] text-[11px] font-bold uppercase tracking-wider transition-all whitespace-nowrap
                     ${isActive 
-                      ? "border-pink-500 text-pink-600 dark:text-pink-400 bg-pink-50/50 dark:bg-pink-900/10 rounded-t-xl" 
-                      : "border-transparent text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50 rounded-t-xl"
+                      ? "border-pink-500 text-pink-600 bg-pink-50/50 rounded-t-xl" 
+                      : "border-transparent text-gray-400 hover:text-gray-700 hover:bg-gray-50 rounded-t-xl"
                     }
                   `}
                 >
-                  <item.icon 
-                    size={16} 
-                    className={`transition-colors ${isActive ? "text-pink-500" : "text-gray-400 group-hover:text-gray-500"}`} 
-                  />
+                  <item.icon size={16} className={isActive ? "text-pink-500" : "text-gray-400"} />
                   {item.label}
                 </Link>
               );
@@ -249,8 +262,7 @@ export function PatientDashboardLayout() {
           </nav>
         </div>
       </header>
-
-      <main className="flex-1 max-w-[1600px] w-full mx-auto p-6 animate-in fade-in duration-700">
+      <main className="flex-1 max-w-[1600px] w-full mx-auto p-6 animate-in fade-in duration-500">
           <Outlet context={{ patient }} /> 
       </main>
     </div>

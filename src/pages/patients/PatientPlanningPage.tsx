@@ -14,7 +14,7 @@ import {
   Calendar,
   CheckCircle2
 } from "lucide-react";
-import { useParams, useNavigate } from "react-router-dom"; 
+import { useParams, useNavigate, useSearchParams } from "react-router-dom"; 
 import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
@@ -46,6 +46,7 @@ interface ClientPlan {
 export function PatientPlanningPage() {
   const { id: patientId } = useParams();
   const navigate = useNavigate(); 
+  const [searchParams] = useSearchParams(); 
   
   const [loading, setLoading] = useState(true);
   const [procedures, setProcedures] = useState<Procedure[]>([]);
@@ -62,6 +63,7 @@ export function PatientPlanningPage() {
   const [modalAberto, setModalAberto] = useState(false);
   const [planoParaAgendar, setPlanoParaAgendar] = useState<ClientPlan | null>(null);
 
+  // 1. CARREGAR DADOS INICIAIS
   useEffect(() => {
     async function initPage() {
       try {
@@ -78,6 +80,7 @@ export function PatientPlanningPage() {
         const currentClinicId = profile?.clinic_id || user.id;
         setClinicId(currentClinicId);
 
+        // A. Carregar Catálogo
         const { data: servicesData } = await supabase
           .from('services')
           .select('*')
@@ -87,6 +90,7 @@ export function PatientPlanningPage() {
 
         if (servicesData) setProcedures(servicesData);
 
+        // B. Carregar Planos Ativos
         if (patientId) {
             const { data: plansData, error: plansError } = await supabase
                 .from('planos_clientes')
@@ -99,6 +103,28 @@ export function PatientPlanningPage() {
             }
         }
 
+        // C. VERIFICAR SE É MODO EDIÇÃO
+        const editId = searchParams.get('edit');
+        if (editId) {
+            const { data: budgetToEdit, error: editError } = await supabase
+                .from('budgets')
+                .select('*')
+                .eq('id', editId)
+                .single();
+
+            if (!editError && budgetToEdit) {
+                // TRAVA DE SEGURANÇA: Garante que items é um array, mesmo se vier texto
+                let loadedItems = budgetToEdit.items;
+                if (typeof loadedItems === 'string') {
+                    try { loadedItems = JSON.parse(loadedItems); } catch (e) { loadedItems = []; }
+                }
+
+                setSelectedItems(loadedItems || []);
+                setDiscount(Number(budgetToEdit.discount) || 0);
+                toast.success(`Carregado orçamento: ${new Date(budgetToEdit.created_at).toLocaleDateString()}`);
+            }
+        }
+
       } catch (err) {
         console.error("Erro ao carregar:", err);
         toast.error("Erro ao carregar dados.");
@@ -107,8 +133,9 @@ export function PatientPlanningPage() {
       }
     }
     initPage();
-  }, [patientId]);
+  }, [patientId, searchParams]);
 
+  // Modal handlers
   const handleAgendarClick = (plano: ClientPlan) => {
     setPlanoParaAgendar(plano);
     setModalAberto(true);
@@ -120,6 +147,7 @@ export function PatientPlanningPage() {
     window.location.reload(); 
   };
 
+  // Carrinho handlers
   const addItem = (proc: Procedure) => {
     const existing = selectedItems.find(i => i.id === proc.id);
     if (existing) {
@@ -155,6 +183,7 @@ export function PatientPlanningPage() {
     return matchesSearch && matchesCategory;
   });
 
+  // 3. SALVAR ORÇAMENTO
   const handleSaveBudget = async () => {
      if(selectedItems.length === 0) return toast.error("O orçamento está vazio.");
      if(!clinicId) return toast.error("Erro: Clínica não identificada.");
@@ -168,7 +197,7 @@ export function PatientPlanningPage() {
             clinic_id: clinicId,
             patient_id: patientId,
             professional_id: user.id,
-            items: selectedItems,
+            items: selectedItems, // Aqui está sendo enviado corretamente como Array
             subtotal,
             discount,
             total,
@@ -177,12 +206,13 @@ export function PatientPlanningPage() {
         
         if (error) throw error;
         
-        toast.success("Proposta gerada com sucesso!");
+        toast.success("Proposta salva com sucesso!");
+        
         setSelectedItems([]);
         setDiscount(0);
         
-        // Redireciona para o financeiro
-        navigate(`../financial`); 
+        // Redireciona para o financeiro na aba correta
+        navigate(`../financial?tab=orcamentos`); 
         
      } catch (e: any) {
         console.error("Erro ao salvar:", e);
@@ -198,6 +228,16 @@ export function PatientPlanningPage() {
      if (c.includes('tecnologia') || c.includes('laser')) return <Zap size={18}/>;
      return <Sparkles size={18}/>;
   };
+
+  const categories = [
+    { id: 'todos', label: 'Tudo' },
+    { id: 'toxina', label: 'Toxina' },
+    { id: 'preenchedor', label: 'Preenchedores' },
+    { id: 'bioestimulador', label: 'Bioestimuladores' },
+    { id: 'tecnologia', label: 'Tecnologias' },
+    { id: 'facial', label: 'Faciais' },
+    { id: 'corporal', label: 'Corporais' },
+  ];
 
   if (loading) return (
     <div className="p-10 h-96 flex flex-col items-center justify-center gap-4">
@@ -246,15 +286,15 @@ export function PatientPlanningPage() {
                  />
              </div>
              <div className="flex gap-2 overflow-x-auto pb-1">
-                {['todos', 'toxina', 'preenchedor', 'tecnologia', 'facial', 'corporal'].map(cat => (
+                {categories.map(cat => (
                    <button 
-                      key={cat}
-                      onClick={() => setActiveCategory(cat)}
+                      key={cat.id}
+                      onClick={() => setActiveCategory(cat.id)}
                       className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all ${
-                         activeCategory === cat ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-500'
+                         activeCategory === cat.id ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-500'
                       }`}
                    >
-                      {cat}
+                      {cat.label}
                    </button>
                 ))}
              </div>
@@ -350,4 +390,4 @@ export function PatientPlanningPage() {
   );
 }
 
-export default PatientPlanningPage; // CORRIGIDO: Sem o "a" no final!
+export default PatientPlanningPage;

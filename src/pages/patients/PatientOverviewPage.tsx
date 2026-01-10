@@ -45,6 +45,10 @@ interface OverviewData {
   appointments: Appointment[];
   lastBio: any[];
   totalSessions: number;
+  financial: {       
+    pending: number;
+    ltv: number;
+  };
 }
 
 export default function PatientOverviewPage() {
@@ -55,7 +59,8 @@ export default function PatientOverviewPage() {
   const [data, setData] = useState<OverviewData>({
     appointments: [], 
     lastBio: [],
-    totalSessions: 0
+    totalSessions: 0,
+    financial: { pending: 0, ltv: 0 }
   });
 
   async function loadOverview() {
@@ -87,12 +92,27 @@ export default function PatientOverviewPage() {
         .order("date", { ascending: false })
         .limit(1);
 
+      // 3. Busca Financeiro (LTV e Pendente)
+      const { data: transactions } = await supabase
+        .from("transactions")
+        .select("amount, paid_at")
+        .eq("patient_id", patient.id);
+
+      const totalPaid = (transactions || [])
+        .filter(t => t.paid_at)
+        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
+      const totalPending = (transactions || [])
+        .filter(t => !t.paid_at)
+        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+
       const completedCount = appointments.filter(a => a.status === 'completed' || a.status === 'concluido').length;
 
       setData({
           appointments: appointments,
           totalSessions: completedCount,
-          lastBio: bio || []
+          lastBio: bio || [],
+          financial: { pending: totalPending, ltv: totalPaid }
       });
 
     } catch (error) { 
@@ -121,6 +141,10 @@ export default function PatientOverviewPage() {
       weekday: format(date, 'EEEE', { locale: ptBR }),
       time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     };
+  };
+
+  const formatCurrency = (value: number) => {
+      return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
   const getStatusColor = (status: string) => {
@@ -306,7 +330,7 @@ export default function PatientOverviewPage() {
 
         {/* COLUNA LATERAL */}
         <div className="lg:col-span-1 space-y-8">
-            {/* CORREÇÃO DO ERRO AQUI: MUDAMOS DE patientId PARA patient_id */}
+            {/* WIDGET DE PACOTES ATIVOS (Importado) */}
             <PatientPackagesWidget patient_id={patient.id} />
             
             {/* STATUS FINANCEIRO */}
@@ -319,18 +343,24 @@ export default function PatientOverviewPage() {
                 </h3>
                 <div className="space-y-6 relative z-10">
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">Aberto</span>
-                      <span className="text-2xl font-black italic tracking-tighter">R$ 0,00</span>
+                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">Aberto (Pendente)</span>
+                      <span className={`text-2xl font-black italic tracking-tighter ${data.financial.pending > 0 ? 'text-amber-400' : 'text-white'}`}>
+                          {formatCurrency(data.financial.pending)}
+                      </span>
                   </div>
                   <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">LTV</span>
-                      <span className="text-2xl font-black italic tracking-tighter text-emerald-400">R$ --</span>
+                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">LTV (Total Pago)</span>
+                      <span className="text-2xl font-black italic tracking-tighter text-emerald-400">
+                          {formatCurrency(data.financial.ltv)}
+                      </span>
                   </div>
+                  
+                  {/* ✅ BOTÃO ATUALIZADO */}
                   <button 
-                    onClick={() => navigate("../financial")}
-                    className="w-full mt-4 h-12 bg-white text-gray-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-pink-500 hover:text-white transition-all shadow-xl shadow-black/40"
+                    onClick={() => navigate("financial")} 
+                    className="w-full mt-4 h-12 bg-white text-gray-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-pink-500 hover:text-white transition-all shadow-xl shadow-black/40 flex items-center justify-center gap-2"
                   >
-                    Gestão de Ativos
+                    Ver Detalhes Financeiros <ArrowRight size={14} />
                   </button>
                 </div>
             </div>

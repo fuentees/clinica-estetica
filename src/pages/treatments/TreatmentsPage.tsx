@@ -2,50 +2,32 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { 
-  Plus, Search, Edit, Trash2, Tag, Clock, Stethoscope, Loader2, Sparkles, Database 
+  Plus, Search, Edit, Trash2, Tag, Loader2, Sparkles, Database,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
-// Removido 'Input' pois estamos usando input HTML nativo estilizado
 import { Button } from '../../components/ui/button';
 import { toast } from 'react-hot-toast';
 
-// Lista de procedimentos padrões para importação automática
+// Lista padrão (mantida)
 const DEFAULT_SERVICES = [
-  // TOXINAS
   { name: 'Toxina Botulínica (Terço Superior)', category: 'Toxina', price: 1200, duration: 30, description: 'Testa, Glabela e Pés de Galinha' },
   { name: 'Toxina Botulínica (Full Face)', category: 'Toxina', price: 1800, duration: 45, description: 'Face completa e pescoço (Nefertiti)' },
-  { name: 'Toxina Botulínica (Hiperidrose)', category: 'Toxina', price: 2500, duration: 60, description: 'Aplicação em axilas ou palmas' },
-  
-  // PREENCHEDORES
   { name: 'Preenchimento Labial (1ml)', category: 'Preenchedor', price: 1500, duration: 45, description: 'Volumização e contorno labial' },
   { name: 'Preenchimento de Olheiras', category: 'Preenchedor', price: 1500, duration: 45, description: 'Tratamento de profundidade infraorbital' },
-  { name: 'Preenchimento de Malar (Top Model Look)', category: 'Preenchedor', price: 3000, duration: 60, description: 'Sustentação da maçã do rosto' },
-  { name: 'Preenchimento de Mento (Queixo)', category: 'Preenchedor', price: 1500, duration: 45, description: 'Projeção e alongamento do queixo' },
-  { name: 'Preenchimento de Mandíbula', category: 'Preenchedor', price: 3000, duration: 60, description: 'Definição do contorno facial' },
-  { name: 'Rinomodelação', category: 'Preenchedor', price: 1800, duration: 45, description: 'Correção estética do nariz com AH' },
-
-  // BIOESTIMULADORES
   { name: 'Sculptra (1 Frasco)', category: 'Bioestimulador', price: 2800, duration: 45, description: 'Ácido Poli-L-Lático para flacidez' },
-  { name: 'Radiesse (1 Seringa)', category: 'Bioestimulador', price: 2900, duration: 45, description: 'Hidroxiapatita de Cálcio' },
-  { name: 'Elleva', category: 'Bioestimulador', price: 2700, duration: 45, description: 'Bioestimulador de colágeno' },
-  { name: 'Fios de PDO (Liso - Pacote 10)', category: 'Bioestimulador', price: 1500, duration: 60, description: 'Estímulo de colágeno local' },
-  { name: 'Fios de Sustentação (Espiculados - Par)', category: 'Bioestimulador', price: 1200, duration: 60, description: 'Efeito lifting imediato' },
-
-  // TECNOLOGIAS
-  { name: 'Ultraformer (Full Face)', category: 'Tecnologia', price: 2500, duration: 60, description: 'Ultrassom Microfocado para lifting' },
-  { name: 'Ultraformer (Papada)', category: 'Tecnologia', price: 800, duration: 30, description: 'Tratamento de gordura e flacidez submentoniana' },
-  { name: 'Laser Lavieen (Face)', category: 'Tecnologia', price: 800, duration: 30, description: 'Laser Thulium para qualidade de pele (BB Laser)' },
-  { name: 'Luz Pulsada', category: 'Tecnologia', price: 600, duration: 30, description: 'Tratamento de manchas e vasos' },
-
-  // FACIAL
   { name: 'Limpeza de Pele Profunda', category: 'Facial', price: 250, duration: 60, description: 'Extração de comedões e hidratação' },
-  { name: 'Peeling Químico', category: 'Facial', price: 350, duration: 30, description: 'Renovação celular e manchas' },
-  { name: 'Microagulhamento', category: 'Facial', price: 500, duration: 45, description: 'Indução percutânea de colágeno' },
-  { name: 'HydraGloss Lips', category: 'Facial', price: 200, duration: 30, description: 'Hidratação profunda dos lábios' },
-
-  // CORPORAL
   { name: 'Enzimas (Gordura Localizada)', category: 'Corporal', price: 350, duration: 30, description: 'Aplicação de lipolíticos' },
-  { name: 'Enzimas (Celulite)', category: 'Corporal', price: 350, duration: 30, description: 'Tratamento para celulite e flacidez' },
-  { name: 'PEIM (Secagem de Vasinhos)', category: 'Corporal', price: 400, duration: 30, description: 'Procedimento Estético Injetável para Microvasos' },
+];
+
+const CATEGORIES = [
+    { id: 'todos', label: 'Todos' },
+    { id: 'Facial', label: 'Facial' },
+    { id: 'Corporal', label: 'Corporal' },
+    { id: 'Toxina', label: 'Toxina' },
+    { id: 'Preenchedor', label: 'Preenchedores' },
+    { id: 'Bioestimulador', label: 'Bioestimuladores' },
+    { id: 'Tecnologia', label: 'Tecnologias' },
+    { id: 'Capilar', label: 'Capilar' },
 ];
 
 export function TreatmentsPage() {
@@ -53,43 +35,42 @@ export function TreatmentsPage() {
   const [treatments, setTreatments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  
+  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeCategory, setActiveCategory] = useState('todos');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     fetchServices();
   }, []);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, activeCategory, itemsPerPage]);
+
   async function fetchServices() {
     try {
       setLoading(true);
-      
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('clinic_id:clinic_id')
-        .eq('id', user.id)
-        .single();
-
-      if (!profile?.clinic_id) {
-          toast.error("Erro de permissão: Clínica não identificada.");
-          return;
-      }
+      const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user.id).single();
+      if (!profile?.clinic_id) return toast.error("Erro: Clínica não identificada.");
 
       const { data, error } = await supabase
         .from('services') 
         .select('*')
         .eq('clinic_id', profile.clinic_id)
         .eq('is_active', true)
-        .order('category', { ascending: true })
         .order('name', { ascending: true });
 
       if (error) throw error;
       setTreatments(data || []);
 
     } catch (error) {
-      console.error('Erro ao carregar catálogo:', error);
+      console.error(error);
       toast.error('Erro ao carregar serviços.');
     } finally {
       setLoading(false);
@@ -97,41 +78,30 @@ export function TreatmentsPage() {
   }
 
   const handleImportDefaults = async () => {
-      if(!confirm("Isso irá adicionar vários procedimentos padrões ao seu catálogo. Deseja continuar?")) return;
-      
+      if(!confirm("Deseja importar o catálogo padrão?")) return;
       try {
           setImporting(true);
           const { data: { user } } = await supabase.auth.getUser();
           const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user?.id).single();
-          
           if (!profile?.clinic_id) throw new Error("Clínica não encontrada");
 
-          const servicesToInsert = DEFAULT_SERVICES.map(service => ({
-              ...service,
-              clinic_id: profile.clinic_id,
-              is_active: true
-          }));
-
+          const servicesToInsert = DEFAULT_SERVICES.map(service => ({ ...service, clinic_id: profile.clinic_id, is_active: true }));
           const { error } = await supabase.from('services').insert(servicesToInsert);
-
           if (error) throw error;
 
-          toast.success("Catálogo importado com sucesso!");
+          toast.success("Catálogo importado!");
           fetchServices();
-
       } catch (error: any) {
-          console.error(error);
-          toast.error("Erro na importação: " + error.message);
+          toast.error("Erro: " + error.message);
       } finally {
           setImporting(false);
       }
   };
 
   async function handleDelete(id: string) {
-    if (!confirm('Tem certeza que deseja remover este serviço?')) return;
+    if (!confirm('Remover este serviço?')) return;
     try {
-      const { error } = await supabase.from('services').delete().eq('id', id);
-      if (error) throw error;
+      await supabase.from('services').delete().eq('id', id);
       toast.success('Serviço removido.');
       setTreatments(prev => prev.filter(item => item.id !== id));
     } catch (error) {
@@ -139,151 +109,167 @@ export function TreatmentsPage() {
     }
   }
 
-  const filtered = treatments.filter(t => 
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    t.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = treatments.filter(t => {
+    const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) || (t.category && t.category.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesCategory = activeCategory === 'todos' || t.category === activeCategory;
+    return matchesSearch && matchesCategory;
+  });
 
-  const formatDuration = (duration: any) => {
-    if (!duration) return '--';
-    return String(duration) + ' min';
-  };
+  // --- PAGINAÇÃO ---
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage; 
+  const currentItems = filtered.slice(startIndex, endIndex);
+
+  const formatDuration = (duration: any) => duration ? `${duration} min` : '--';
 
   return (
-    <div className="p-4 md:p-8 max-w-[1400px] mx-auto space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500 pb-20">
       
-      {/* CABEÇALHO */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-1.5 h-full bg-pink-500"></div>
+      {/* CABEÇALHO CLEAN */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black text-gray-900 dark:text-white flex items-center gap-3 italic tracking-tighter uppercase">
-            <Tag size={28} className="text-pink-600" /> Catálogo de Serviços
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+            <Tag className="text-pink-600" size={28} /> Catálogo de Serviços
           </h1>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2 ml-1">
-            Gerencie protocolos, preços e duração
-          </p>
+          <p className="text-sm text-gray-500 mt-1">Gerencie protocolos, preços e kits de consumo</p>
         </div>
         
         <div className="flex gap-3">
-            {/* BOTÃO MÁGICO DE IMPORTAÇÃO */}
             {treatments.length === 0 && (
-                <Button 
-                    onClick={handleImportDefaults}
-                    disabled={importing}
-                    variant="outline"
-                    className="h-14 px-6 border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-pink-500 hover:text-pink-500 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-3"
-                >
-                    {importing ? <Loader2 className="animate-spin" /> : <Database size={18} />}
-                    Importar Padrões
+                <Button onClick={handleImportDefaults} disabled={importing} variant="outline" className="text-pink-600 border-pink-200 hover:bg-pink-50">
+                    {importing ? <Loader2 className="animate-spin mr-2" size={16}/> : <Database className="mr-2" size={16} />} Importar Padrões
                 </Button>
             )}
-
             <Link to="/services/new">
-            <Button className="h-14 px-8 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl transition-all hover:scale-105 active:scale-95 flex items-center gap-3">
-                <Plus size={18} className="text-pink-500" /> Criar Novo Serviço
-            </Button>
+                <Button className="bg-pink-600 hover:bg-pink-700 text-white shadow-lg shadow-pink-200">
+                    <Plus size={18} className="mr-2" /> Novo Serviço
+                </Button>
             </Link>
         </div>
       </div>
 
-      {/* BUSCA */}
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700 flex items-center group focus-within:ring-2 focus:ring-pink-500/20 transition-all">
-        <div className="pl-4 text-gray-300 group-focus-within:text-pink-500 transition-colors">
-            <Search size={22} />
-        </div>
-        <input 
-            type="text"
-            placeholder="Buscar procedimento (ex: Botox, Preenchimento)..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full p-4 bg-transparent outline-none text-sm font-bold text-gray-700 dark:text-white placeholder-gray-400"
-        />
+      {/* FILTROS E PAGINAÇÃO */}
+      <div className="space-y-4">
+          <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+              {CATEGORIES.map(cat => (
+                  <button
+                      key={cat.id}
+                      onClick={() => setActiveCategory(cat.id)}
+                      className={`px-4 py-2 rounded-full text-xs font-medium transition-all border
+                          ${activeCategory === cat.id 
+                              ? 'bg-gray-900 text-white border-gray-900' 
+                              : 'bg-white dark:bg-gray-800 text-gray-600 border-gray-200 hover:border-pink-300'
+                          }`}
+                  >
+                      {cat.label}
+                  </button>
+              ))}
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <input 
+                    type="text"
+                    placeholder="Buscar procedimento..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 transition-all"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 font-medium">Exibir:</span>
+                  <select 
+                      value={itemsPerPage}
+                      onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                      className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm rounded-lg px-2 py-2 outline-none focus:border-pink-500"
+                  >
+                      <option value={10}>10 linhas</option>
+                      <option value={20}>20 linhas</option>
+                      <option value={50}>50 linhas</option>
+                  </select>
+              </div>
+          </div>
       </div>
 
-      {/* TABELA */}
-      <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+      {/* TABELA CLEAN */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-gray-50/50 dark:bg-gray-900/50 text-gray-400 uppercase text-[10px] font-black tracking-widest border-b border-gray-50 dark:border-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-900/50 text-gray-500 font-medium border-b border-gray-100 dark:border-gray-700">
                 <tr>
-                  <th className="px-8 py-6">Procedimento</th>
-                  <th className="px-8 py-6">Categoria</th>
-                  <th className="px-8 py-6">Duração</th>
-                  <th className="px-8 py-6">Valor Base</th>
-                  <th className="px-8 py-6 text-right">Ações</th>
+                  <th className="px-6 py-4">Procedimento</th>
+                  <th className="px-6 py-4 text-center">Categoria</th>
+                  <th className="px-6 py-4 text-center">Tempo</th>
+                  <th className="px-6 py-4 text-right">Valor</th>
+                  <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="py-24 text-center">
-                        <Loader2 className="animate-spin text-pink-600 mx-auto mb-4" size={40} />
-                        <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.3em]">Carregando...</p>
+                    <td colSpan={5} className="py-12 text-center">
+                        <Loader2 className="animate-spin text-pink-600 mx-auto mb-2" size={24} />
+                        <p className="text-gray-400 text-xs">Carregando...</p>
                     </td>
                   </tr>
-                ) : filtered.length === 0 ? (
+                ) : currentItems.length === 0 ? (
                    <tr>
-                      <td colSpan={5} className="py-32 text-center">
-                         <div className="flex flex-col items-center gap-4">
-                            <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-full text-gray-200">
-                                <Sparkles size={40} />
-                            </div>
-                            <p className="text-gray-400 font-black uppercase text-xs tracking-widest italic">
-                                Nenhum serviço encontrado.
-                            </p>
-                            {/* CORREÇÃO DO ERRO AQUI: MUDADO DE variant="link" para "ghost" */}
-                            <Button variant="ghost" onClick={handleImportDefaults} className="text-pink-600 font-bold hover:bg-pink-50">
-                                Clique aqui para importar sugestões
-                            </Button>
+                      <td colSpan={5} className="py-12 text-center">
+                         <div className="flex flex-col items-center gap-3">
+                            <Sparkles className="text-gray-300" size={32} />
+                            <span className="text-gray-400 text-sm">Nenhum serviço encontrado.</span>
                          </div>
                       </td>
                    </tr>
                 ) : (
-                  filtered.map((item) => (
-                  <tr key={item.id} className="hover:bg-pink-50/30 dark:hover:bg-gray-900/40 transition-colors group cursor-default">
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
-                            <Stethoscope size={20} />
+                  currentItems.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/40 transition-colors group">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-900/20">
+                            <Tag size={18} />
                         </div>
                         <div>
-                            <p className="text-base font-black text-gray-900 dark:text-white italic tracking-tighter uppercase group-hover:text-pink-600 transition-colors">{item.name}</p>
-                            <p className="text-xs text-gray-400 font-medium line-clamp-1 mt-0.5">{item.description || 'Sem descrição'}</p>
+                            <p className="font-semibold text-gray-900 dark:text-white">{item.name}</p>
+                            {item.description && (
+                                <p className="text-xs text-gray-500 truncate max-w-[250px]">{item.description}</p>
+                            )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-8 py-6">
-                        <span className="bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-300 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                    <td className="px-6 py-4 text-center">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
                             {item.category}
                         </span>
                     </td>
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 font-bold text-xs uppercase tracking-wider">
-                        <Clock size={16} className="text-orange-500" />
-                        {formatDuration(item.duration)}
-                      </div>
+                    <td className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">
+                      {formatDuration(item.duration)}
                     </td>
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-1 font-black text-emerald-600 dark:text-emerald-400 text-lg tracking-tighter">
-                        <span className="text-xs font-bold text-emerald-400 mr-1">R$</span>
-                        {Number(item.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </div>
+                    <td className="px-6 py-4 text-right font-medium text-gray-900 dark:text-white">
+                      {Number(item.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     </td>
-                    <td className="px-8 py-6 text-right">
-                      <div className="flex justify-end gap-3">
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button 
                           variant="ghost" 
-                          className="h-10 px-4 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 font-black uppercase text-[10px] tracking-widest flex items-center gap-2 transition-all"
-                          onClick={() => navigate(`/services/${item.id}/edit`)}
+                          size="sm"
+                          className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50"
+                          // ✅ ROTA CORRIGIDA PARA serviços/edit/:id
+                          onClick={() => navigate(`/services/edit/${item.id}`)}
                         >
-                            <Edit size={16} /> Editar
+                            <Edit size={16} />
                         </Button>
-                        <button 
-                          onClick={() => handleDelete(item.id)} 
-                          className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="h-8 w-8 p-0 text-red-500 hover:bg-red-50"
+                          onClick={() => handleDelete(item.id)}
                         >
-                            <Trash2 size={18} />
-                        </button>
+                            <Trash2 size={16} />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -291,6 +277,38 @@ export function TreatmentsPage() {
               </tbody>
             </table>
         </div>
+
+        {/* PAGINAÇÃO */}
+        {filtered.length > 0 && (
+            <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50/50">
+                <span className="text-xs text-gray-500">
+                    Mostrando {startIndex + 1} a {Math.min(endIndex, filtered.length)} de {filtered.length} serviços
+                </span>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="h-8 px-2"
+                    >
+                        <ChevronLeft size={16} />
+                    </Button>
+                    <span className="text-sm font-medium text-gray-600">
+                        {currentPage} de {totalPages}
+                    </span>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        className="h-8 px-2"
+                    >
+                        <ChevronRight size={16} />
+                    </Button>
+                </div>
+            </div>
+        )}
       </div>
     </div>
   );

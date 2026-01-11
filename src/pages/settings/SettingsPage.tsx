@@ -4,11 +4,15 @@ import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
 import { 
   Building, Save, Loader2, MapPin, Globe, Phone, 
-  Mail, FileText, Palette, CheckCircle2, Search, ImageIcon 
+  Mail, FileText, Palette, CheckCircle2, Search, ImageIcon,
+  Package // 👈 Único ícone adicionado
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { ImageUpload } from "../../components/ImageUpload";
+
+// 👇 Importação do componente que criamos
+import { CabinetManager } from "../../components/components/ui/CabinetManager";
 
 // --- TIPAGEM ---
 interface SettingsFormData {
@@ -196,7 +200,7 @@ export function SettingsPage() {
         </Button>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+      <div className="space-y-8">
         
         {/* --- 1. IDENTIDADE VISUAL --- */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
@@ -240,39 +244,35 @@ export function SettingsPage() {
                     <div>
                         <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Cor da Marca</label>
                         
-                        {/* AQUI ESTÁ O TRUQUE: 
-                           Usamos <label> em volta de tudo.
-                           Clicar em QUALQUER lugar aqui (Previews, Caixa, Texto) vai abrir o seletor.
-                        */}
                         <label className="cursor-pointer group">
                            <div className="flex flex-col sm:flex-row items-center gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 transition-colors">
-                                
-                                {/* Input Invisível (mas funcional) */}
-                                <input 
-                                  {...register("primary_color")} 
-                                  type="color" 
-                                  className="sr-only" // Escondido visualmente, mas acessível
-                                />
+                               
+                               {/* Input Invisível (mas funcional) */}
+                               <input 
+                                 {...register("primary_color")} 
+                                 type="color" 
+                                 className="sr-only" 
+                               />
 
-                                {/* Caixa de Cor */}
-                                <div className="relative w-12 h-12 rounded-lg overflow-hidden shadow-sm border border-gray-200 shrink-0">
-                                    <div className="w-full h-full" style={{ backgroundColor: primaryColor || '#000000' }}></div>
-                                </div>
+                               {/* Caixa de Cor */}
+                               <div className="relative w-12 h-12 rounded-lg overflow-hidden shadow-sm border border-gray-200 shrink-0">
+                                   <div className="w-full h-full" style={{ backgroundColor: primaryColor || '#000000' }}></div>
+                               </div>
 
-                                <div className="flex-1 text-center sm:text-left">
-                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Toque para alterar</span>
-                                    <p className="text-xs text-gray-500 uppercase font-mono">{primaryColor || '#000000'}</p>
-                                </div>
-                                
-                                {/* Previews */}
-                                <div className="flex gap-2">
-                                    <div className="h-9 px-3 rounded-lg bg-white dark:bg-gray-800 border flex items-center text-xs font-bold" style={{ color: primaryColor }}>
-                                        Texto
-                                    </div>
-                                    <div className="h-9 px-3 rounded-lg flex items-center text-xs font-bold text-white shadow-sm" style={{ backgroundColor: primaryColor }}>
-                                        Botão
-                                    </div>
-                                </div>
+                               <div className="flex-1 text-center sm:text-left">
+                                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Toque para alterar</span>
+                                   <p className="text-xs text-gray-500 uppercase font-mono">{primaryColor || '#000000'}</p>
+                               </div>
+                               
+                               {/* Previews */}
+                               <div className="flex gap-2">
+                                   <div className="h-9 px-3 rounded-lg bg-white dark:bg-gray-800 border flex items-center text-xs font-bold" style={{ color: primaryColor }}>
+                                       Texto
+                                   </div>
+                                   <div className="h-9 px-3 rounded-lg flex items-center text-xs font-bold text-white shadow-sm" style={{ backgroundColor: primaryColor }}>
+                                       Botão
+                                   </div>
+                               </div>
                            </div>
                         </label>
                     </div>
@@ -385,12 +385,27 @@ export function SettingsPage() {
             </div>
         </div>
 
+        {/* --- 🌟 4. GESTÃO DE GABINETE (NOVA SEÇÃO ADICIONADA) --- */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+
+            <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
+                <Package size={20} className="text-emerald-500" /> Gabinete de Ativos (IA)
+            </h2>
+            <p className="text-xs text-gray-400 mb-6 uppercase tracking-widest font-bold">
+              Cadastre os produtos que você tem em estoque para que a VILAGI AI faça sugestões precisas.
+            </p>
+            
+            {/* Componente de Gestão de Estoque */}
+            <CabinetManager />
+        </div>
+
         {/* Footer info */}
         <div className="flex items-center justify-center gap-2 text-sm text-gray-400 mt-8">
             <CheckCircle2 size={14} />
             <span>Seus dados são salvos automaticamente em nuvem segura.</span>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

@@ -1,148 +1,152 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { Camera, Upload, Trash2, Loader2, Image as ImageIcon, Maximize2, Sparkles, Filter } from "lucide-react";
+import { 
+  Camera, Upload, Trash2, Loader2, Image as ImageIcon, 
+  Maximize2, Sparkles, Filter, X, ArrowRightLeft, Calendar 
+} from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import { BeforeAfterSlider } from "../../components/BeforeAfterSlider";
 
 export function PatientGalleryPage() {
   const { id } = useParams();
-  const [photos, setPhotos] = useState<string[]>([]);
+  
+  // Agora photos é um array de objetos, não só strings, para ser mais seguro
+  const [photos, setPhotos] = useState<{id: string, url: string, created_at: string}[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [clinicId, setClinicId] = useState<string | null>(null);
+  
+  // Estado para Lightbox (Zoom)
+  const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
+  
+  // Estado para Comparação Manual
+  const [compareSelection, setCompareSelection] = useState<string[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    async function loadData() {
-        try {
-            setLoading(true);
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            // 1. Identificar Clínica
-            const { data: profile } = await supabase.from('profiles').select('clinic_id:clinic_id').eq('id', user.id).single();
-            if (profile) setClinicId(profile.clinic_id);
-
-            // 2. Carregar Fotos do Tratamento Ativo
-            // Ajuste: patientId (camelCase)
-            const { data } = await supabase
-                .from("patient_treatments")
-                .select("photos")
-                .eq("patient_id", id)
-                .eq("status", "active")
-                .limit(1)
-                .single();
-
-            if (data?.photos) {
-                setPhotos(data.photos);
-            }
-        } catch (error) { 
-            console.error("Erro ao carregar galeria:", error); 
-        } finally { 
-            setLoading(false); 
-        }
-    }
     loadData();
   }, [id]);
 
+  async function loadData() {
+    try {
+        setLoading(true);
+        // Busca na tabela DEDICADA de fotos (muito mais seguro)
+        const { data, error } = await supabase
+            .from("patient_photos")
+            .select("*")
+            .eq("patient_id", id)
+            .order("created_at", { ascending: true }); // Mais antigas primeiro para a timeline
+
+        if (error) throw error;
+        setPhotos(data || []);
+    } catch (error) { 
+        console.error("Erro ao carregar galeria:", error); 
+    } finally { 
+        setLoading(false); 
+    }
+  }
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-     if (!e.target.files?.length || !clinicId) {
-         if(!clinicId) toast.error("Erro de identificação da clínica.");
-         return;
-     }
+     if (!e.target.files?.length) return;
      
      setUploading(true);
      const file = e.target.files[0];
+     // Nome do arquivo limpo
      const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substring(7)}`; 
      
      try {
-         // 1. Upload para o Storage
+         // 1. Upload Físico (Storage)
          const { error: uploadError } = await supabase.storage.from('patient-photos').upload(fileName, file);
          if (uploadError) throw uploadError;
          
-         // 2. Resgatar URL pública
+         // 2. Pegar URL
          const { data } = supabase.storage.from('patient-photos').getPublicUrl(fileName);
          const publicUrl = data.publicUrl;
-         const newPhotos = [...photos, publicUrl];
          
-         // 3. Atualizar ou Criar Registro de Tratamento
-         // Primeiro, verifica se já existe um tratamento ativo
-         const { data: existing } = await supabase
-            .from("patient_treatments")
-            .select("id")
-            .eq("patient_id", id)
-            .eq("status", "active")
+         // 3. Salvar no Banco (INSERT simples e robusto)
+         const { data: newPhoto, error: dbError } = await supabase
+            .from("patient_photos")
+            .insert({
+                patient_id: id,
+                url: publicUrl
+            })
+            .select()
             .single();
 
-         if (existing) {
-             // Atualiza existente
-             await supabase
-                .from("patient_treatments")
-                .update({ photos: newPhotos })
-                .eq("id", existing.id);
-         } else {
-             // Cria novo tratamento (Galeria Inicial)
-             await supabase.from("patient_treatments").insert({
-                 clinic_id: clinicId,
-                 patient_id: id,
-                 status: "active",
-                 notes: "Galeria de Fotos",
-                 photos: newPhotos,
-                 startDate: new Date().toISOString()
-             });
-         }
+         if (dbError) throw dbError;
          
-         setPhotos(newPhotos);
-         toast.success("Imagem anexada à timeline!");
+         // Atualiza a tela imediatamente
+         setPhotos(prev => [...prev, newPhoto]);
+         toast.success("Foto salva com segurança!");
      } catch (err: any) { 
          console.error(err);
-         toast.error("Falha no upload: " + err.message); 
+         toast.error("Erro ao salvar: " + err.message); 
      } finally { 
          setUploading(false);
          if (fileInputRef.current) fileInputRef.current.value = "";
      }
   }
 
-  const handleDelete = async (url: string) => {
-      if(!confirm("Deseja remover esta imagem permanentemente do prontuário?")) return;
-      
-      const newPhotos = photos.filter(p => p !== url);
+  const handleDelete = async (photoId: string, urlToDelete: string) => {
+      if(!confirm("Tem certeza que deseja apagar esta foto permanentemente?")) return;
       
       try {
-          const { data: existing } = await supabase
-            .from("patient_treatments")
-            .select("id")
-            .eq("patient_id", id)
-            .eq("status", "active")
-            .single();
+          // 1. Remove do Banco
+          const { error } = await supabase
+            .from("patient_photos")
+            .delete()
+            .eq("id", photoId);
 
-          if (existing) {
-              await supabase
-                .from("patient_treatments")
-                .update({ photos: newPhotos })
-                .eq("id", existing.id);
-              
-              setPhotos(newPhotos);
-              toast.success("Foto removida.");
-          }
-      } catch (error) {
-          toast.error("Erro ao sincronizar exclusão.");
+          if (error) throw error;
+
+          // 2. Remove do Storage (opcional, mas bom para limpar)
+          try {
+             const path = urlToDelete.split('/patient-photos/')[1]; 
+             if (path) await supabase.storage.from('patient-photos').remove([decodeURIComponent(path)]);
+          } catch (e) { console.log("Erro ao limpar storage", e)}
+
+          // 3. Atualiza tela
+          setPhotos(prev => prev.filter(p => p.id !== photoId));
+          setCompareSelection(prev => prev.filter(url => url !== urlToDelete));
+          toast.success("Foto excluída.");
+
+      } catch (error: any) {
+          console.error(error);
+          toast.error("Erro ao excluir: " + error.message);
       }
+  }
+
+  const toggleCompare = (url: string) => {
+    if (compareSelection.includes(url)) {
+        setCompareSelection(prev => prev.filter(p => p !== url));
+    } else {
+        if (compareSelection.length >= 2) {
+            toast.error("Remova uma foto antes de adicionar outra.");
+            return;
+        }
+        setCompareSelection(prev => [...prev, url]);
+    }
+  }
+
+  // Helper para data
+  const formatDate = (dateString: string) => {
+      return new Date(dateString).toLocaleDateString('pt-BR');
   }
 
   if (loading) return (
     <div className="h-screen flex flex-col items-center justify-center gap-4 bg-white dark:bg-gray-950">
       <Loader2 className="animate-spin text-pink-600" size={40}/>
-      <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Revelando Galeria...</p>
+      <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em]">Carregando Galeria...</p>
     </div>
   );
 
   return (
     <div className="max-w-[1600px] mx-auto p-6 space-y-8 animate-in fade-in duration-700">
         
-        {/* HEADER DA GALERIA */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 gap-6">
             <div className="flex items-center gap-6">
                 <div className="p-4 bg-pink-50 dark:bg-pink-900/20 rounded-3xl text-pink-600">
@@ -152,7 +156,9 @@ export function PatientGalleryPage() {
                     <h2 className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic flex items-center gap-2">
                         Timeline <span className="text-pink-600">Visual</span>
                     </h2>
-                    <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Evolução fotográfica e comparativos de resultados</p>
+                    <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">
+                        {photos.length} Fotos Registradas
+                    </p>
                 </div>
             </div>
             
@@ -164,10 +170,55 @@ export function PatientGalleryPage() {
                     className="h-14 px-8 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
                 >
                     {uploading ? <Loader2 className="animate-spin mr-2" /> : <Upload size={18} className="mr-2 text-pink-500" />} 
-                    Capturar Nova Foto
+                    Nova Foto
                 </Button>
             </div>
         </div>
+
+        {/* COMPARATIVO ANTES E DEPOIS */}
+        {photos.length >= 2 && (
+            <div className="bg-white dark:bg-gray-800 p-8 md:p-10 rounded-[3rem] shadow-sm border border-gray-100 dark:border-gray-700 relative group">
+                <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
+                    <Sparkles size={180}/>
+                </div>
+                
+                <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-1.5 h-8 bg-pink-600 rounded-full"></div>
+                        <div>
+                            <h3 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">
+                                {compareSelection.length === 2 ? "Comparação Manual" : "Evolução Total"}
+                            </h3>
+                            <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mt-1">
+                                {compareSelection.length === 2 ? "Visualizando seleção personalizada" : "Início vs. Fim"}
+                            </p>
+                        </div>
+                    </div>
+                    {compareSelection.length > 0 && (
+                        <Button variant="outline" size="sm" onClick={() => setCompareSelection([])} className="text-xs uppercase font-bold text-red-500 hover:text-red-600 border-red-200 hover:bg-red-50">
+                            <X size={14} className="mr-2"/> Limpar Seleção
+                        </Button>
+                    )}
+                </div>
+
+                {/* CORREÇÃO DO CORTE E BARRA PRETA: h-[600px] e bg-gray-100 */}
+                <div className="max-w-lg mx-auto w-full h-[600px] rounded-[2rem] overflow-hidden shadow-2xl border-4 border-gray-100 dark:border-gray-900 animate-in zoom-in-95 duration-700 bg-gray-100 dark:bg-gray-950 flex items-center justify-center">
+                    <BeforeAfterSlider 
+                        beforeImage={compareSelection.length === 2 ? compareSelection[0] : photos[0].url} 
+                        afterImage={compareSelection.length === 2 ? compareSelection[1] : photos[photos.length - 1].url} 
+                        beforeLabel={compareSelection.length === 2 ? "Foto A" : "Inicial"} 
+                        afterLabel={compareSelection.length === 2 ? "Foto B" : "Atual"} 
+                    />
+                </div>
+
+                <div className="mt-6 flex justify-center">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900 rounded-full border border-gray-100 dark:border-gray-700">
+                        <Filter size={14} className="text-pink-500"/>
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Arraste a barra central</span>
+                    </div>
+                </div>
+            </div>
+        )}
 
         {/* GRADE DE FOTOS */}
         {photos.length === 0 ? (
@@ -175,80 +226,81 @@ export function PatientGalleryPage() {
                 <div className="w-24 h-24 bg-gray-50 dark:bg-gray-900 rounded-full flex items-center justify-center mb-6 text-gray-200">
                     <ImageIcon size={48} />
                 </div>
-                <h3 className="text-lg font-black text-gray-400 uppercase tracking-widest">Sem registros visuais</h3>
-                <p className="text-gray-400 text-xs mt-2">Clique em capturar para iniciar a timeline de resultados.</p>
+                <h3 className="text-lg font-black text-gray-400 uppercase tracking-widest">Galeria Vazia</h3>
             </div>
         ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                {photos.slice().reverse().map((url, i) => (
-                    <div key={i} className="group relative aspect-[3/4] rounded-[2rem] overflow-hidden border-4 border-white dark:border-gray-800 shadow-lg bg-gray-100 transition-all duration-500 hover:shadow-2xl hover:-translate-y-2">
-                        <img 
-                            src={url} 
-                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
-                            alt={`Evolução ${i}`} 
-                        />
-                        
-                        {/* Overlay de Ações */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-6">
-                            <div className="flex items-center justify-between gap-2">
-                                 <a 
-                                    href={url} 
-                                    target="_blank" 
-                                    rel="noreferrer" 
-                                    className="p-3 bg-white/20 hover:bg-white/40 text-white rounded-2xl backdrop-blur-md transition-colors"
-                                    title="Ver em tamanho real"
-                                 >
-                                    <Maximize2 size={20}/>
-                                 </a>
-                                 <button 
-                                    onClick={() => handleDelete(url)} 
-                                    className="p-3 bg-rose-600/80 hover:bg-rose-600 text-white rounded-2xl backdrop-blur-md transition-colors"
-                                    title="Excluir do prontuário"
-                                 >
-                                    <Trash2 size={20}/>
-                                 </button>
+                {/* .slice().reverse() para mostrar as mais novas primeiro na grade */}
+                {photos.slice().reverse().map((photo, i) => {
+                    const isSelected = compareSelection.includes(photo.url);
+                    
+                    return (
+                        <div 
+                            key={photo.id} 
+                            className={`group relative aspect-[3/4] rounded-[2rem] overflow-hidden border-4 shadow-lg bg-gray-100 transition-all duration-500 hover:shadow-2xl hover:-translate-y-2 cursor-pointer
+                                ${isSelected ? 'border-pink-500 ring-4 ring-pink-500/20 z-10 scale-105' : 'border-white dark:border-gray-800'}
+                            `}
+                            onClick={() => setViewingPhoto(photo.url)} 
+                        >
+                            <img 
+                                src={photo.url} 
+                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                                alt={`Foto ${i}`} 
+                            />
+                            
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4 md:p-6"
+                                 onClick={(e) => e.stopPropagation()} 
+                            >
+                                <div className="flex items-center justify-center gap-3 mb-4">
+                                     <button 
+                                        onClick={(e) => { e.stopPropagation(); toggleCompare(photo.url); }}
+                                        className={`p-3 rounded-full backdrop-blur-md transition-all hover:scale-110 ${isSelected ? 'bg-pink-600 text-white shadow-lg shadow-pink-600/30' : 'bg-white/20 hover:bg-white/40 text-white'}`}
+                                        title="Comparar"
+                                     >
+                                        <ArrowRightLeft size={18}/>
+                                     </button>
+
+                                     <button 
+                                        onClick={(e) => { e.stopPropagation(); handleDelete(photo.id, photo.url); }} 
+                                        className="p-3 bg-red-600/80 hover:bg-red-600 text-white rounded-full backdrop-blur-md transition-all hover:scale-110 hover:shadow-lg hover:shadow-red-600/30"
+                                        title="Excluir"
+                                     >
+                                        <Trash2 size={18}/>
+                                     </button>
+                                </div>
+                                
+                                <div className="text-center">
+                                    <span className="text-[10px] font-mono text-white/70 block mb-1">
+                                        <Calendar size={10} className="inline mr-1"/> {formatDate(photo.created_at)}
+                                    </span>
+                                </div>
                             </div>
+                            
+                            {isSelected && (
+                                <div className="absolute top-4 right-4 bg-pink-600 text-white text-[9px] font-black uppercase px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1 animate-in fade-in zoom-in">
+                                    <Sparkles size={10}/> Comparando
+                                </div>
+                            )}
                         </div>
-                        
-                        {/* Tag de Data (Simulada para Demo) */}
-                        <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-                            <span className="text-[9px] font-bold text-white uppercase">Sessão {photos.length - i}</span>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         )}
 
-        {/* COMPARATIVO ANTES E DEPOIS (Visualização de Poder) */}
-        {photos.length >= 2 && (
-            <div className="bg-white dark:bg-gray-800 p-10 rounded-[3rem] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden relative group">
-                <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
-                    <Sparkles size={180}/>
-                </div>
-                
-                <div className="flex items-center gap-3 mb-10">
-                    <div className="w-1.5 h-8 bg-pink-600 rounded-full"></div>
-                    <div>
-                        <h3 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">Comparativo de Resultados</h3>
-                        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mt-1">Análise dinâmica entre a primeira e a última foto registrada</p>
-                    </div>
-                </div>
-
-                <div className="max-w-4xl mx-auto rounded-[2.5rem] overflow-hidden shadow-2xl border-8 border-gray-50 dark:border-gray-900 animate-in zoom-in-95 duration-700">
-                    <BeforeAfterSlider 
-                        beforeImage={photos[0]} 
-                        afterImage={photos[photos.length - 1]} 
-                        beforeLabel="Status Inicial" 
-                        afterLabel="Resultado Atual" 
-                    />
-                </div>
-
-                <div className="mt-8 flex justify-center gap-4">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900 rounded-full border border-gray-100 dark:border-gray-700">
-                        <Filter size={14} className="text-pink-500"/>
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Arraste a barra para comparar</span>
-                    </div>
-                </div>
+        {/* LIGHTBOX (ZOOM) */}
+        {viewingPhoto && (
+            <div className="fixed inset-0 z-[9999] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+                <button 
+                    onClick={() => setViewingPhoto(null)}
+                    className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors z-50"
+                >
+                    <X size={24} />
+                </button>
+                <img 
+                    src={viewingPhoto} 
+                    className="max-w-full max-h-[90vh] rounded-xl shadow-2xl object-contain" 
+                    alt="Zoom" 
+                />
             </div>
         )}
     </div>

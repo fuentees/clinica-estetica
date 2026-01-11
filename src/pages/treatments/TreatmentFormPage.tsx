@@ -1,192 +1,350 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom'; 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { supabase } from '../../lib/supabase';
 import { Button } from '../../components/ui/button';
-// Removido Input importado errado, usando HTML nativo estilizado abaixo
 import { toast } from 'react-hot-toast';
-import { Loader2, ArrowLeft, Sparkles, Clock, DollarSign, FileText, Tag } from 'lucide-react';
+import { 
+  Loader2, ArrowLeft, Sparkles, Clock, DollarSign, FileText, Tag, 
+  Package, Plus, Trash2, Search, Syringe 
+} from 'lucide-react';
 
-// --- SCHEMA DE VALIDAÇÃO ---
+// --- SCHEMA ---
 const treatmentSchema = z.object({
-  name: z.string().min(3, "O nome deve ter pelo menos 3 letras"),
-  category: z.string().min(1, "A categoria é obrigatória"),
+  name: z.string().min(3, "Nome muito curto"),
+  category: z.string().min(1, "Categoria obrigatória"),
   description: z.string().optional(),
-  price: z.coerce.number().min(0, "O preço não pode ser negativo"),
-  duration_minutes: z.coerce.number().min(5, "A duração mínima é 5 minutos"),
+  price: z.coerce.number().min(0, "Preço inválido"),
+  duration_minutes: z.coerce.number().min(5, "Mínimo 5 min"),
 });
 
 type TreatmentFormData = z.infer<typeof treatmentSchema>;
 
 export function TreatmentFormPage() {
   const navigate = useNavigate();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { id } = useParams(); 
+  const isEditing = !!id; 
 
-  const { register, handleSubmit, formState: { errors } } = useForm<TreatmentFormData>({
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
+  
+  // Estados para o KIT
+  const [inventoryList, setInventoryList] = useState<any[]>([]);
+  const [kitItems, setKitItems] = useState<any[]>([]); 
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<TreatmentFormData>({
     resolver: zodResolver(treatmentSchema),
-    defaultValues: {
-      price: 0,
-      duration_minutes: 30,
-      category: "Facial"
-    }
+    defaultValues: { price: 0, duration_minutes: 30, category: "Facial" }
   });
+
+  // 1. Carregar Estoque
+  useEffect(() => {
+    async function fetchInventory() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user.id).single();
+      if (!profile?.clinic_id) return;
+
+      const { data } = await supabase
+        .from('inventory')
+        .select('id, name, unit_price')
+        .eq('clinic_id', profile.clinic_id)
+        .order('name');
+        
+      if (data) setInventoryList(data);
+    }
+    fetchInventory();
+  }, []);
+
+  // 2. Se for edição, carregar dados
+  useEffect(() => {
+    if (!isEditing) return;
+
+    async function loadServiceData() {
+        try {
+            setLoadingData(true);
+            const { data: service, error } = await supabase
+                .from('services')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (error || !service) throw new Error("Serviço não encontrado");
+
+            reset({
+                name: service.name,
+                category: service.category,
+                description: service.description || '',
+                price: Number(service.price),
+                duration_minutes: service.duration
+            });
+
+            const { data: items } = await supabase
+                .from('procedure_items')
+                .select(`quantity_needed, inventory:inventory_id (id, name)`)
+                .eq('procedure_id', id);
+
+            if (items) {
+                const formattedKit = items.map((item: any) => ({
+                    inventory_id: item.inventory.id,
+                    name: item.inventory.name,
+                    qty: item.quantity_needed
+                }));
+                setKitItems(formattedKit);
+            }
+
+        } catch (error) {
+            console.error(error);
+            toast.error("Erro ao carregar dados.");
+            navigate('/services');
+        } finally {
+            setLoadingData(false);
+        }
+    }
+    loadServiceData();
+  }, [id, isEditing, reset, navigate]);
+
+  // Funções do Kit
+  const addToKit = (item: any) => {
+    const exists = kitItems.find(k => k.inventory_id === item.id);
+    if (exists) {
+      setKitItems(kitItems.map(k => k.inventory_id === item.id ? { ...k, qty: k.qty + 1 } : k));
+    } else {
+      setKitItems([...kitItems, { inventory_id: item.id, name: item.name, qty: 1 }]);
+    }
+  };
+
+  const removeFromKit = (id: string) => {
+    setKitItems(kitItems.filter(k => k.inventory_id !== id));
+  };
+
+  const updateKitQty = (id: string, delta: number) => {
+    setKitItems(prev => prev.map(k => {
+      if (k.inventory_id === id) return { ...k, qty: Math.max(0.1, k.qty + delta) }; 
+      return k;
+    }));
+  };
 
   const onSubmit = async (data: TreatmentFormData) => {
     setIsSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não autenticado");
+      if (!user) throw new Error("Usuário offline");
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('clinic_id:clinic_id')
-        .eq('id', user.id)
-        .single();
+      const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user.id).single();
+      if (!profile?.clinic_id) throw new Error("Clínica não encontrada");
 
-      if (!profile?.clinic_id) throw new Error("Clínica não identificada");
+      let serviceId = id;
 
-      const { error } = await supabase
-        .from('services') 
-        .insert({
-          clinic_id: profile.clinic_id,
-          name: data.name,
-          category: data.category,
-          description: data.description,
-          price: data.price,
-          duration: data.duration_minutes,
-          is_active: true
-        });
+      if (isEditing) {
+          const { error } = await supabase
+            .from('services')
+            .update({
+                name: data.name,
+                category: data.category,
+                description: data.description,
+                price: data.price,
+                duration: data.duration_minutes
+            })
+            .eq('id', id);
+          if (error) throw error;
+      } else {
+          const { data: newService, error } = await supabase
+            .from('services') 
+            .insert({
+              clinic_id: profile.clinic_id,
+              name: data.name,
+              category: data.category,
+              description: data.description,
+              price: data.price,
+              duration: data.duration_minutes,
+              is_active: true
+            })
+            .select()
+            .single();
 
-      if (error) throw error;
+          if (error) throw error;
+          serviceId = newService.id;
+      }
 
-      toast.success('Procedimento catalogado com sucesso!');
+      if (serviceId) {
+          await supabase.from('procedure_items').delete().eq('procedure_id', serviceId);
+          if (kitItems.length > 0) {
+            const itemsToInsert = kitItems.map(item => ({
+              procedure_id: serviceId, 
+              inventory_id: item.inventory_id,
+              quantity_needed: item.qty
+            }));
+            const { error: kitError } = await supabase.from('procedure_items').insert(itemsToInsert);
+            if (kitError) throw kitError;
+          }
+      }
+
+      toast.success(isEditing ? 'Serviço atualizado!' : 'Serviço criado com sucesso!');
       navigate('/services');
 
     } catch (error: any) {
-      console.error('Erro ao salvar serviço:', error);
-      toast.error('Erro ao salvar: ' + (error.message || 'Falha na conexão'));
+      console.error(error);
+      if (error.message && error.message.includes('services_clinic_id_name_key')) {
+        toast.error('Já existe um serviço com este nome!');
+      } else {
+        toast.error('Erro ao salvar: ' + error.message);
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const filteredInventory = inventoryList.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  if (loadingData) {
+      return (
+          <div className="flex flex-col items-center justify-center h-[500px]">
+              <Loader2 className="animate-spin text-pink-600 mb-4" size={40} />
+              <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">Carregando dados...</p>
+          </div>
+      );
+  }
+
   return (
-    <div className="p-8 max-w-2xl mx-auto animate-in fade-in duration-700">
-      {/* HEADER */}
+    <div className="p-4 md:p-8 max-w-6xl mx-auto animate-in fade-in duration-700">
       <div className="flex items-center gap-4 mb-8">
-        <Button 
-          variant="ghost" 
-          onClick={() => navigate('/services')}
-          className="h-12 w-12 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 p-0 hover:bg-gray-50"
-        >
-          <ArrowLeft size={22} className="text-gray-600 dark:text-gray-300" />
+        <Button variant="ghost" onClick={() => navigate('/services')} className="bg-white dark:bg-gray-800 border dark:border-gray-700">
+          <ArrowLeft size={20} />
         </Button>
         <div>
-          <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic flex items-center gap-3">
-            Novo <span className="text-pink-600">Serviço</span>
-            <Sparkles size={20} className="text-pink-400 animate-pulse" />
+          <h1 className="text-2xl font-black text-gray-900 dark:text-white uppercase italic flex items-center gap-2">
+            {isEditing ? 'Editar' : 'Novo'} <span className="text-pink-600">Serviço</span> <Sparkles size={20} className="text-pink-400" />
           </h1>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Configuração de Protocolo e Precificação</p>
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Cadastro de tratamento e consumo</p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-8 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-600 to-purple-600"></div>
+      <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         
-        {/* Linha 1: Nome e Categoria */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                    <Sparkles size={14} className="text-pink-500" /> Nome do Procedimento
-                </label>
-                <input 
-                    {...register('name')} 
-                    className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 outline-none focus:ring-2 focus:ring-pink-500 font-bold text-gray-900 dark:text-white"
-                    placeholder="Ex: Botox Full Face" 
-                />
-                {errors.name && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.name.message}</p>}
+        {/* COLUNA 1: DADOS DO SERVIÇO */}
+        <div className="lg:col-span-2 space-y-8 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden h-full">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-pink-600 to-purple-600"></div>
+            
+            <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <FileText size={18} className="text-pink-500"/> Dados do Procedimento
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Nome</label>
+                    <input {...register('name')} className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 outline-none focus:ring-2 focus:ring-pink-500 font-bold dark:text-white" placeholder="Ex: Lipo Enzimática" />
+                    {errors.name && <span className="text-red-500 text-xs">{errors.name.message}</span>}
+                </div>
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Categoria</label>
+                    <select {...register('category')} className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 outline-none focus:ring-2 focus:ring-pink-500 font-bold dark:text-white cursor-pointer">
+                        <option value="Facial">Facial</option>
+                        <option value="Corporal">Corporal</option>
+                        <option value="Toxina">Toxina</option>
+                        <option value="Preenchedor">Preenchedor</option>
+                        <option value="Bioestimulador">Bioestimulador</option>
+                        <option value="Capilar">Capilar</option>
+                        <option value="Tecnologia">Tecnologia</option>
+                    </select>
+                </div>
             </div>
 
             <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                    <Tag size={14} className="text-purple-500" /> Categoria
-                </label>
-                <select 
-                    {...register('category')}
-                    className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-bold outline-none text-sm text-gray-900 dark:text-white"
-                >
-                    <option value="Facial">Facial</option>
-                    <option value="Corporal">Corporal</option>
-                    <option value="Toxina">Toxina</option>
-                    <option value="Preenchedor">Preenchedor</option>
-                    <option value="Bioestimulador">Bioestimulador</option>
-                    <option value="Tecnologia">Tecnologia</option>
-                    <option value="Capilar">Capilar</option>
-                    <option value="Outros">Outros</option>
-                </select>
-                {errors.category && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.category.message}</p>}
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Descrição</label>
+                <textarea {...register('description')} className="w-full rounded-2xl bg-gray-50 dark:bg-gray-900 p-4 font-medium outline-none focus:ring-2 focus:ring-pink-500 min-h-[150px] resize-none dark:text-white" placeholder="Detalhes do tratamento..." />
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-1"><DollarSign size={12}/> Preço Venda</label>
+                    <input type="number" step="0.01" {...register('price')} className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 outline-none focus:ring-2 focus:ring-pink-500 font-black text-emerald-600" />
+                </div>
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-1"><Clock size={12}/> Minutos</label>
+                    <input type="number" {...register('duration_minutes')} className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 outline-none focus:ring-2 focus:ring-pink-500 font-black text-blue-600" />
+                </div>
             </div>
         </div>
 
-        {/* Descrição */}
-        <div className="space-y-2">
-          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-            <FileText size={14} /> Detalhamento do Serviço
-          </label>
-          <textarea 
-            {...register('description')}
-            className="w-full rounded-2xl border-0 bg-gray-50 dark:bg-gray-900 p-4 text-sm font-medium focus:ring-2 focus:ring-pink-500 outline-none min-h-[100px] resize-none shadow-inner text-gray-900 dark:text-white"
-            placeholder="Descreva o que está incluso, técnica utilizada ou benefícios..."
-          />
+        {/* COLUNA 2: MONTAGEM DO KIT */}
+        <div className="lg:col-span-1 flex flex-col gap-6 h-full">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 flex-1 flex flex-col min-h-[600px]">
+                <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+                    <Package size={18} className="text-purple-500"/> Montar Kit (Receita)
+                </h3>
+                
+                {/* Busca */}
+                <div className="relative mb-4">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16}/>
+                    <input 
+                        className="w-full pl-9 h-12 bg-gray-50 dark:bg-gray-900 rounded-xl text-sm outline-none focus:ring-2 focus:ring-purple-500 dark:text-white"
+                        placeholder="Buscar insumo..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                    />
+                </div>
+
+                {/* Lista de Seleção (AUMENTADA AQUI) */}
+                <div className="h-80 overflow-y-auto mb-6 border border-gray-100 dark:border-gray-700 rounded-xl p-2 custom-scrollbar bg-gray-50/30">
+                    {filteredInventory.map(item => (
+                        <button 
+                            key={item.id} 
+                            type="button"
+                            onClick={() => addToKit(item)}
+                            className="w-full text-left p-3 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg text-sm flex justify-between items-center group transition-colors border-b border-gray-50 dark:border-gray-800 last:border-0"
+                        >
+                            <span className="truncate max-w-[200px] text-gray-700 dark:text-gray-300 font-medium">{item.name}</span>
+                            <Plus size={16} className="text-purple-400 opacity-0 group-hover:opacity-100"/>
+                        </button>
+                    ))}
+                    {filteredInventory.length === 0 && <p className="text-xs text-center text-gray-400 mt-10">Nenhum item encontrado.</p>}
+                </div>
+
+                <div className="mb-2">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Itens no Kit ({kitItems.length})</p>
+                </div>
+
+                {/* Itens Selecionados */}
+                <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar min-h-[150px]">
+                    {kitItems.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-xl p-4">
+                            <Syringe className="text-gray-300 mb-2" size={24}/>
+                            <p className="text-xs text-gray-400 font-bold uppercase text-center">Nenhum insumo selecionado</p>
+                        </div>
+                    ) : (
+                        kitItems.map(item => (
+                            <div key={item.inventory_id} className="bg-purple-50 dark:bg-purple-900/10 p-3 rounded-xl flex items-center justify-between border border-purple-100 dark:border-purple-900/30">
+                                <div className="flex-1 overflow-hidden mr-2">
+                                    <p className="text-xs font-bold text-gray-800 dark:text-white truncate">{item.name}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button type="button" onClick={() => updateKitQty(item.inventory_id, -1)} className="text-gray-400 hover:text-purple-600 font-mono p-1">-</button>
+                                    <span className="text-xs font-bold w-6 text-center">{item.qty}</span>
+                                    <button type="button" onClick={() => updateKitQty(item.inventory_id, 1)} className="text-gray-400 hover:text-purple-600 font-mono p-1">+</button>
+                                    <button type="button" onClick={() => removeFromKit(item.inventory_id)} className="ml-1 text-rose-400 hover:text-rose-600 p-1"><Trash2 size={14}/></button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+                    <Button 
+                        type="submit" 
+                        disabled={isSubmitting}
+                        className="w-full h-14 bg-gray-900 hover:bg-black text-white rounded-xl font-bold uppercase text-xs tracking-widest shadow-lg flex items-center justify-center gap-2"
+                    >
+                        {isSubmitting ? <Loader2 className="animate-spin"/> : <Sparkles size={16} className="text-pink-500"/>}
+                        {isSubmitting ? 'Salvando...' : (isEditing ? 'Atualizar Serviço' : 'Salvar Serviço & Kit')}
+                    </Button>
+                </div>
+            </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Preço */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-              <DollarSign size={14} className="text-emerald-500" /> Valor de Venda (R$)
-            </label>
-            <input 
-              type="number" 
-              step="0.01"
-              {...register('price')} 
-              className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-emerald-600 outline-none"
-            />
-            {errors.price && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.price.message}</p>}
-          </div>
-
-          {/* Duração */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-              <Clock size={14} className="text-blue-500" /> Tempo em Cabine (Min)
-            </label>
-            <input 
-              type="number" 
-              {...register('duration_minutes')} 
-              className="w-full h-12 px-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-0 focus:ring-2 focus:ring-pink-500 font-black italic text-blue-600 outline-none"
-            />
-            {errors.duration_minutes && <p className="text-rose-500 text-[10px] font-bold uppercase ml-1">{errors.duration_minutes.message}</p>}
-          </div>
-        </div>
-
-        {/* Botão de Ação */}
-        <div className="pt-6 border-t border-gray-50 dark:border-gray-700">
-          <Button 
-            type="submit" 
-            disabled={isSubmitting} 
-            className="h-14 bg-gray-900 hover:bg-black text-white w-full rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
-          >
-            {isSubmitting ? (
-              <Loader2 className="animate-spin text-pink-500" size={20} />
-            ) : (
-              <Sparkles size={18} className="text-pink-500" />
-            )}
-            {isSubmitting ? 'Registrando...' : 'Concluir Cadastro'}
-          </Button>
-        </div>
-
       </form>
     </div>
   );

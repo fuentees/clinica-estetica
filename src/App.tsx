@@ -28,7 +28,7 @@ import { PatientDashboardLayout } from "./pages/patients/PatientDashboardLayout"
 import PatientOverviewPage from "./pages/patients/PatientOverviewPage";
 import PatientAnamnesisPage from "./pages/patients/anamnesis/PatientAnamnesisPage";
 import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";
-import { PatientAIAnalysisPage } from "./pages/patients/PatientAIAnalysisPage"; 
+import PatientAIAnalysisPage from "./pages/patients/PatientAIAnalysisPage";
 import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage"; 
 import { PatientEvolutionPage } from "./pages/patients/PatientEvolutionPage";
 import { PatientFinancialPage } from "./pages/patients/PatientFinancialPage";
@@ -45,6 +45,7 @@ import { TreatmentFormPage } from "./pages/treatments/TreatmentFormPage";
 // --- ESTOQUE ---
 import { InventoryPage } from "./pages/inventory/InventoryPage";
 import { InventoryFormPage } from "./pages/inventory/InventoryFormPage"; 
+import { ProcedureKits } from "./pages/inventory/ProcedureKits";
 
 // --- FINANCEIRO (ADM) ---
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
@@ -70,28 +71,16 @@ import { PatientPackagesPage } from "./pages/portal/PatientPackagesPage";
 
 const queryClient = new QueryClient();
 
-// 🚀 COMPONENTE 1: Decide para onde ir ao logar (Raiz "/")
 function HomeRedirect() {
   const { user, isAdmin, isProfessional, isPatient } = useAuth();
-  
-  // 1. Paciente -> Portal
   if (isPatient) return <Navigate to="/portal" replace />;
-  
-  // 2. Profissional (Larissa) -> Perfil Premium dela
   if (isProfessional && !isAdmin) return <Navigate to={`/professionals/${user?.id}`} replace />;
-  
-  // 3. Admin/Recepção -> Dashboard da Clínica
   return <Navigate to="/dashboard" replace />;
 }
 
-// 🛡️ COMPONENTE 2: Protege o Dashboard da Clínica contra acesso indevido
 function DashboardResolver() {
   const { user, isAdmin, isProfessional } = useAuth();
-  
-  // Se for Profissional e tentar entrar aqui, expulsa para o perfil
   if (isProfessional && !isAdmin) return <Navigate to={`/professionals/${user?.id}`} replace />;
-  
-  // Caso contrário, mostra o Dashboard
   return <DashboardPage />;
 }
 
@@ -104,25 +93,22 @@ function App() {
             <Toaster position="top-right" />
             
             <Routes>
-              {/* LOGIN DA CLÍNICA (Admin/Staff) */}
+              {/* LOGIN DA CLÍNICA */}
               <Route path="/login" element={<LoginPage />} />
 
-              {/* ✅ LOGIN DO PACIENTE */}
+              {/* LOGIN DO PACIENTE */}
               <Route path="/portal/login" element={<PatientLoginPage />} />
 
-              {/* ROTA RAIZ "/" -> O Ponto de Decisão */}
+              {/* ROTA RAIZ */}
               <Route path="/" element={<ProtectedRoute allowedRoles={['admin', 'profissional', 'recepcionista', 'paciente']} />}>
                   <Route index element={<HomeRedirect />} />
               </Route>
 
-              {/* 🏥 BLOCO 1: ÁREA CLÍNICA (Layout Principal) */}
+              {/* 🏥 BLOCO 1: ÁREA CLÍNICA */}
               <Route element={<ProtectedRoute allowedRoles={['admin', 'profissional', 'recepcionista']} />}>
                 <Route element={<Layout />}>
-                  
-                  {/* Dashboard com Resolver (Trava de Segurança) */}
                   <Route path="/dashboard" element={<DashboardResolver />} />
                   
-                  {/* Prontuário do Paciente (Visão da Clínica) */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
                       <Route index element={<PatientOverviewPage />} />
                       <Route path="anamnesis" element={<PatientAnamnesisPage />} />
@@ -143,7 +129,6 @@ function App() {
                   <Route path="prescriptions" element={<PrescriptionsPage />} />
                   <Route path="prescriptions/new" element={<PrescriptionFormPage />} />
 
-                  {/* 🌟 LAYOUT DE PERFIL PREMIUM (A Casa da Larissa) */}
                   <Route path="professionals/:id" element={<ProfessionalDashboardLayout />}>
                       <Route index element={<ProfessionalOverviewPage />} /> 
                       <Route path="agenda" element={<ProfessionalAgendaPage />} /> 
@@ -155,21 +140,27 @@ function App() {
                 </Route>
               </Route>
 
-              {/* 💼 BLOCO 2: GESTÃO (Admin + Recepcionista) */}
+              {/* 💼 BLOCO 2: GESTÃO */}
               <Route element={<ProtectedRoute allowedRoles={['admin', 'recepcionista']} />}>
                 <Route element={<Layout />}>
                   <Route path="patients" element={<PatientsListPage />} /> 
                   <Route path="patients/new" element={<PatientFormPage />} />
+                  
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="inventory/new" element={<InventoryFormPage />} />
                   <Route path="inventory/:id/edit" element={<InventoryFormPage />} />
+                  <Route path="inventory/kits" element={<ProcedureKits />} />
+                  
+                  {/* --- ROTAS DE SERVIÇOS (Corrigido) --- */}
                   <Route path="services" element={<TreatmentsPage />} />
                   <Route path="services/new" element={<TreatmentFormPage />} />
+                  <Route path="services/edit/:id" element={<TreatmentFormPage />} />
+                  
                   <Route path="professionals" element={<ProfessionalsListPage />} />
                 </Route>
               </Route>
 
-              {/* 🔒 BLOCO 3: SÓ ADMIN (Financeiro e Config) */}
+              {/* 🔒 BLOCO 3: SÓ ADMIN */}
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route element={<Layout />}>
                   <Route path="payments" element={<PaymentsPage />} />
@@ -179,16 +170,13 @@ function App() {
                 </Route>
               </Route>
 
-              {/* 👤 BLOCO 4: PORTAL DO PACIENTE (Layout Exclusivo) */}
+              {/* 👤 BLOCO 4: PORTAL DO PACIENTE */}
               <Route element={<ProtectedRoute allowedRoles={['paciente']} />}>
                 <Route path="/portal" element={<PatientLayout />}>
                   <Route index element={<PatientHomePage />} />
-                  
-                  {/* Rotas filhas */}
                   <Route path="agendamentos" element={<PatientAppointmentsPage />} />
                   <Route path="pacotes" element={<PatientPackagesPage />} /> 
                   <Route path="perfil" element={<PatientProfilePage />} />
-                  
                   <Route path="financeiro" element={<div className="p-8 text-center text-gray-400 font-bold uppercase">Financeiro em breve</div>} />
                 </Route>
               </Route>

@@ -12,15 +12,20 @@ import {
   Loader2,
   Tag,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Play, 
+  X 
 } from "lucide-react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"; 
 import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
 
-// IMPORT DO SEU MODAL
+// IMPORT DO SEU MODAL DE AGENDAMENTO
 import ModalAgendarSessao from "../../components/modal/ModalAgendarSessao";
+
+// CORREÇÃO 1: Importação como Default (sem chaves)
+import ProcedureExecution from "../../components/patients/ProcedureExecution"; 
 
 // Interfaces
 interface Procedure {
@@ -41,6 +46,9 @@ interface ClientPlan {
   nome_plano: string;
   sessoes_totais: number;
   sessoes_restantes: number;
+  service_id?: string; 
+  clinic_id?: string; // Adicionado para garantir tipagem
+  patient_id?: string; // Adicionado para garantir tipagem
 }
 
 export function PatientPlanningPage() {
@@ -60,82 +68,112 @@ export function PatientPlanningPage() {
   const [discount, setDiscount] = useState<number>(0);
   const [saving, setSaving] = useState(false);
 
+  // ESTADOS DOS MODAIS
   const [modalAberto, setModalAberto] = useState(false);
   const [planoParaAgendar, setPlanoParaAgendar] = useState<ClientPlan | null>(null);
 
+  // --- NOVO ESTADO: EXECUÇÃO DE PROCEDIMENTO ---
+  const [executionModalOpen, setExecutionModalOpen] = useState(false);
+  const [planToExecute, setPlanToExecute] = useState<ClientPlan | null>(null);
+
   // 1. CARREGAR DADOS INICIAIS
   useEffect(() => {
-    async function initPage() {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('clinic_id') 
-            .eq('id', user.id)
-            .single();
-
-        const currentClinicId = profile?.clinic_id || user.id;
-        setClinicId(currentClinicId);
-
-        // A. Carregar Catálogo
-        const { data: servicesData } = await supabase
-          .from('services')
-          .select('*')
-          .eq('clinic_id', currentClinicId)
-          .eq('is_active', true)
-          .order('name');
-
-        if (servicesData) setProcedures(servicesData);
-
-        // B. Carregar Planos Ativos
-        if (patientId) {
-            const { data: plansData, error: plansError } = await supabase
-                .from('planos_clientes')
-                .select('*')
-                .eq('cliente_id', patientId)
-                .gt('sessoes_restantes', 0);
-
-            if (!plansError && plansData) {
-                setActivePlans(plansData);
-            }
-        }
-
-        // C. VERIFICAR SE É MODO EDIÇÃO
-        const editId = searchParams.get('edit');
-        if (editId) {
-            const { data: budgetToEdit, error: editError } = await supabase
-                .from('budgets')
-                .select('*')
-                .eq('id', editId)
-                .single();
-
-            if (!editError && budgetToEdit) {
-                // TRAVA DE SEGURANÇA: Garante que items é um array, mesmo se vier texto
-                let loadedItems = budgetToEdit.items;
-                if (typeof loadedItems === 'string') {
-                    try { loadedItems = JSON.parse(loadedItems); } catch (e) { loadedItems = []; }
-                }
-
-                setSelectedItems(loadedItems || []);
-                setDiscount(Number(budgetToEdit.discount) || 0);
-                toast.success(`Carregado orçamento: ${new Date(budgetToEdit.created_at).toLocaleDateString()}`);
-            }
-        }
-
-      } catch (err) {
-        console.error("Erro ao carregar:", err);
-        toast.error("Erro ao carregar dados.");
-      } finally {
-        setLoading(false);
-      }
-    }
     initPage();
   }, [patientId, searchParams]);
 
-  // Modal handlers
+  async function initPage() {
+    try {
+      setLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+          .from('profiles')
+          .select('clinic_id') 
+          .eq('id', user.id)
+          .single();
+
+      const currentClinicId = profile?.clinic_id || user.id;
+      setClinicId(currentClinicId);
+
+      // A. Carregar Catálogo
+      const { data: servicesData } = await supabase
+        .from('services')
+        .select('*')
+        .eq('clinic_id', currentClinicId)
+        .eq('is_active', true)
+        .order('name');
+
+      if (servicesData) setProcedures(servicesData);
+
+      // B. Carregar Planos Ativos
+      if (patientId) {
+          // Precisamos garantir que pegamos o service_id se disponível na view/tabela
+          const { data: plansData, error: plansError } = await supabase
+              .from('planos_clientes')
+              .select(`
+                *,
+                service:services (id, name)
+              `) 
+              .eq('cliente_id', patientId) // ou patient_id dependendo do seu banco
+              .gt('sessoes_restantes', 0);
+
+          if (!plansError && plansData) {
+              // Normalizar dados caso venha do join
+              const normalizedPlans = plansData.map(p => ({
+                ...p,
+                service_id: p.service_id || p.service?.id // Fallback para o join
+              }));
+              setActivePlans(normalizedPlans);
+          }
+      }
+
+      // C. Carregar Orçamento (Edição)
+      const editId = searchParams.get('edit');
+      if (editId) {
+          const { data: budgetToEdit } = await supabase
+              .from('budgets')
+              .select('*')
+              .eq('id', editId)
+              .single();
+
+          if (budgetToEdit) {
+              let loadedItems = budgetToEdit.items;
+              if (typeof loadedItems === 'string') {
+                  try { loadedItems = JSON.parse(loadedItems); } catch (e) { loadedItems = []; }
+              }
+              setSelectedItems(loadedItems || []);
+              setDiscount(Number(budgetToEdit.discount) || 0);
+          }
+      }
+
+    } catch (err) {
+      console.error("Erro ao carregar:", err);
+      toast.error("Erro ao carregar dados.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- NOVAS FUNÇÕES DE EXECUÇÃO ---
+  const handleExecuteClick = (plano: ClientPlan) => {
+    // Verifica se temos o ID do serviço para buscar o Kit
+    if (!plano.service_id) {
+        toast.error("Este plano não está vinculado a um serviço específico para baixa de estoque.");
+        return;
+    }
+    setPlanToExecute(plano);
+    setExecutionModalOpen(true);
+  };
+
+  // CORREÇÃO 2: Simplificado pois o Componente ProcedureExecution já faz a chamada RPC
+  const handleExecutionSuccess = () => {
+       setExecutionModalOpen(false);
+       setPlanToExecute(null);
+       initPage(); // Recarrega os dados para atualizar o contador na tela
+  };
+
+  // Modal Agendamento handlers
   const handleAgendarClick = (plano: ClientPlan) => {
     setPlanoParaAgendar(plano);
     setModalAberto(true);
@@ -144,10 +182,10 @@ export function PatientPlanningPage() {
   const handleModalClose = () => {
     setModalAberto(false);
     setPlanoParaAgendar(null);
-    window.location.reload(); 
+    initPage();
   };
 
-  // Carrinho handlers
+  // Carrinho handlers (Mantidos iguais)
   const addItem = (proc: Procedure) => {
     const existing = selectedItems.find(i => i.id === proc.id);
     if (existing) {
@@ -183,7 +221,6 @@ export function PatientPlanningPage() {
     return matchesSearch && matchesCategory;
   });
 
-  // 3. SALVAR ORÇAMENTO
   const handleSaveBudget = async () => {
      if(selectedItems.length === 0) return toast.error("O orçamento está vazio.");
      if(!clinicId) return toast.error("Erro: Clínica não identificada.");
@@ -197,7 +234,7 @@ export function PatientPlanningPage() {
             clinic_id: clinicId,
             patient_id: patientId,
             professional_id: user.id,
-            items: selectedItems, // Aqui está sendo enviado corretamente como Array
+            items: selectedItems,
             subtotal,
             discount,
             total,
@@ -205,17 +242,11 @@ export function PatientPlanningPage() {
         });
         
         if (error) throw error;
-        
         toast.success("Proposta salva com sucesso!");
-        
         setSelectedItems([]);
         setDiscount(0);
-        
-        // Redireciona para o financeiro na aba correta
         navigate(`../financial?tab=orcamentos`); 
-        
      } catch (e: any) {
-        console.error("Erro ao salvar:", e);
         toast.error(`Erro: ${e.message || "Falha ao salvar"}`);
      } finally {
         setSaving(false);
@@ -247,7 +278,7 @@ export function PatientPlanningPage() {
   );
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col xl:flex-row gap-6 animate-in fade-in duration-500">
+    <div className="h-[calc(100vh-140px)] flex flex-col xl:flex-row gap-6 animate-in fade-in duration-500 relative">
       <div className="flex-1 flex flex-col gap-6 h-full overflow-hidden">
          {activePlans.length > 0 && (
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-800 p-6 rounded-3xl border border-blue-100 dark:border-gray-700 shrink-0">
@@ -255,19 +286,31 @@ export function PatientPlanningPage() {
                     <CheckCircle2 className="text-blue-600" size={20} />
                     <h3 className="font-bold text-blue-900 dark:text-blue-100">Planos Ativos</h3>
                 </div>
-                <div className="flex gap-4 overflow-x-auto pb-2">
+                <div className="flex gap-4 overflow-x-auto pb-2 custom-scrollbar">
                     {activePlans.map(plano => (
                         <div key={plano.id} className="min-w-[220px] bg-white dark:bg-gray-900 p-4 rounded-2xl border border-blue-100 shadow-sm flex flex-col justify-between">
                             <div>
-                                <h4 className="font-bold text-gray-900 dark:text-white text-sm">{plano.nome_plano}</h4>
+                                <h4 className="font-bold text-gray-900 dark:text-white text-sm truncate" title={plano.nome_plano}>{plano.nome_plano}</h4>
                                 <div className="mt-2">
                                     <span className="text-2xl font-black text-blue-600">{plano.sessoes_restantes}</span>
                                     <span className="text-xs text-gray-500 font-medium"> / {plano.sessoes_totais}</span>
                                 </div>
                             </div>
-                            <Button onClick={() => handleAgendarClick(plano)} className="mt-3 w-full bg-blue-600 text-white h-8 text-xs font-bold">
-                                <Calendar size={14} className="mr-2" /> Agendar
-                            </Button>
+                            <div className="flex gap-2 mt-3">
+                                <Button 
+                                    onClick={() => handleExecuteClick(plano)} 
+                                    variant="outline"
+                                    className="flex-1 h-8 text-[10px] font-bold border-green-200 text-green-700 hover:bg-green-50 hover:text-green-800 uppercase"
+                                >
+                                    <Play size={12} className="mr-1" /> Realizar
+                                </Button>
+                                <Button 
+                                    onClick={() => handleAgendarClick(plano)} 
+                                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-8 text-[10px] font-bold uppercase"
+                                >
+                                    <Calendar size={12} className="mr-1" /> Agendar
+                                </Button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -275,6 +318,7 @@ export function PatientPlanningPage() {
          )}
 
          <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 shadow-sm shrink-0">
+             {/* Barra de Busca e Categorias (Mantido igual) */}
              <div className="relative mb-6">
                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                  <input 
@@ -285,7 +329,7 @@ export function PatientPlanningPage() {
                    className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 rounded-2xl outline-none focus:ring-2 focus:ring-pink-500/20"
                  />
              </div>
-             <div className="flex gap-2 overflow-x-auto pb-1">
+             <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
                 {categories.map(cat => (
                    <button 
                       key={cat.id}
@@ -300,15 +344,15 @@ export function PatientPlanningPage() {
              </div>
          </div>
 
-         <div className="flex-1 overflow-y-auto pr-2">
+         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20">
                 {filteredProcedures.map((proc) => (
-                   <button key={proc.id} onClick={() => addItem(proc)} className="flex flex-col text-left bg-white dark:bg-gray-800 p-5 rounded-3xl border border-gray-100 hover:border-pink-300 transition-all">
+                   <button key={proc.id} onClick={() => addItem(proc)} className="flex flex-col text-left bg-white dark:bg-gray-800 p-5 rounded-3xl border border-gray-100 hover:border-pink-300 transition-all group">
                       <div className="flex justify-between items-start w-full mb-3">
-                         <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-50 text-pink-500">
+                         <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-pink-50 text-pink-500 group-hover:scale-110 transition-transform">
                             {getIcon(proc.category)}
                          </div>
-                         <span className="bg-gray-50 dark:bg-gray-900 px-3 py-1 rounded-lg text-xs font-bold">
+                         <span className="bg-gray-50 dark:bg-gray-900 px-3 py-1 rounded-lg text-xs font-bold text-gray-700 dark:text-gray-300">
                             R$ {Number(proc.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                          </span>
                       </div>
@@ -321,6 +365,7 @@ export function PatientPlanningPage() {
       </div>
 
       <div className="xl:w-[450px] shrink-0 flex flex-col h-full bg-white dark:bg-gray-800 border border-gray-100 rounded-[2.5rem] shadow-xl overflow-hidden">
+          {/* Carrinho de Compras (Mantido igual) */}
           <div className="p-6 bg-gray-50 dark:bg-gray-900/50 border-b">
              <div className="flex items-center gap-3">
                 <FileText className="text-pink-500" size={20}/>
@@ -328,7 +373,7 @@ export function PatientPlanningPage() {
              </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
              {selectedItems.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-300 opacity-40">
                    <ShoppingBag size={24} className="mb-2"/>
@@ -338,13 +383,13 @@ export function PatientPlanningPage() {
                 selectedItems.map((item) => (
                    <div key={item.internalId} className="flex items-center justify-between">
                       <div className="flex-1">
-                          <p className="text-xs font-bold">{item.name}</p>
+                          <p className="text-xs font-bold text-gray-800 dark:text-white">{item.name}</p>
                           <p className="text-[10px] text-gray-400">R$ {Number(item.price).toLocaleString('pt-BR')}</p>
                       </div>
                       <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900 rounded-lg p-1">
-                          <button onClick={() => updateQty(item.internalId, -1)} className="w-6 h-6 flex items-center justify-center text-gray-400"><Minus size={12}/></button>
-                          <span className="text-xs font-bold">{item.qty}</span>
-                          <button onClick={() => updateQty(item.internalId, 1)} className="w-6 h-6 flex items-center justify-center text-gray-400"><Plus size={12}/></button>
+                          <button onClick={() => updateQty(item.internalId, -1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600"><Minus size={12}/></button>
+                          <span className="text-xs font-bold w-4 text-center">{item.qty}</span>
+                          <button onClick={() => updateQty(item.internalId, 1)} className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600"><Plus size={12}/></button>
                       </div>
                       <button onClick={() => removeItem(item.internalId)} className="ml-3 text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
                    </div>
@@ -364,21 +409,22 @@ export function PatientPlanningPage() {
                       type="number" 
                       value={discount}
                       onChange={(e) => setDiscount(Number(e.target.value))}
-                      className="w-20 text-right bg-white border rounded-lg px-2 py-1 font-bold"
+                      className="w-20 text-right bg-white border rounded-lg px-2 py-1 font-bold outline-none focus:border-emerald-500"
                    />
                 </div>
                 <div className="pt-3 border-t flex justify-between items-end">
-                   <span className="text-sm font-black uppercase italic">Total</span>
-                   <span className="text-2xl font-black italic">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                   <span className="text-sm font-black uppercase italic text-gray-900 dark:text-white">Total</span>
+                   <span className="text-2xl font-black italic text-gray-900 dark:text-white">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                 </div>
              </div>
-             <Button onClick={handleSaveBudget} disabled={saving || selectedItems.length === 0} className="w-full h-14 bg-gray-900 text-white rounded-2xl font-black uppercase shadow-xl flex items-center justify-center gap-2">
+             <Button onClick={handleSaveBudget} disabled={saving || selectedItems.length === 0} className="w-full h-14 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95">
                 {saving ? <Loader2 className="animate-spin"/> : <Sparkles size={18} className="text-pink-500"/>}
                 Gerar Proposta
              </Button>
           </div>
       </div>
 
+      {/* --- MODAL DE AGENDAMENTO EXISTENTE --- */}
       {modalAberto && planoParaAgendar && patientId && (
         <ModalAgendarSessao 
             clienteSelecionado={{ id: patientId, nome: 'Paciente Atual' }} 
@@ -386,6 +432,16 @@ export function PatientPlanningPage() {
             onClose={handleModalClose}
         />
       )}
+
+      {/* --- NOVO MODAL DE EXECUÇÃO / BAIXA DE ESTOQUE --- */}
+      {/* CORREÇÃO 3: Uso direto do componente (ele já é um Modal/Backdrop) */}
+      <ProcedureExecution 
+          isOpen={executionModalOpen}
+          onClose={() => setExecutionModalOpen(false)}
+          onSuccess={handleExecutionSuccess}
+          plan={planToExecute}
+      />
+      
     </div>
   );
 }

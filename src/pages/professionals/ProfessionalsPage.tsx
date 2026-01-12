@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { Plus, Search, User, Stethoscope, Briefcase, Edit, Loader2, Lock, KeyRound } from 'lucide-react';
+import { Plus, Search, User, Stethoscope, Briefcase, Edit, Loader2, Lock, KeyRound, Percent } from 'lucide-react';
 import { Input } from '../../components/ui/input';
 import { Button } from '../../components/ui/button';
 import { toast } from 'react-hot-toast';
@@ -15,6 +15,7 @@ interface Professional {
   role: string;
   formacao: string;
   avatar_url?: string;
+  commission_rate?: number; // <--- Adicionado
 }
 
 export function ProfessionalsPage() {
@@ -33,7 +34,7 @@ export function ProfessionalsPage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('*') // Vai trazer commission_rate automaticamente
         .not('role', 'in', '("patient","paciente")')
         .order('first_name', { ascending: true });
 
@@ -49,11 +50,10 @@ export function ProfessionalsPage() {
 
   // --- HELPER: LIMPA CPF PARA SENHA ---
   const getCleanPassword = (cpf: string) => {
-      // Remove TUDO que não for número (pontos, traços, espaços)
       return cpf.replace(/\D/g, '');
   };
 
-  // --- FUNÇÃO 1: CRIAR USUÁRIO (Liberar Acesso) ---
+  // --- FUNÇÃO 1: CRIAR USUÁRIO ---
   const handleCreateUser = async (prof: Professional) => {
     if (!prof.email || !prof.cpf) return toast.error("Email e CPF obrigatórios.");
     
@@ -65,7 +65,7 @@ export function ProfessionalsPage() {
       setActionLoading(prof.id);
       const { error } = await supabase.rpc('create_professional_user', {
         email_input: prof.email,
-        password_input: password, // Envia APENAS números
+        password_input: password, 
         profile_id_input: prof.id,
         role_input: prof.role || 'professional'
       });
@@ -96,11 +96,9 @@ export function ProfessionalsPage() {
 
     try {
         setActionLoading(prof.id);
-        
-        // Chama a função SQL de reset
         const { data, error } = await supabase.rpc('reset_professional_password', {
             target_email: prof.email,
-            new_password: password // Envia APENAS números
+            new_password: password 
         });
 
         if (error) throw error;
@@ -161,8 +159,8 @@ export function ProfessionalsPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         {loading ? (
           <div className="p-20 text-center flex flex-col items-center gap-3">
-             <Loader2 className="animate-spin text-pink-600" size={32} />
-             <p className="text-gray-500 text-sm">Sincronizando staff...</p>
+              <Loader2 className="animate-spin text-pink-600" size={32} />
+              <p className="text-gray-500 text-sm">Sincronizando staff...</p>
           </div>
         ) : filteredProfessionals.length === 0 ? (
           <div className="p-12 text-center text-gray-500">Nenhum colaborador localizado.</div>
@@ -173,6 +171,7 @@ export function ProfessionalsPage() {
                 <tr>
                   <th className="px-6 py-4">Profissional</th>
                   <th className="px-6 py-4">Função</th>
+                  <th className="px-6 py-4">Comissão</th> {/* NOVA COLUNA */}
                   <th className="px-6 py-4">Acesso ao Sistema</th>
                   <th className="px-6 py-4 text-right">Ações</th>
                 </tr>
@@ -197,33 +196,40 @@ export function ProfessionalsPage() {
                           <span className="capitalize">{p.role}</span>
                       </div>
                     </td>
+                    
+                    {/* COLUNA DE COMISSÃO */}
                     <td className="px-6 py-4">
-                       <div className="flex gap-2">
-                           {/* Botão de Liberar Acesso */}
-                           <Button 
+                        <div className="flex items-center gap-1 font-bold text-gray-700 dark:text-gray-300">
+                            <Percent size={14} className="text-emerald-500"/>
+                            {p.commission_rate || 0}%
+                        </div>
+                    </td>
+
+                    <td className="px-6 py-4">
+                        <div className="flex gap-2">
+                            <Button 
                               size="sm" 
                               variant="outline"
                               disabled={actionLoading === p.id}
                               onClick={() => handleCreateUser(p)}
                               className="h-8 text-[10px] font-bold uppercase tracking-widest border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                           >
+                            >
                               {actionLoading === p.id ? <Loader2 className="animate-spin w-3 h-3"/> : <Lock size={12} className="mr-1"/>}
                               Liberar
-                           </Button>
+                            </Button>
 
-                           {/* Botão de Resetar Senha */}
-                           <Button 
+                            <Button 
                               size="sm" 
                               variant="outline"
                               disabled={actionLoading === p.id}
                               onClick={() => handleResetPassword(p)}
                               className="h-8 text-[10px] font-bold uppercase tracking-widest border-amber-200 text-amber-700 hover:bg-amber-50"
-                              title="Resetar senha para CPF (somente números)"
-                           >
+                              title="Resetar senha para CPF"
+                            >
                               <KeyRound size={12} className="mr-1"/>
                               Resetar
-                           </Button>
-                       </div>
+                            </Button>
+                        </div>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <Link to={`/professionals/${p.id}`}>

@@ -5,15 +5,11 @@ import { toast } from 'react-hot-toast';
 import { 
   Calendar, DollarSign, Clock, 
   Loader2, Activity, Sparkles, Pencil, Ban, FileText, 
-  Lock, X, PlusCircle, Play, ShieldCheck, Mail, User, Edit 
+  Lock, X, PlusCircle, Play
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { AreaChart, Area, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-
-// ✅ IMPORTAÇÃO DO MODAL DE ACESSO (Certifique-se que o caminho está correto)
-import { ProfessionalAccessModal } from '../../components/professionals/ProfessionalAccessModal';
 
 // --- FUNÇÕES DE DATA E HORA SEGURAS ---
 
@@ -33,8 +29,6 @@ const formatFriendlyDate = (dateStr: string) => {
     if (dateStr === today) return "Hoje";
     if (dateStr === tomorrow) return "Amanhã";
     
-    // Corrige problema de fuso horário ao criar data a partir de string YYYY-MM-DD
-    // Cria a data como se fosse meio-dia para evitar virada de dia por fuso
     const dateParts = dateStr.split('-');
     const dateObj = new Date(Number(dateParts[0]), Number(dateParts[1]) - 1, Number(dateParts[2]), 12, 0, 0);
     
@@ -53,12 +47,9 @@ export default function ProfessionalOverviewPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
+  // Apenas o modal de bloqueio fica aqui (operacional)
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   
-  // ✅ ESTADOS NOVOS PARA O ACESSO
-  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-  const [professionalDetails, setProfessionalDetails] = useState<any>(null);
-
   const [stats, setStats] = useState({
     monthCount: 0,
     commission: 0,
@@ -75,14 +66,7 @@ export default function ProfessionalOverviewPage() {
     if (!id) return;
     
     try {
-      // 0. ✅ Busca dados do Profissional (Para o botão de acesso)
-      const { data: profData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', id)
-        .single();
-        
-      if (profData) setProfessionalDetails(profData);
+      // NÃO BUSCAMOS MAIS O PERFIL AQUI (O LAYOUT JÁ FAZ ISSO)
 
       const todayStr = getTodayDateStr(); 
       const now = new Date(); 
@@ -143,8 +127,7 @@ export default function ProfessionalOverviewPage() {
           chartData.push({ day: format(d, 'dd/MM'), appointments: count || 0 });
       }
 
-      // Cálculo estimado de comissão (Valor fixo R$150 por consulta * 30%)
-      // Idealmente isso viria do valor real dos serviços
+      // Cálculo estimado de comissão (Exemplo: Ticket Médio R$150 * 30%)
       const estimatedCommission = (monthCount || 0) * 150 * 0.30; 
       const goalPercent = Math.min((estimatedCommission / MONTHLY_GOAL) * 100, 100);
 
@@ -179,7 +162,6 @@ export default function ProfessionalOverviewPage() {
       navigate(`/appointments/${apptId}/edit`);
   }
   
-  // CORREÇÃO: patient_id (snake_case) vindo do banco, patientId para uso local se necessário
   const handleStartAttendance = (e: React.MouseEvent, patientId: string | null) => {
       e.stopPropagation();
       if(patientId) navigate(`/patients/${patientId}/evolution`);
@@ -188,7 +170,6 @@ export default function ProfessionalOverviewPage() {
 
   const getPatientName = (appt: any) => {
       if (appt.status === 'blocked') return 'Horário Bloqueado';
-      // Verificação defensiva se patient é array ou objeto
       const p = Array.isArray(appt.patient) ? appt.patient[0] : appt.patient;
       return p?.name || 'Paciente não identificado';
   };
@@ -197,12 +178,12 @@ export default function ProfessionalOverviewPage() {
       if (appt.status === 'blocked') return null;
       const p = Array.isArray(appt.patient) ? appt.patient[0] : appt.patient;
       return p?.id;
-  }
+  };
 
-  if (loading && !professionalDetails) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
+  if (loading) return <div className="p-10 flex justify-center h-96 items-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-700 p-2 relative">
+    <div className="space-y-6 animate-in fade-in duration-700 relative">
       
       {isBlockModalOpen && (
         <BlockScheduleModal 
@@ -212,72 +193,7 @@ export default function ProfessionalOverviewPage() {
         />
       )}
 
-      {/* ✅ CABEÇALHO DO PROFISSIONAL */}
-      {professionalDetails && (
-        <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] p-8 shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden group">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative z-10">
-              <div className="flex items-center gap-6">
-                <div className="w-20 h-20 rounded-[2rem] bg-gray-100 dark:bg-gray-700 overflow-hidden border-4 border-white dark:border-gray-800 shadow-xl flex items-center justify-center text-gray-400">
-                  {professionalDetails.avatar_url ? (
-                    <img src={professionalDetails.avatar_url} alt={professionalDetails.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <User size={32} />
-                  )}
-                </div>
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-black text-gray-900 dark:text-white tracking-tighter italic uppercase">
-                        {professionalDetails.name || professionalDetails.first_name}
-                    </h1>
-                    {/* Badge de Status */}
-                    {professionalDetails.user_id ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 text-[9px] font-black uppercase tracking-widest border border-blue-200">
-                            <ShieldCheck size={10}/> Acesso Ativo
-                        </span>
-                    ) : (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 text-[9px] font-black uppercase tracking-widest border border-gray-200">
-                            <Lock size={10}/> Sem Acesso
-                        </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-4 mt-2 text-xs text-gray-500 font-medium">
-                    <span className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-900 px-2 py-1 rounded-md border border-gray-100 dark:border-gray-700 uppercase font-bold tracking-wider text-[10px]">
-                        {professionalDetails.role || "Especialista"}
-                    </span>
-                    {professionalDetails.email && <span className="flex items-center gap-1.5"><Mail size={12} className="text-blue-400"/> {professionalDetails.email}</span>}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                {/* BOTÃO DE ACESSO */}
-                <Button 
-                  onClick={() => setIsAccessModalOpen(true)}
-                  className={`h-12 px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95 ${
-                    professionalDetails.user_id 
-                    ? "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:border-blue-200 hover:text-blue-600" 
-                    : "bg-gray-900 text-white hover:bg-black"
-                  }`}
-                >
-                  {professionalDetails.user_id ? (
-                      <><Lock size={14} className="mr-2"/> Redefinir Senha</>
-                  ) : (
-                      <><ShieldCheck size={14} className="mr-2 text-blue-500"/> Liberar Acesso</>
-                  )}
-                </Button>
-                
-                <Button 
-                  className="h-12 w-12 p-0 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white shadow-lg"
-                  onClick={() => navigate(`../details`)} 
-                  title="Editar Perfil"
-                >
-                  <Edit size={18}/>
-                </Button>
-              </div>
-            </div>
-        </div>
-      )}
+      {/* SEM CABEÇALHO REPETIDO AQUI - O LAYOUT JÁ MOSTRA */}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
@@ -412,24 +328,6 @@ export default function ProfessionalOverviewPage() {
           </div>
       </div>
 
-      {/* ✅ MODAL DE ACESSO */}
-      {isAccessModalOpen && professionalDetails && (
-        <ProfessionalAccessModal 
-          professional={{
-             id: professionalDetails.id,
-             name: professionalDetails.name || professionalDetails.first_name,
-             email: professionalDetails.email,
-             cpf: professionalDetails.cpf,
-             phone: professionalDetails.phone,
-             role: professionalDetails.role
-          }} 
-          onClose={() => {
-            setIsAccessModalOpen(false);
-            loadDashboard(); // Recarrega para atualizar o badge
-          }} 
-        />
-      )}
-
     </div>
   );
 }
@@ -448,7 +346,6 @@ function BlockScheduleModal({ professionalId, onClose, onSuccess }: any) {
     const [l, setL] = useState(false);
     const [f, setF] = useState({ date: new Date().toISOString().split('T')[0], start: "", end: "", reason: "" });
     
-    // Função para calcular o offset local (ex: -03:00) para garantir que o banco salve a hora certa
     const getLocalOffset = () => {
         const offset = new Date().getTimezoneOffset();
         const sign = offset > 0 ? '-' : '+'; 
@@ -460,7 +357,6 @@ function BlockScheduleModal({ professionalId, onClose, onSuccess }: any) {
         if(!f.start || !f.end || !f.reason) return toast.error("Preencha todos os campos do bloqueio");
         setL(true);
         const offset = getLocalOffset();
-        // Usamos T para separar data e hora e adicionamos o offset do fuso horário
         const { error } = await supabase.from('appointments').insert({ 
             professional_id: professionalId, 
             start_time: `${f.date}T${f.start}:00${offset}`, 

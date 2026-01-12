@@ -1,4 +1,3 @@
-// src/pages/patients/PatientFinancialPage.tsx
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
@@ -45,6 +44,7 @@ interface Budget {
   status: string;
   items: any;
   clinic_id: string;
+  professional_id?: string;
 }
 
 export function PatientFinancialPage() {
@@ -107,7 +107,13 @@ export function PatientFinancialPage() {
         .order('created_at', { ascending: false });
 
       setTransactions(transData || []);
-      setBudgets(budgetData || []);
+      
+      // Ajuste para garantir que items seja um array e professional_id venha correto
+      const formattedBudgets = (budgetData || []).map((b: any) => ({
+          ...b,
+          items: typeof b.items === 'string' ? JSON.parse(b.items) : b.items
+      }));
+      setBudgets(formattedBudgets);
       
       const normalizedPackages = (packagesData || []).map((pkg: any) => ({
          ...pkg,
@@ -125,8 +131,11 @@ export function PatientFinancialPage() {
   }
 
   const calculateMetrics = (currentTransactions: any[], currentBudgets: any[]) => {
-      const totalPaid = currentTransactions.filter(t => t.paid_at).reduce((acc, curr) => acc + Number(curr.amount), 0);
-      const totalPending = currentTransactions.filter(t => !t.paid_at).reduce((acc, curr) => acc + Number(curr.amount), 0);
+      // Filtra apenas o que é Receita para mostrar nos cards (ignora comissões geradas)
+      const incomeTrans = currentTransactions.filter(t => t.category !== 'Comissões');
+      
+      const totalPaid = incomeTrans.filter(t => t.paid_at).reduce((acc, curr) => acc + Number(curr.amount), 0);
+      const totalPending = incomeTrans.filter(t => !t.paid_at).reduce((acc, curr) => acc + Number(curr.amount), 0);
       const totalOpenBudgets = currentBudgets.filter((b: Budget) => b.status === 'pending').reduce((acc, curr) => acc + Number(curr.total), 0);
       setMetrics({ total: totalPaid, pending: totalPending, openBudgets: totalOpenBudgets });
   };
@@ -206,18 +215,62 @@ export function PatientFinancialPage() {
       fetchFinancialData();
   };
 
+  // --- LÓGICA DE APROVAÇÃO (CORRIGIDA) ---
   const handleConfirmApproval = async (paymentData: PaymentData) => {
     if (!budgetToApprove) return;
     setApproving(true);
+    
     try {
+      // 1. Atualiza Status do Orçamento
       await supabase.from('budgets').update({ status: 'approved' }).eq('id', budgetToApprove.id);
+      
+      const now = new Date().toISOString();
+
+      // 2. Insere a Receita (Venda)
       await supabase.from('transactions').insert({
-          clinic_id: budgetToApprove.clinic_id, patient_id: id, amount: budgetToApprove.total,
-          type: 'income', category: 'Venda', description: `Venda de Orçamento`,
-          payment_method: paymentData.method, due_date: new Date().toISOString(),
-          paid_at: paymentData.paidNow ? new Date().toISOString() : null,
+          clinic_id: budgetToApprove.clinic_id, 
+          patient_id: id, 
+          amount: budgetToApprove.total,
+          type: 'income', 
+          category: 'Venda', 
+          description: `Venda de Orçamento`,
+          payment_method: paymentData.method, 
+          due_date: now, // ✅ Garante que a Receita também tenha vencimento
+          paid_at: paymentData.paidNow ? now : null,
+          professional_id: budgetToApprove.professional_id 
       });
 
+      // 3. CALCULA E INSERE A COMISSÃO
+      if (budgetToApprove.professional_id) {
+          const { data: profData } = await supabase
+              .from('profiles')
+              .select('commission_rate')
+              .eq('id', budgetToApprove.professional_id)
+              .single();
+          
+          const rate = Number(profData?.commission_rate) || 0;
+
+          if (rate > 0) {
+              const commissionValue = (budgetToApprove.total * rate) / 100;
+              
+              // Cria registro de comissão (Despesa Futura)
+              await supabase.from('transactions').insert({
+                  clinic_id: budgetToApprove.clinic_id,
+                  patient_id: id, 
+                  professional_id: budgetToApprove.professional_id, 
+                  amount: commissionValue,
+                  type: 'expense', 
+                  category: 'Comissões', 
+                  description: `Comissão - Venda`,
+                  status: 'pending', 
+                  created_at: now,
+                  date: now,
+                  due_date: now // ✅ CORREÇÃO CRÍTICA: Adicionado due_date para evitar erro do banco
+              });
+          }
+      }
+
+      // 4. Gera Pacotes de Sessões
       if (budgetToApprove.items && Array.isArray(budgetToApprove.items)) {
           const packagesToCreate = budgetToApprove.items.map((item: any) => ({
               clinic_id: budgetToApprove.clinic_id, cliente_id: id, service_id: item.id,
@@ -225,11 +278,14 @@ export function PatientFinancialPage() {
           }));
           await supabase.from('planos_clientes').insert(packagesToCreate);
       }
-      toast.success("Venda aprovada!");
+
+      toast.success("Venda aprovada e comissão gerada!");
       setModalAprovacaoOpen(false);
       fetchFinancialData();
       setSearchParams({ tab: 'pacotes' });
+
     } catch (err: any) {
+      console.error(err);
       toast.error("Erro: " + err.message);
     } finally {
       setApproving(false);
@@ -246,13 +302,15 @@ export function PatientFinancialPage() {
         <div className="flex items-center gap-4">
           <div className="p-3 bg-emerald-100/50 rounded-xl text-emerald-600"><DollarSign size={32} /></div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Financeiro</h1>
-            <p className="text-gray-500 text-sm font-medium">Gestão de transações e saldos de sessões.</p>
+            <h1 className="text-3xl font-bold tracking-tight">Financeiro do Paciente</h1>
+            <p className="text-gray-500 text-sm font-medium">Histórico de pagamentos e créditos.</p>
           </div>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => window.print()} className="font-bold uppercase text-[10px] tracking-widest"><Printer size={16} className="mr-2" /> Imprimir</Button>
-          <Button onClick={() => navigate('/financial/budgets/new')} className="bg-gray-900 text-white font-bold uppercase text-[10px] tracking-widest"><Plus size={16} className="mr-2" /> Nova Venda</Button>
+          
+          {/* ✅ BOTÃO CORRIGIDO: Redireciona para o Planejamento (onde se criam orçamentos) */}
+          <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} className="bg-gray-900 text-white font-bold uppercase text-[10px] tracking-widest"><Plus size={16} className="mr-2" /> Nova Venda</Button>
         </div>
       </div>
 
@@ -264,7 +322,7 @@ export function PatientFinancialPage() {
         <StatCard title="Sessões Ativas" value={activePackages.reduce((acc, p) => acc + (p.sessoes_restantes || 0), 0).toString()} icon={CheckCircle2} colorClass="bg-emerald-50 text-emerald-600" />
       </div>
 
-      {/* CONTEÚDO PRINCIPAL (TABELAS FULL WIDTH) */}
+      {/* CONTEÚDO PRINCIPAL */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 shadow-sm overflow-hidden min-h-[500px]">
         <div className="flex border-b overflow-x-auto print:hidden bg-gray-50/50">
           {['transacoes', 'orcamentos', 'pacotes'].map((tab) => (
@@ -284,6 +342,7 @@ export function PatientFinancialPage() {
                     <th className="p-4">Data</th>
                     <th className="p-4">Descrição</th>
                     <th className="p-4">Valor</th>
+                    <th className="p-4">Categoria</th>
                     <th className="p-4">Status</th>
                     <th className="p-4 text-right print:hidden">Ação</th>
                   </tr>
@@ -293,15 +352,18 @@ export function PatientFinancialPage() {
                     <tr key={t.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="p-4 text-gray-500">{new Date(t.created_at).toLocaleDateString()}</td>
                       <td className="p-4 font-bold text-gray-800">{t.description}</td>
-                      <td className="p-4 font-black">{formatCurrency(t.amount)}</td>
-                      <td className="p-4">{t.paid_at ? <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md text-[9px] font-black uppercase">Pago</span> : <span className="text-rose-600 bg-rose-50 px-2 py-1 rounded-md text-[9px] font-black uppercase">Pendente</span>}</td>
+                      <td className={`p-4 font-black ${t.category === 'Comissões' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {t.category === 'Comissões' ? '-' : ''}{formatCurrency(t.amount)}
+                      </td>
+                      <td className="p-4"><span className="text-[10px] uppercase font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded">{t.category || 'Geral'}</span></td>
+                      <td className="p-4">{t.paid_at || t.status === 'paid' ? <span className="text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md text-[9px] font-black uppercase">Pago</span> : <span className="text-rose-600 bg-rose-50 px-2 py-1 rounded-md text-[9px] font-black uppercase">Pendente</span>}</td>
                       <td className="p-4 text-right print:hidden flex justify-end gap-1">
-                         <button className="p-2 text-gray-300 hover:text-emerald-600" title="Recibo"><Receipt size={18}/></button>
-                         {isAdmin && (
+                          <button className="p-2 text-gray-300 hover:text-emerald-600" title="Recibo"><Receipt size={18}/></button>
+                          {isAdmin && (
                             <button onClick={() => handleDeleteTransaction(t.id)} className="p-2 text-gray-300 hover:text-rose-600" disabled={deletingId === t.id}>
                                 {deletingId === t.id ? <Loader2 className="animate-spin" size={18}/> : <Trash2 size={18}/>}
                             </button>
-                         )}
+                          )}
                       </td>
                     </tr>
                   ))}
@@ -318,7 +380,7 @@ export function PatientFinancialPage() {
                 <thead className="bg-gray-50/50 text-gray-400 font-black uppercase text-[10px] tracking-widest border-b">
                   <tr>
                     <th className="p-4">Criado em</th>
-                    <th className="p-4">Itens</th>
+                    <th className="p-4 w-1/2">Tratamentos (Itens)</th>
                     <th className="p-4">Total</th>
                     <th className="p-4">Status</th>
                     <th className="p-4 text-right print:hidden">Opções</th>
@@ -328,7 +390,20 @@ export function PatientFinancialPage() {
                   {getPaginatedData(budgets.filter(b => b.status === 'pending')).map(b => (
                     <tr key={b.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="p-4 text-gray-500">{new Date(b.created_at).toLocaleDateString()}</td>
-                      <td className="p-4 font-bold">{Array.isArray(b.items) ? `${b.items.length} item(s)` : '-'}</td>
+                      
+                      <td className="p-4">
+                        {Array.isArray(b.items) ? (
+                            <div className="flex flex-col gap-1">
+                                {b.items.map((item: any, idx: number) => (
+                                    <span key={idx} className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                        <span className="bg-gray-100 dark:bg-gray-700 px-1.5 rounded text-[10px]">{item.qty}x</span> 
+                                        {item.name}
+                                    </span>
+                                ))}
+                            </div>
+                        ) : '-'}
+                      </td>
+
                       <td className="p-4 font-black">{formatCurrency(b.total)}</td>
                       <td className="p-4"><span className="px-2 py-1 rounded-md text-[9px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-200">Pendente</span></td>
                       <td className="p-4 text-right print:hidden">
@@ -342,7 +417,7 @@ export function PatientFinancialPage() {
             </>
           )}
 
-          {/* TABELA PACOTES (COM BOTÃO EXCLUIR) */}
+          {/* TABELA PACOTES */}
           {activeTab === 'pacotes' && (
             <>
               <table className="w-full text-left">

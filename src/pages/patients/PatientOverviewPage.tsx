@@ -4,13 +4,11 @@ import { supabase } from "../../lib/supabase";
 import { 
   Calendar, 
   User, 
-  AlertTriangle, 
   Activity, 
   Camera, 
   ChevronRight, 
   MessageCircle,
   Pencil,
-  ShieldAlert,
   Info,
   Play,
   Printer,
@@ -22,13 +20,16 @@ import {
   CreditCard,
   CheckCircle2,
   MapPin,
-  Phone,
-  LayoutGrid
+  AlertTriangle,
+  ShieldAlert
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { format, differenceInYears, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "react-hot-toast";
+
+// Importando o Modal de Execução
+import ProcedureExecution from '../../components/patients/ProcedureExecution';
 
 // --- HELPERS ---
 const getAlertLevel = (text: string) => {
@@ -72,6 +73,10 @@ export default function PatientOverviewPage() {
   const [consultationMode, setConsultationMode] = useState(false);
   const [revealPhotos, setRevealPhotos] = useState(false);
   
+  // Modal de Execução
+  const [executionModalOpen, setExecutionModalOpen] = useState(false);
+  const [selectedPlanForExecution, setSelectedPlanForExecution] = useState<any>(null);
+
   // Dados
   const [patient, setPatient] = useState<any>(null);
   const [nextAppointment, setNextAppointment] = useState<any>(null);
@@ -121,18 +126,25 @@ export default function PatientOverviewPage() {
       
       if (nextAppt) setNextAppointment(nextAppt);
 
-      // 3. Planos Ativos (CORRIGIDO E ROBUSTO)
-      const { data: plans } = await supabase
-        .from('planos_clientes') 
-        .select('*, services(name)')
-        .eq('patient_id', id);
-        
-      if (plans) {
-          // Filtra no JS para garantir (se tiver saldo OU se estiver marcado como ativo)
-          const activeOnly = plans.filter((p: any) => 
-            (p.status && p.status.toLowerCase() === 'ativo') || 
-            (p.sessions_used < p.total_sessions)
-          );
+      // 3. Planos Ativos (QUERY COPIADA DO FINANCEIRO)
+      const { data: plansData, error: plansError } = await supabase
+        .from('planos_clientes')
+        .select(`*, service:services (id, name)`) // Igual ao financeiro
+        .eq('cliente_id', id) // Igual ao financeiro
+        .order('created_at', { ascending: false });
+
+      if (plansError) {
+          console.error("Erro ao buscar planos:", plansError);
+      } else if (plansData) {
+          // Normaliza os dados igual ao financeiro
+          const normalized = plansData.map((pkg: any) => ({
+             ...pkg,
+             service_id: pkg.service_id || pkg.service?.id || pkg.procedure_id,
+             service_name: pkg.service?.name || pkg.nome_plano
+          }));
+          
+          // Filtra apenas os ativos (com saldo)
+          const activeOnly = normalized.filter((p: any) => p.sessoes_restantes > 0);
           setActivePlans(activeOnly);
       }
 
@@ -152,9 +164,8 @@ export default function PatientOverviewPage() {
 
           if (nextAppt && last) {
               const lastProc = last.subject.toLowerCase();
-              const nextProc = nextAppt.services?.name.toLowerCase() || '';
-              if (lastProc.includes('botox') && nextProc.includes('botox') && daysDiff < 75) {
-                  setInconsistencyAlert(`Alerta: Intervalo de Toxina Botulínica curto (${daysDiff} dias). Recomendado: >90 dias.`);
+              if (lastProc.includes('botox') && daysDiff < 75) {
+                  setInconsistencyAlert(`Alerta: Intervalo de Toxina Botulínica curto (${daysDiff} dias).`);
               }
           }
       }
@@ -176,6 +187,7 @@ export default function PatientOverviewPage() {
     }
   }
 
+  // --- HANDLERS ---
   const handleUpdateStatus = async (newStatus: string) => {
       if (!nextAppointment) return;
       try {
@@ -185,12 +197,23 @@ export default function PatientOverviewPage() {
               .eq('id', nextAppointment.id);
 
           if (error) throw error;
-          
-          toast.success(`Status atualizado para: ${getStatusLabel(newStatus)}`);
+          toast.success(`Status atualizado`);
           loadOverviewData(); 
       } catch (error) {
           toast.error("Erro ao atualizar status");
       }
+  };
+
+  const handleOpenExecutionModal = (plan: any) => {
+      setSelectedPlanForExecution(plan);
+      setExecutionModalOpen(true);
+  };
+
+  const handleExecutionSuccess = () => {
+      setExecutionModalOpen(false);
+      setSelectedPlanForExecution(null);
+      loadOverviewData();
+      toast.success("Sessão realizada!");
   };
 
   const calculateAge = (dob: string) => {
@@ -199,7 +222,7 @@ export default function PatientOverviewPage() {
   };
 
   const handlePrintSummary = () => {
-      toast.success("Preparando resumo clínico...");
+      toast.success("Preparando resumo...");
       setTimeout(() => window.print(), 1000);
   };
 
@@ -208,7 +231,7 @@ export default function PatientOverviewPage() {
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
       
-      {/* HEADER DE CONTROLE */}
+      {/* HEADER */}
       <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
              <button 
@@ -220,7 +243,7 @@ export default function PatientOverviewPage() {
              </button>
           </div>
           <Button onClick={handlePrintSummary} variant="ghost" size="sm" className="text-gray-400 hover:text-pink-600">
-              <Printer size={18} className="mr-2"/> Resumo Clínico
+              <Printer size={18} className="mr-2"/> Resumo
           </Button>
       </div>
 
@@ -251,14 +274,12 @@ export default function PatientOverviewPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* --- COLUNA ESQUERDA: PERFIL E AGENDA --- */}
+        {/* --- COLUNA ESQUERDA --- */}
         <div className="space-y-6">
             
-            {/* CARD DE PERFIL (LIMPO, SEM TELEFONE/ENDEREÇO) */}
+            {/* CARD DE PERFIL */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden pb-8">
-                {/* Degradê Suave Rosa/Roxo */}
                 <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-pink-500 to-purple-600 opacity-10"></div>
-                
                 <div className="relative flex flex-col items-center text-center mt-8">
                     <div className="w-28 h-28 rounded-full border-4 border-white dark:border-gray-800 shadow-xl overflow-hidden bg-gray-100 mb-4">
                         {patient?.avatar_url ? (
@@ -284,7 +305,7 @@ export default function PatientOverviewPage() {
                                 <Button onClick={() => window.open(`https://wa.me/55${patient?.phone?.replace(/\D/g, '')}`, '_blank')} className="flex-1 bg-green-600 hover:bg-green-700 text-white h-10 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md">
                                     <MessageCircle size={16} className="mr-2"/> WhatsApp
                                 </Button>
-                                <Button onClick={() => navigate(`/patients/${id}/details`)} variant="outline" className="h-10 w-12 rounded-xl border-gray-200" title="Editar Dados">
+                                <Button onClick={() => navigate(`/patients/${id}/details`)} variant="outline" className="h-10 w-12 rounded-xl border-gray-200" title="Editar">
                                     <Pencil size={16}/>
                                 </Button>
                             </div>
@@ -315,8 +336,8 @@ export default function PatientOverviewPage() {
                                 <span className="text-[9px] font-black uppercase tracking-wide opacity-80">{getStatusLabel(nextAppointment.status)}</span>
                             </div>
                         </div>
-                        <p className="text-sm font-bold line-clamp-1">{nextAppointment.services?.name}</p>
-                        <p className="text-xs font-medium opacity-70 mt-1">Dr(a). {nextAppointment.profiles?.first_name}</p>
+                        <p className="text-sm font-bold line-clamp-1">{nextAppointment.services?.name || 'Consulta'}</p>
+                        <p className="text-xs font-medium opacity-70 mt-1">Dr(a). {nextAppointment.profiles?.first_name || 'Profissional'}</p>
                         
                         {!consultationMode && (
                             <div className="mt-4 pt-4 border-t border-black/5 flex gap-2">
@@ -351,7 +372,7 @@ export default function PatientOverviewPage() {
             </div>
         </div>
 
-        {/* --- COLUNA DIREITA: CLÍNICA --- */}
+        {/* --- COLUNA DIREITA --- */}
         <div className="lg:col-span-2 space-y-6">
             
             {/* MINI RESUMO */}
@@ -370,29 +391,41 @@ export default function PatientOverviewPage() {
                 </div>
             </div>
 
-            {/* ✅ WIDGET DE PLANOS ATIVOS (VISUAL LEVE/CLEAN + CORREÇÃO) */}
+            {/* ✅ WIDGET DE PLANOS ATIVOS (CORRIGIDO) */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
                 <div className="relative z-10">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-900 dark:text-white">
                             <Package size={16} className="text-pink-500"/> Planos Ativos
                         </h3>
-                        <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} variant="ghost" size="sm" className="text-[10px] uppercase font-bold text-gray-400 hover:text-pink-600 h-8">
-                            Ver Detalhes
+                        <Button onClick={() => navigate(`/patients/${id}/financial?tab=pacotes`)} variant="ghost" size="sm" className="text-[10px] uppercase font-bold text-gray-400 hover:text-pink-600 h-8">
+                            Gerenciar
                         </Button>
                     </div>
                     
                     {activePlans.length > 0 ? (
                         <div className="grid gap-3">
                             {activePlans.map((plan) => {
-                                const progress = (plan.sessions_used / plan.total_sessions) * 100;
+                                const progress = (plan.sessoes_restantes / plan.sessoes_totais) * 100;
                                 return (
                                     <div key={plan.id} className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                                         <div className="flex justify-between items-center mb-2">
-                                            <span className="text-sm font-bold text-gray-900 dark:text-white">{plan.services?.name}</span>
-                                            <span className="text-xs font-mono text-pink-600 font-black">{plan.sessions_used}/{plan.total_sessions}</span>
+                                            <div>
+                                                <span className="text-sm font-bold text-gray-900 dark:text-white block uppercase text-[11px]">{plan.service_name || "Tratamento"}</span>
+                                                <span className="text-xs font-mono text-gray-400 font-bold">{plan.sessoes_used}/{plan.sessoes_totais} realizadas</span>
+                                            </div>
+                                            
+                                            {!consultationMode && (
+                                                <Button 
+                                                    size="sm" 
+                                                    onClick={() => handleOpenExecutionModal(plan)}
+                                                    className="h-7 text-[9px] uppercase font-black bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 shadow-sm"
+                                                >
+                                                    <Play size={10} className="mr-1" fill="currentColor"/> Realizar
+                                                </Button>
+                                            )}
                                         </div>
-                                        <div className="h-2 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+                                        <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden mt-2">
                                             <div 
                                                 className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-1000" 
                                                 style={{ width: `${progress}%` }}
@@ -494,6 +527,16 @@ export default function PatientOverviewPage() {
 
         </div>
       </div>
+
+      {/* MODAL DE EXECUÇÃO */}
+      {executionModalOpen && selectedPlanForExecution && (
+        <ProcedureExecution 
+            isOpen={executionModalOpen} 
+            onClose={() => setExecutionModalOpen(false)} 
+            onSuccess={handleExecutionSuccess} 
+            plan={selectedPlanForExecution} 
+        />
+      )}
     </div>
   );
 }

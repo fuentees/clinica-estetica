@@ -1,389 +1,502 @@
 import { useEffect, useState } from "react";
-import { useOutletContext, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
-import { toast } from "react-hot-toast";
 import { 
-  Activity, 
-  Scale, 
-  ArrowRight, 
-  Loader2, 
   Calendar, 
-  History, 
+  User, 
+  AlertTriangle, 
+  Activity, 
+  Camera, 
+  ChevronRight, 
+  MessageCircle,
   Pencil,
-  Ban,
-  DollarSign,
-  ShieldCheck,
-  Plus
+  ShieldAlert,
+  Info,
+  Play,
+  Printer,
+  Eye,
+  EyeOff,
+  CalendarPlus,
+  Lock,
+  Package,
+  CreditCard,
+  CheckCircle2,
+  MapPin
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
-import { PatientPackagesWidget } from "../../components/patients/PatientPackagesWidget";
-import { format } from "date-fns";
+import { format, differenceInYears, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "react-hot-toast";
 
-interface PatientContext {
-  patient: {
-    id: string;
-    name: string;
-  };
-}
+// --- HELPERS ---
+const getAlertLevel = (text: string) => {
+    const t = text.toLowerCase();
+    if (t.includes('gestante') || t.includes('alergia') || t.includes('câncer')) return 'high';
+    if (t.includes('fumante') || t.includes('diabetes') || t.includes('hipertensão')) return 'medium';
+    return 'low';
+};
 
-interface Appointment {
-  id: string;
-  start_time: string;
-  status: string;
-  notes?: string;
-  professional: {
-    first_name: string;
-    last_name: string;
-    role: string;
-    formacao?: string; 
-    avatar_url?: string; 
-  } | null;
-}
+const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+        scheduled: 'Agendado',
+        confirmed: 'Confirmado',
+        arrived: 'Na Recepção',
+        in_service: 'Em Atendimento',
+        completed: 'Finalizado',
+        no_show: 'Não Compareceu',
+        canceled: 'Cancelado'
+    };
+    return labels[status] || status;
+};
 
-interface OverviewData {
-  appointments: Appointment[];
-  lastBio: any[];
-  totalSessions: number;
-  financial: {       
-    pending: number;
-    ltv: number;
-  };
-}
+const getStatusColor = (status: string) => {
+    switch (status) {
+        case 'scheduled': return 'bg-blue-50 text-blue-700 border-blue-200';
+        case 'confirmed': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+        case 'arrived': return 'bg-purple-50 text-purple-700 border-purple-200 animate-pulse';
+        case 'in_service': return 'bg-pink-50 text-pink-700 border-pink-200';
+        case 'completed': return 'bg-gray-100 text-gray-600 border-gray-200';
+        case 'no_show': return 'bg-red-50 text-red-700 border-red-200';
+        default: return 'bg-gray-50 text-gray-600 border-gray-200';
+    }
+};
 
 export default function PatientOverviewPage() {
-  const { patient } = useOutletContext<PatientContext>();
+  const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   
-  const [data, setData] = useState<OverviewData>({
-    appointments: [], 
-    lastBio: [],
-    totalSessions: 0,
-    financial: { pending: 0, ltv: 0 }
-  });
+  // Controles
+  const [consultationMode, setConsultationMode] = useState(false);
+  const [revealPhotos, setRevealPhotos] = useState(false);
+  
+  // Dados
+  const [patient, setPatient] = useState<any>(null);
+  const [nextAppointment, setNextAppointment] = useState<any>(null);
+  const [lastEvolution, setLastEvolution] = useState<any>(null);
+  const [recentPhotos, setRecentPhotos] = useState<any[]>([]);
+  const [activePlans, setActivePlans] = useState<any[]>([]); // Planos Ativos
+  
+  const [stats, setStats] = useState({ totalEvolutions: 0, daysSinceLast: 0 });
+  const [medicalAlerts, setMedicalAlerts] = useState<{level: string, text: string}[]>([]);
+  const [inconsistencyAlert, setInconsistencyAlert] = useState<string | null>(null);
 
-  async function loadOverview() {
-    if (!patient?.id) return;
+  useEffect(() => {
+    if (id) loadOverviewData();
+  }, [id]);
+
+  useEffect(() => {
+      if (consultationMode) setRevealPhotos(false);
+  }, [consultationMode]);
+
+  async function loadOverviewData() {
     try {
-      // 1. Busca Agendamentos
-      const { data: appts } = await supabase
-        .from("appointments")
-        .select(`
-          id, start_time, status, notes,
-          professional:profiles!professional_id (first_name, last_name, role, formacao, avatar_url)
-        `)
-        .eq("patient_id", patient.id)
-        .order("start_time", { ascending: false });
+      setLoading(true);
 
-      const appointments: Appointment[] = (appts || []).map((item: any) => ({
-        id: item.id,
-        start_time: item.start_time,
-        status: item.status,
-        notes: item.notes,
-        professional: Array.isArray(item.professional) ? item.professional[0] : item.professional
-      }));
+      // 1. Paciente & Anamnese
+      const { data: pat } = await supabase.from('patients').select('*').eq('id', id).single();
+      if (pat) {
+          setPatient(pat);
+          const alerts = [];
+          if (pat.anamnesis?.alergias?.length > 0) alerts.push({ level: 'high', text: `Alergia: ${pat.anamnesis.alergias}` });
+          if (pat.anamnesis?.gestante === 'sim') alerts.push({ level: 'high', text: "Gestante" });
+          if (pat.anamnesis?.doencas?.includes('câncer')) alerts.push({ level: 'high', text: "Histórico Oncológico" });
+          if (pat.anamnesis?.fumante === 'sim') alerts.push({ level: 'medium', text: "Fumante" });
+          if (pat.anamnesis?.doencas?.includes('diabetes')) alerts.push({ level: 'medium', text: "Diabético" });
+          setMedicalAlerts(alerts.sort((a, b) => (a.level === 'high' ? -1 : 1)));
+      }
 
-      // 2. Busca Bioimpedância
-      const { data: bio } = await supabase
-        .from("bioimpedance_records") 
-        .select("*")
-        .eq("patient_id", patient.id)
-        .order("date", { ascending: false })
-        .limit(1);
+      // 2. Próximo Agendamento
+      const { data: nextAppt } = await supabase
+        .from('appointments')
+        .select('*, services(name), profiles(first_name)')
+        .eq('patient_id', id)
+        .gt('start_time', new Date().toISOString())
+        .neq('status', 'canceled')
+        .order('start_time', { ascending: true })
+        .limit(1)
+        .single();
+      
+      if (nextAppt) setNextAppointment(nextAppt);
 
-      // 3. Busca Financeiro (LTV e Pendente)
-      const { data: transactions } = await supabase
-        .from("transactions")
-        .select("amount, paid_at")
-        .eq("patient_id", patient.id);
+      // 3. Planos Ativos (CORRIGIDO: Agora carrega corretamente)
+      const { data: plans } = await supabase
+        .from('planos_clientes') // Verifique se o nome da tabela está exato no seu banco
+        .select('*, services(name)')
+        .eq('patient_id', id)
+        .eq('status', 'ativo');
+        
+      if (plans) setActivePlans(plans);
 
-      const totalPaid = (transactions || [])
-        .filter(t => t.paid_at)
-        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+      // 4. Evoluções
+      const { data: evolutions } = await supabase
+        .from('evolution_records')
+        .select('*, profiles(first_name)')
+        .eq('patient_id', id)
+        .is('deleted_at', null)
+        .order('date', { ascending: false });
 
-      const totalPending = (transactions || [])
-        .filter(t => !t.paid_at)
-        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+      if (evolutions && evolutions.length > 0) {
+          const last = evolutions[0];
+          setLastEvolution(last);
+          const daysDiff = differenceInDays(new Date(), new Date(last.date));
+          setStats({ totalEvolutions: evolutions.length, daysSinceLast: daysDiff });
 
-      const completedCount = appointments.filter(a => a.status === 'completed' || a.status === 'concluido').length;
+          if (nextAppt && last) {
+              const lastProc = last.subject.toLowerCase();
+              const nextProc = nextAppt.services?.name.toLowerCase() || '';
+              if (lastProc.includes('botox') && nextProc.includes('botox') && daysDiff < 75) {
+                  setInconsistencyAlert(`Alerta: Intervalo de Toxina Botulínica curto (${daysDiff} dias). Recomendado: >90 dias.`);
+              }
+          }
+      }
 
-      setData({
-          appointments: appointments,
-          totalSessions: completedCount,
-          lastBio: bio || [],
-          financial: { pending: totalPending, ltv: totalPaid }
-      });
+      // 5. Fotos
+      const { data: photos } = await supabase
+        .from('patient_photos')
+        .select('*')
+        .eq('patient_id', id)
+        .order('created_at', { ascending: false })
+        .limit(4);
 
-    } catch (error) { 
-      console.error("Erro overview:", error); 
+      if (photos) setRecentPhotos(photos);
+
+    } catch (error) {
+      console.error(error);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   }
 
-  useEffect(() => {
-    loadOverview();
-  }, [patient?.id]);
+  // --- ATUALIZAR STATUS DA AGENDA ---
+  const handleUpdateStatus = async (newStatus: string) => {
+      if (!nextAppointment) return;
+      try {
+          const { error } = await supabase
+              .from('appointments')
+              .update({ status: newStatus })
+              .eq('id', nextAppointment.id);
 
-  const handleCancelAppointment = async (apptId: string) => {
-      if (!window.confirm("Deseja realmente cancelar este agendamento?")) return;
-      await supabase.from('appointments').update({ status: 'canceled' }).eq('id', apptId);
-      toast.success("Agendamento cancelado.");
-      loadOverview();
+          if (error) throw error;
+          
+          toast.success(`Status atualizado para: ${getStatusLabel(newStatus)}`);
+          loadOverviewData(); 
+      } catch (error) {
+          toast.error("Erro ao atualizar status");
+      }
   };
 
-  const formatDateCard = (dateString: string) => {
-    const date = new Date(dateString);
-    return {
-      day: format(date, 'dd'),
-      month: format(date, 'MMM', { locale: ptBR }).toUpperCase(),
-      weekday: format(date, 'EEEE', { locale: ptBR }),
-      time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-    };
+  const calculateAge = (dob: string) => {
+      if (!dob) return "--";
+      return differenceInYears(new Date(), new Date(dob)) + " anos";
   };
 
-  const formatCurrency = (value: number) => {
-      return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const handlePrintSummary = () => {
+      toast.success("Preparando resumo clínico...");
+      setTimeout(() => window.print(), 1000);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed':
-      case 'concluido': return 'text-emerald-700 bg-emerald-50 border-emerald-100';
-      case 'canceled':
-      case 'cancelado': return 'text-rose-700 bg-rose-50 border-rose-100';
-      case 'no_show':
-      case 'falta': return 'text-amber-700 bg-amber-50 border-amber-100';
-      default: return 'text-pink-700 bg-pink-50 border-pink-100';
-    }
-  };
-
-  if (loading) return (
-    <div className="h-96 flex flex-col items-center justify-center gap-4">
-      <Loader2 className="animate-spin text-pink-600" size={40} />
-      <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Carregando Prontuário...</p>
-    </div>
-  );
-  
-  const bio = data.lastBio?.[0];
-  const now = new Date();
-
-  const nextAppointments = data.appointments
-    .filter((a) => new Date(a.start_time) >= now && a.status !== 'canceled' && a.status !== 'cancelado')
-    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-
-  const pastAppointments = data.appointments
-    .filter((a) => new Date(a.start_time) < now);
+  if (loading) return <div className="p-10 text-center text-gray-400 font-bold uppercase tracking-widest animate-pulse">Carregando Prontuário...</div>;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
       
+      {/* HEADER DE CONTROLE */}
+      <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-2">
+             <button 
+                onClick={() => setConsultationMode(!consultationMode)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black uppercase transition-all ${consultationMode ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500'}`}
+             >
+                 {consultationMode ? <Eye size={16}/> : <EyeOff size={16}/>}
+                 {consultationMode ? 'Modo Consulta (Leitura)' : 'Modo Edição'}
+             </button>
+          </div>
+          <Button onClick={handlePrintSummary} variant="ghost" size="sm" className="text-gray-400 hover:text-pink-600">
+              <Printer size={18} className="mr-2"/> Resumo Clínico
+          </Button>
+      </div>
+
+      {/* ALERTAS DE RISCO */}
+      {medicalAlerts.length > 0 && (
+          <div className="flex flex-wrap gap-3">
+              {medicalAlerts.map((alert, i) => {
+                  let style = "bg-blue-50 text-blue-700 border-blue-200"; 
+                  let icon = <Info size={16}/>;
+                  
+                  if (alert.level === 'high') {
+                      style = "bg-red-50 text-red-700 border-red-200 animate-pulse";
+                      icon = <ShieldAlert size={16}/>;
+                  } else if (alert.level === 'medium') {
+                      style = "bg-amber-50 text-amber-700 border-amber-200";
+                      icon = <AlertTriangle size={16}/>;
+                  }
+
+                  return (
+                      <div key={i} className={`flex items-center gap-2 px-4 py-3 rounded-xl border ${style}`}>
+                          {icon}
+                          <span className="text-xs font-black uppercase tracking-wide">{alert.text}</span>
+                      </div>
+                  );
+              })}
+          </div>
+      )}
+
+      {/* ALERTA DE INCOERÊNCIA */}
+      {inconsistencyAlert && (
+          <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl flex items-center gap-3 text-orange-800">
+              <Activity size={20} className="text-orange-500" />
+              <span className="text-xs font-bold">{inconsistencyAlert}</span>
+          </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* COLUNA PRINCIPAL */}
-        <div className="lg:col-span-2 space-y-8">
+        {/* --- COLUNA ESQUERDA: PERFIL, VENDAS E AGENDA --- */}
+        <div className="space-y-6">
             
-            {/* 1. KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="relative overflow-hidden p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 group">
-                  <div className="absolute -right-4 -top-4 p-8 opacity-5 group-hover:scale-110 transition-transform italic font-black text-8xl text-pink-500">#</div>
-                  <div className="flex justify-between items-start mb-6">
-                      <div className="p-4 bg-pink-50 dark:bg-pink-900/20 rounded-2xl text-pink-600">
-                          <Activity size={24}/>
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Frequência</span>
-                  </div>
-                  <h3 className="text-5xl font-black text-gray-900 dark:text-white italic tracking-tighter mb-1">
-                      {data.totalSessions}
-                  </h3>
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sessões Concluídas</p>
-              </div>
+            {/* CARD DE PERFIL (LIMPO, SEM ENDEREÇO/TEL) */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden pb-8">
+                {/* Degradê Suave Restaurado */}
+                <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-pink-500 to-purple-600 opacity-10"></div>
+                
+                <div className="relative flex flex-col items-center text-center mt-8">
+                    <div className="w-28 h-28 rounded-full border-4 border-white dark:border-gray-800 shadow-xl overflow-hidden bg-gray-100 mb-4">
+                        {patient?.avatar_url ? (
+                            <img src={patient.avatar_url} alt="Paciente" className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-300"><User size={40}/></div>
+                        )}
+                    </div>
+                    <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter">{patient?.name}</h2>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">{calculateAge(patient?.birth_date)} • {patient?.occupation || 'Profissão não inf.'}</p>
+                    
+                    {!consultationMode && (
+                        <div className="flex flex-col gap-2 mt-8 w-full max-w-xs">
+                            {/* BOTOEIRA DE AÇÃO PRINCIPAL */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <Button onClick={() => navigate('/appointments/new')} className="bg-gray-900 hover:bg-black text-white h-12 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg">
+                                    <CalendarPlus size={14} className="mr-2"/> Agendar
+                                </Button>
+                                {/* BOTÃO DE ORÇAMENTO/PLANOS */}
+                                <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} className="bg-pink-600 hover:bg-pink-700 text-white h-12 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg">
+                                    <CreditCard size={14} className="mr-2"/> Orçamento
+                                </Button>
+                            </div>
 
-              <div className="relative overflow-hidden p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-800 shadow-sm bg-white dark:bg-gray-900 group">
-                  <div className="absolute -right-4 -top-4 p-8 opacity-5 group-hover:scale-110 transition-transform italic font-black text-8xl text-blue-500">kg</div>
-                  <div className="flex justify-between items-start mb-6">
-                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl text-blue-600">
-                          <Scale size={24}/>
-                      </div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Métrica Corporal</span>
-                  </div>
-                  {bio ? (
-                      <>
-                          <h3 className="text-5xl font-black text-gray-900 dark:text-white italic tracking-tighter">
-                              {Number(bio.weight).toFixed(1)} <span className="text-xl text-gray-300">kg</span>
-                          </h3>
-                          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-2 flex items-center gap-1">
-                             <ShieldCheck size={12}/> Última pesagem: {new Date(bio.date).toLocaleDateString('pt-BR')}
-                          </p>
-                      </>
-                  ) : (
-                      <p className="text-gray-300 py-4 font-bold uppercase text-xs italic tracking-widest">Nenhuma bioimpedância registrada</p>
-                  )}
-                  <button onClick={() => navigate("../bioimpedance")} className="mt-6 flex items-center gap-2 text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] hover:gap-4 transition-all">
-                      Acessar Evolução <ArrowRight size={14}/>
-                  </button>
-              </div>
+                            <div className="flex gap-2 w-full mt-2">
+                                <Button onClick={() => window.open(`https://wa.me/55${patient?.phone?.replace(/\D/g, '')}`, '_blank')} className="flex-1 bg-green-600 hover:bg-green-700 text-white h-10 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md">
+                                    <MessageCircle size={16} className="mr-2"/> WhatsApp
+                                </Button>
+                                <Button onClick={() => navigate(`/patients/${id}/details`)} variant="outline" className="h-10 w-12 rounded-xl border-gray-200" title="Editar Dados">
+                                    <Pencil size={16}/>
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {/* 2. PRÓXIMOS AGENDAMENTOS */}
-            <div className="space-y-6">
-                <div className="flex items-center justify-between px-2">
-                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-[0.3em] flex items-center gap-3">
-                      <Calendar className="text-pink-600" size={18} /> Próximos Agendamentos
+            {/* CARD PRÓXIMA SESSÃO (STATUS REAL) */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                        <Calendar size={16} className="text-pink-500"/> Agenda
                     </h3>
-                    <Button size="sm" onClick={() => navigate('/appointments/new')} className="h-9 px-4 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">
-                      <Plus size={14} className="mr-1"/> Reservar Horário
-                    </Button>
                 </div>
 
-                {nextAppointments.length === 0 ? (
-                    <div className="bg-gray-50/50 dark:bg-gray-900/50 p-12 rounded-[2.5rem] border-2 border-dashed border-gray-100 dark:border-gray-800 text-center">
-                      <Calendar size={40} className="text-gray-200 mx-auto mb-4" />
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Não há sessões futuras reservadas.</p>
+                {nextAppointment ? (
+                    <div className={`p-5 rounded-[2rem] border ${getStatusColor(nextAppointment.status)}`}>
+                        <div className="flex justify-between items-start mb-2">
+                            <span className="text-2xl font-black">
+                                {format(new Date(nextAppointment.start_time), 'dd')}
+                                <span className="text-xs font-bold opacity-60 ml-1 uppercase">{format(new Date(nextAppointment.start_time), 'MMM', { locale: ptBR })}</span>
+                            </span>
+                            <div className="text-right">
+                                <span className="text-xl font-black block leading-none">
+                                    {format(new Date(nextAppointment.start_time), 'HH:mm')}
+                                </span>
+                                <span className="text-[9px] font-black uppercase tracking-wide opacity-80">{getStatusLabel(nextAppointment.status)}</span>
+                            </div>
+                        </div>
+                        <p className="text-sm font-bold line-clamp-1">{nextAppointment.services?.name}</p>
+                        <p className="text-xs font-medium opacity-70 mt-1">Dr(a). {nextAppointment.profiles?.first_name}</p>
+                        
+                        {/* AÇÕES DE AGENDAMENTO */}
+                        {!consultationMode && (
+                            <div className="mt-4 pt-4 border-t border-black/5 flex gap-2">
+                                {nextAppointment.status === 'scheduled' && (
+                                    <Button onClick={() => handleUpdateStatus('confirmed')} size="sm" className="w-full h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[9px] font-black uppercase">
+                                        <CheckCircle2 size={12} className="mr-1"/> Confirmar
+                                    </Button>
+                                )}
+                                {(nextAppointment.status === 'confirmed' || nextAppointment.status === 'scheduled') && (
+                                    <Button onClick={() => handleUpdateStatus('arrived')} size="sm" className="w-full h-8 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[9px] font-black uppercase">
+                                        <MapPin size={12} className="mr-1"/> Chegou
+                                    </Button>
+                                )}
+                                {nextAppointment.status === 'arrived' && (
+                                    <Button onClick={() => handleUpdateStatus('in_service')} size="sm" className="w-full h-8 bg-pink-600 hover:bg-pink-700 text-white rounded-lg text-[9px] font-black uppercase">
+                                        <Play size={12} className="mr-1"/> Iniciar
+                                    </Button>
+                                )}
+                                {nextAppointment.status === 'in_service' && (
+                                    <Button onClick={() => handleUpdateStatus('completed')} size="sm" className="w-full h-8 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] font-black uppercase">
+                                        <CheckCircle2 size={12} className="mr-1"/> Finalizar
+                                    </Button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 gap-4">
-                        {nextAppointments.map((apt) => {
-                            const { day, month, weekday, time } = formatDateCard(apt.start_time);
-                            const profName = apt.professional ? `${apt.professional.first_name} ${apt.professional.last_name || ''}` : "Especialista";
-                            
-                            return (
-                                <div key={apt.id} className="group bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-xl hover:border-pink-100 transition-all flex items-center gap-6">
-                                    <div className="flex-shrink-0 flex flex-col items-center justify-center bg-gray-900 w-20 h-20 rounded-3xl shadow-lg group-hover:rotate-3 transition-transform">
-                                        <span className="text-[10px] font-black text-pink-500 uppercase tracking-widest">{month}</span>
-                                        <span className="text-3xl font-black text-white italic tracking-tighter leading-none">{day}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-3">
-                                            <span className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tighter italic">
-                                                {weekday}, {time}
-                                            </span>
-                                            <span className={`text-[9px] px-3 py-1 rounded-lg font-black uppercase tracking-widest border-2 w-fit ${getStatusColor(apt.status)}`}>
-                                                {apt.status}
-                                            </span>
+                    <div className="text-center py-8 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-2xl">
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Sem agendamentos</p>
+                    </div>
+                )}
+            </div>
+        </div>
+
+        {/* --- COLUNA DIREITA: CLÍNICA --- */}
+        <div className="lg:col-span-2 space-y-6">
+            
+            {/* MINI RESUMO */}
+            <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+                <div className="flex-1 min-w-[140px] bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-center">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Total Visitas</p>
+                    <p className="text-2xl font-black text-gray-900 dark:text-white">{stats.totalEvolutions}</p>
+                </div>
+                <div className="flex-1 min-w-[140px] bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-center">
+                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Última Visita</p>
+                    <p className="text-xl font-black text-gray-900 dark:text-white">{stats.daysSinceLast === 0 ? 'Hoje' : `${stats.daysSinceLast} dias atrás`}</p>
+                </div>
+                <div className="flex-1 min-w-[140px] bg-pink-50 dark:bg-pink-900/20 p-4 rounded-2xl border border-pink-100 dark:border-pink-900/30 shadow-sm flex flex-col justify-center cursor-pointer hover:bg-pink-100 transition-colors" onClick={() => navigate(`/patients/${id}/evolution`)}>
+                    <p className="text-[9px] font-black text-pink-400 uppercase tracking-widest mb-1">Status</p>
+                    <p className="text-sm font-black text-pink-700 dark:text-pink-300 flex items-center gap-1">VER HISTÓRICO <ChevronRight size={14}/></p>
+                </div>
+            </div>
+
+            {/* WIDGET DE PLANOS ATIVOS (ADICIONADO AQUI!) */}
+            {activePlans.length > 0 && (
+                <div className="bg-gradient-to-r from-gray-900 to-gray-800 p-6 rounded-[2.5rem] shadow-lg text-white relative overflow-hidden">
+                    <div className="relative z-10">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-300">
+                                <Package size={16} className="text-pink-400"/> Planos Ativos
+                            </h3>
+                            <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} variant="ghost" size="sm" className="text-[10px] uppercase font-bold text-white hover:bg-white/10 h-8">
+                                Ver Detalhes
+                            </Button>
+                        </div>
+                        
+                        <div className="grid gap-3">
+                            {activePlans.map((plan) => {
+                                const progress = (plan.sessions_used / plan.total_sessions) * 100;
+                                return (
+                                    <div key={plan.id} className="bg-white/10 p-3 rounded-xl border border-white/10">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-sm font-bold">{plan.services?.name}</span>
+                                            <span className="text-xs font-mono text-pink-300">{plan.sessions_used}/{plan.total_sessions}</span>
                                         </div>
-                                        <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900/50 p-2.5 rounded-2xl w-fit pr-6 border border-gray-100 dark:border-gray-800">
-                                            <div className="w-10 h-10 rounded-xl bg-gray-200 overflow-hidden flex-shrink-0 border-2 border-white">
-                                                {apt.professional?.avatar_url ? (
-                                                    <img src={apt.professional.avatar_url} alt={profName} className="w-full h-full object-cover"/>
-                                                ) : (
-                                                    <div className="w-full h-full flex items-center justify-center bg-pink-100 text-pink-600 font-black text-xs uppercase italic">
-                                                        {profName[0]}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] font-black text-gray-900 dark:text-white uppercase">{profName}</p>
-                                                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{apt.professional?.formacao || "Expertise Clínica"}</p>
-                                            </div>
+                                        <div className="h-2 w-full bg-black/30 rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-1000" 
+                                                style={{ width: `${progress}%` }}
+                                            ></div>
                                         </div>
                                     </div>
-                                    <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                                        <button onClick={() => navigate(`/appointments/${apt.id}/edit`)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shadow-inner" title="Editar">
-                                            <Pencil size={18} />
-                                        </button>
-                                        <button onClick={() => handleCancelAppointment(apt.id)} className="p-3 rounded-xl bg-gray-50 text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shadow-inner" title="Cancelar">
-                                            <Ban size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                )
+                            })}
+                        </div>
+                    </div>
+                    {/* Pattern de fundo */}
+                    <Package className="absolute -bottom-6 -right-6 text-white/5 w-40 h-40 transform rotate-12"/>
+                </div>
+            )}
+
+            {/* ÚLTIMA EVOLUÇÃO */}
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tighter flex items-center gap-2">
+                        <Activity size={20} className="text-emerald-500"/> Último Registro
+                    </h3>
+                </div>
+
+                {lastEvolution ? (
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase tracking-widest border border-emerald-100">
+                                {format(new Date(lastEvolution.date), "dd/MM/yyyy")}
+                            </span>
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">
+                                Dr(a). {lastEvolution.profiles?.first_name}
+                            </span>
+                        </div>
+                        <div className="p-5 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800">
+                            <h4 className="text-sm font-black text-gray-800 dark:text-white uppercase mb-2">{lastEvolution.subject}</h4>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed line-clamp-3">
+                                {lastEvolution.description}
+                            </p>
+                        </div>
+                        
+                        {!consultationMode && (
+                            <Button onClick={() => navigate(`/patients/${id}/evolution`)} className="w-full bg-gray-900 hover:bg-black text-white h-12 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl">
+                                Continuar Prontuário / Nova Evolução
+                            </Button>
+                        )}
+                    </div>
+                ) : (
+                    <div className="text-center py-10 opacity-50">
+                        <p className="text-sm text-gray-400 font-medium mb-4">Nenhuma evolução registrada.</p>
+                        {!consultationMode && (
+                            <Button onClick={() => navigate(`/patients/${id}/evolution`)} className="bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black uppercase">
+                                Iniciar Prontuário
+                            </Button>
+                        )}
                     </div>
                 )}
             </div>
 
-            {/* 3. MEMÓRIA CLÍNICA */}
-            <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-                <div className="px-8 py-6 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
-                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] flex gap-3 items-center">
-                        <History size={18} className="text-gray-400"/> Memória Clínica
+            {/* FOTOS RECENTES */}
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-black text-gray-900 dark:text-white uppercase tracking-tighter flex items-center gap-2">
+                        <Camera size={20} className="text-purple-500"/> Imagens Recentes
                     </h3>
-                    <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest italic">{pastAppointments.length} Visitas</span>
+                    <Button onClick={() => navigate(`/patients/${id}/gallery`)} variant="ghost" size="sm" className="text-xs font-black uppercase text-purple-600 hover:bg-purple-50">
+                        Ver Tudo
+                    </Button>
                 </div>
-                
-                <div className="p-4 space-y-2">
-                    {pastAppointments.length === 0 ? (
-                        <p className="text-center text-gray-300 py-10 font-bold uppercase text-[10px] tracking-widest italic">Nenhum histórico arquivado.</p>
-                    ) : (
-                        pastAppointments.map((apt) => (
-                            <div key={apt.id} className="flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-2xl transition-all group">
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-2 h-2 rounded-full ${apt.status === 'completed' || apt.status === 'concluido' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-gray-300'}`}></div>
-                                    <div>
-                                        <p className="font-black text-gray-900 dark:text-gray-200 italic tracking-tighter uppercase text-sm">
-                                            {new Date(apt.start_time).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
-                                        </p>
-                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Especialista: {apt.professional?.first_name || "Clínica"}</p>
+
+                {consultationMode && !revealPhotos ? (
+                    <div className="flex flex-col items-center justify-center py-12 bg-gray-50 dark:bg-gray-900 rounded-2xl border-2 border-dashed border-gray-200">
+                        <Lock size={32} className="text-gray-400 mb-2"/>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Imagens Ocultas (Privacidade)</p>
+                        <Button onClick={() => setRevealPhotos(true)} size="sm" variant="outline" className="text-[10px] font-black uppercase">
+                            Exibir Imagens
+                        </Button>
+                    </div>
+                ) : (
+                    recentPhotos.length > 0 ? (
+                        <div className="grid grid-cols-4 gap-4">
+                            {recentPhotos.map((photo, i) => (
+                                <div key={i} className="aspect-square rounded-2xl overflow-hidden border-2 border-gray-100 dark:border-gray-700 relative group cursor-pointer" onClick={() => navigate(`/patients/${id}/gallery`)}>
+                                    <img src={photo.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" alt="Recente" />
+                                    <div className="absolute bottom-0 inset-x-0 bg-black/60 p-1 text-center">
+                                        <span className="text-[8px] font-bold text-white uppercase">{format(new Date(photo.created_at), 'dd/MM')}</span>
                                     </div>
                                 </div>
-                                <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full border-2 ${getStatusColor(apt.status)}`}>
-                                    {apt.status}
-                                </span>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
-        </div>
-
-        {/* COLUNA LATERAL */}
-        <div className="lg:col-span-1 space-y-8">
-            {/* WIDGET DE PACOTES ATIVOS (Importado) */}
-            <PatientPackagesWidget patient_id={patient.id} />
-            
-            {/* STATUS FINANCEIRO */}
-            <div className="bg-gray-900 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-120 transition-transform duration-1000">
-                  <DollarSign size={140} />
-                </div>
-                <h3 className="text-[10px] font-black text-pink-500 uppercase tracking-[0.3em] mb-8 flex items-center gap-3 italic">
-                    Conta Corrente
-                </h3>
-                <div className="space-y-6 relative z-10">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">Aberto (Pendente)</span>
-                      <span className={`text-2xl font-black italic tracking-tighter ${data.financial.pending > 0 ? 'text-amber-400' : 'text-white'}`}>
-                          {formatCurrency(data.financial.pending)}
-                      </span>
-                  </div>
-                  <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest italic">LTV (Total Pago)</span>
-                      <span className="text-2xl font-black italic tracking-tighter text-emerald-400">
-                          {formatCurrency(data.financial.ltv)}
-                      </span>
-                  </div>
-                  
-                  {/* ✅ BOTÃO ATUALIZADO */}
-                  <button 
-                    onClick={() => navigate("financial")} 
-                    className="w-full mt-4 h-12 bg-white text-gray-900 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-pink-500 hover:text-white transition-all shadow-xl shadow-black/40 flex items-center justify-center gap-2"
-                  >
-                    Ver Detalhes Financeiros <ArrowRight size={14} />
-                  </button>
-                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center py-6 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-2xl">
+                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Sem fotos</p>
+                        </div>
+                    )
+                )}
             </div>
 
-            {/* AUDITORIA IA */}
-            <div className="bg-gradient-to-br from-indigo-600 to-purple-800 rounded-[3rem] p-10 text-white shadow-xl">
-               <div className="flex items-center gap-3 mb-6">
-                  <ShieldCheck className="text-indigo-200" size={24}/>
-                  <h3 className="text-[10px] font-black uppercase tracking-[0.3em] italic">IA Safety Auditor</h3>
-               </div>
-               <p className="text-xs font-medium text-indigo-100 leading-relaxed mb-8 italic">
-                 Analise os riscos procedimentais deste paciente cruzando dados de anamnese e medicamentos em uso.
-               </p>
-               <button 
-                onClick={() => navigate("../ai-analysis")}
-                className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:gap-4 transition-all"
-               >
-                 Iniciar Auditoria <ArrowRight size={14}/>
-               </button>
-            </div>
         </div>
       </div>
-
     </div>
   );
 }

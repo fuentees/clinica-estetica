@@ -21,7 +21,9 @@ import {
   Package,
   CreditCard,
   CheckCircle2,
-  MapPin
+  MapPin,
+  Phone,
+  LayoutGrid
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { format, differenceInYears, differenceInDays } from "date-fns";
@@ -75,7 +77,7 @@ export default function PatientOverviewPage() {
   const [nextAppointment, setNextAppointment] = useState<any>(null);
   const [lastEvolution, setLastEvolution] = useState<any>(null);
   const [recentPhotos, setRecentPhotos] = useState<any[]>([]);
-  const [activePlans, setActivePlans] = useState<any[]>([]); // Planos Ativos
+  const [activePlans, setActivePlans] = useState<any[]>([]); 
   
   const [stats, setStats] = useState({ totalEvolutions: 0, daysSinceLast: 0 });
   const [medicalAlerts, setMedicalAlerts] = useState<{level: string, text: string}[]>([]);
@@ -119,14 +121,20 @@ export default function PatientOverviewPage() {
       
       if (nextAppt) setNextAppointment(nextAppt);
 
-      // 3. Planos Ativos (CORRIGIDO: Agora carrega corretamente)
+      // 3. Planos Ativos (CORRIGIDO E ROBUSTO)
       const { data: plans } = await supabase
-        .from('planos_clientes') // Verifique se o nome da tabela está exato no seu banco
+        .from('planos_clientes') 
         .select('*, services(name)')
-        .eq('patient_id', id)
-        .eq('status', 'ativo');
+        .eq('patient_id', id);
         
-      if (plans) setActivePlans(plans);
+      if (plans) {
+          // Filtra no JS para garantir (se tiver saldo OU se estiver marcado como ativo)
+          const activeOnly = plans.filter((p: any) => 
+            (p.status && p.status.toLowerCase() === 'ativo') || 
+            (p.sessions_used < p.total_sessions)
+          );
+          setActivePlans(activeOnly);
+      }
 
       // 4. Evoluções
       const { data: evolutions } = await supabase
@@ -168,7 +176,6 @@ export default function PatientOverviewPage() {
     }
   }
 
-  // --- ATUALIZAR STATUS DA AGENDA ---
   const handleUpdateStatus = async (newStatus: string) => {
       if (!nextAppointment) return;
       try {
@@ -217,24 +224,17 @@ export default function PatientOverviewPage() {
           </Button>
       </div>
 
-      {/* ALERTAS DE RISCO */}
+      {/* ALERTAS */}
       {medicalAlerts.length > 0 && (
           <div className="flex flex-wrap gap-3">
               {medicalAlerts.map((alert, i) => {
                   let style = "bg-blue-50 text-blue-700 border-blue-200"; 
-                  let icon = <Info size={16}/>;
-                  
-                  if (alert.level === 'high') {
-                      style = "bg-red-50 text-red-700 border-red-200 animate-pulse";
-                      icon = <ShieldAlert size={16}/>;
-                  } else if (alert.level === 'medium') {
-                      style = "bg-amber-50 text-amber-700 border-amber-200";
-                      icon = <AlertTriangle size={16}/>;
-                  }
+                  if (alert.level === 'high') style = "bg-red-50 text-red-700 border-red-200 animate-pulse";
+                  else if (alert.level === 'medium') style = "bg-amber-50 text-amber-700 border-amber-200";
 
                   return (
                       <div key={i} className={`flex items-center gap-2 px-4 py-3 rounded-xl border ${style}`}>
-                          {icon}
+                          <Info size={16}/>
                           <span className="text-xs font-black uppercase tracking-wide">{alert.text}</span>
                       </div>
                   );
@@ -242,7 +242,6 @@ export default function PatientOverviewPage() {
           </div>
       )}
 
-      {/* ALERTA DE INCOERÊNCIA */}
       {inconsistencyAlert && (
           <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl flex items-center gap-3 text-orange-800">
               <Activity size={20} className="text-orange-500" />
@@ -252,12 +251,12 @@ export default function PatientOverviewPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* --- COLUNA ESQUERDA: PERFIL, VENDAS E AGENDA --- */}
+        {/* --- COLUNA ESQUERDA: PERFIL E AGENDA --- */}
         <div className="space-y-6">
             
-            {/* CARD DE PERFIL (LIMPO, SEM ENDEREÇO/TEL) */}
+            {/* CARD DE PERFIL (LIMPO, SEM TELEFONE/ENDEREÇO) */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden pb-8">
-                {/* Degradê Suave Restaurado */}
+                {/* Degradê Suave Rosa/Roxo */}
                 <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-pink-500 to-purple-600 opacity-10"></div>
                 
                 <div className="relative flex flex-col items-center text-center mt-8">
@@ -273,17 +272,14 @@ export default function PatientOverviewPage() {
                     
                     {!consultationMode && (
                         <div className="flex flex-col gap-2 mt-8 w-full max-w-xs">
-                            {/* BOTOEIRA DE AÇÃO PRINCIPAL */}
                             <div className="grid grid-cols-2 gap-2">
                                 <Button onClick={() => navigate('/appointments/new')} className="bg-gray-900 hover:bg-black text-white h-12 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg">
                                     <CalendarPlus size={14} className="mr-2"/> Agendar
                                 </Button>
-                                {/* BOTÃO DE ORÇAMENTO/PLANOS */}
                                 <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} className="bg-pink-600 hover:bg-pink-700 text-white h-12 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg">
                                     <CreditCard size={14} className="mr-2"/> Orçamento
                                 </Button>
                             </div>
-
                             <div className="flex gap-2 w-full mt-2">
                                 <Button onClick={() => window.open(`https://wa.me/55${patient?.phone?.replace(/\D/g, '')}`, '_blank')} className="flex-1 bg-green-600 hover:bg-green-700 text-white h-10 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md">
                                     <MessageCircle size={16} className="mr-2"/> WhatsApp
@@ -297,7 +293,7 @@ export default function PatientOverviewPage() {
                 </div>
             </div>
 
-            {/* CARD PRÓXIMA SESSÃO (STATUS REAL) */}
+            {/* CARD AGENDA */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-black text-gray-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
@@ -322,7 +318,6 @@ export default function PatientOverviewPage() {
                         <p className="text-sm font-bold line-clamp-1">{nextAppointment.services?.name}</p>
                         <p className="text-xs font-medium opacity-70 mt-1">Dr(a). {nextAppointment.profiles?.first_name}</p>
                         
-                        {/* AÇÕES DE AGENDAMENTO */}
                         {!consultationMode && (
                             <div className="mt-4 pt-4 border-t border-black/5 flex gap-2">
                                 {nextAppointment.status === 'scheduled' && (
@@ -375,29 +370,29 @@ export default function PatientOverviewPage() {
                 </div>
             </div>
 
-            {/* WIDGET DE PLANOS ATIVOS (ADICIONADO AQUI!) */}
-            {activePlans.length > 0 && (
-                <div className="bg-gradient-to-r from-gray-900 to-gray-800 p-6 rounded-[2.5rem] shadow-lg text-white relative overflow-hidden">
-                    <div className="relative z-10">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-300">
-                                <Package size={16} className="text-pink-400"/> Planos Ativos
-                            </h3>
-                            <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} variant="ghost" size="sm" className="text-[10px] uppercase font-bold text-white hover:bg-white/10 h-8">
-                                Ver Detalhes
-                            </Button>
-                        </div>
-                        
+            {/* ✅ WIDGET DE PLANOS ATIVOS (VISUAL LEVE/CLEAN + CORREÇÃO) */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
+                <div className="relative z-10">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-900 dark:text-white">
+                            <Package size={16} className="text-pink-500"/> Planos Ativos
+                        </h3>
+                        <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} variant="ghost" size="sm" className="text-[10px] uppercase font-bold text-gray-400 hover:text-pink-600 h-8">
+                            Ver Detalhes
+                        </Button>
+                    </div>
+                    
+                    {activePlans.length > 0 ? (
                         <div className="grid gap-3">
                             {activePlans.map((plan) => {
                                 const progress = (plan.sessions_used / plan.total_sessions) * 100;
                                 return (
-                                    <div key={plan.id} className="bg-white/10 p-3 rounded-xl border border-white/10">
+                                    <div key={plan.id} className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                                         <div className="flex justify-between items-center mb-2">
-                                            <span className="text-sm font-bold">{plan.services?.name}</span>
-                                            <span className="text-xs font-mono text-pink-300">{plan.sessions_used}/{plan.total_sessions}</span>
+                                            <span className="text-sm font-bold text-gray-900 dark:text-white">{plan.services?.name}</span>
+                                            <span className="text-xs font-mono text-pink-600 font-black">{plan.sessions_used}/{plan.total_sessions}</span>
                                         </div>
-                                        <div className="h-2 w-full bg-black/30 rounded-full overflow-hidden">
+                                        <div className="h-2 w-full bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
                                             <div 
                                                 className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-1000" 
                                                 style={{ width: `${progress}%` }}
@@ -407,11 +402,13 @@ export default function PatientOverviewPage() {
                                 )
                             })}
                         </div>
-                    </div>
-                    {/* Pattern de fundo */}
-                    <Package className="absolute -bottom-6 -right-6 text-white/5 w-40 h-40 transform rotate-12"/>
+                    ) : (
+                        <div className="text-center py-6 border-2 border-dashed border-gray-100 dark:border-gray-700 rounded-2xl bg-gray-50/50">
+                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhum plano ativo</p>
+                        </div>
+                    )}
                 </div>
-            )}
+            </div>
 
             {/* ÚLTIMA EVOLUÇÃO */}
             <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative">
@@ -440,7 +437,7 @@ export default function PatientOverviewPage() {
                         
                         {!consultationMode && (
                             <Button onClick={() => navigate(`/patients/${id}/evolution`)} className="w-full bg-gray-900 hover:bg-black text-white h-12 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl">
-                                Continuar Prontuário / Nova Evolução
+                                Continuar Prontuário
                             </Button>
                         )}
                     </div>

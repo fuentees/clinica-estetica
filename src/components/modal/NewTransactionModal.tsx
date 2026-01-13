@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
-import { X, Check, Loader2, Tag, DollarSign } from "lucide-react";
+import { X, Check, Loader2, Tag, DollarSign, Scissors } from "lucide-react";
 import { toast } from "react-hot-toast";
 
 interface NewTransactionModalProps {
@@ -9,16 +9,48 @@ interface NewTransactionModalProps {
   onSuccess: () => void;
 }
 
+interface Service {
+  id: string;
+  name: string;
+  price: number;
+}
+
 export function NewTransactionModal({ isOpen, onClose, onSuccess }: NewTransactionModalProps) {
   const [loading, setLoading] = useState(false);
+  const [services, setServices] = useState<Service[]>([]);
   const [formData, setFormData] = useState({
     description: "",
     amount: "",
-    type: "expense", // Padrão: Despesa
+    type: "expense", 
     category: "Comissão",
     payment_method: "pix",
-    date: new Date().toISOString().split('T')[0]
+    date: new Date().toISOString().split('T')[0],
+    service_id: "" 
   });
+
+  // Carrega serviços apenas se for Entrada (Receita)
+  useEffect(() => {
+    if (isOpen && formData.type === 'income') {
+      loadServices();
+    }
+  }, [isOpen, formData.type]);
+
+  async function loadServices() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user?.id).single();
+      
+      const { data } = await supabase
+        .from('services')
+        .select('id, name, price')
+        .eq('clinic_id', profile?.clinic_id)
+        .order('name');
+      
+      if (data) setServices(data);
+    } catch (error) {
+      console.error("Erro ao carregar serviços:", error);
+    }
+  }
 
   if (!isOpen) return null;
 
@@ -26,53 +58,54 @@ export function NewTransactionModal({ isOpen, onClose, onSuccess }: NewTransacti
     e.preventDefault();
     try {
       setLoading(true);
-      
-      // 1. Validar Usuário e Clínica
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuário não logado");
-
-      const { data: profile } = await supabase.from('profiles')
-        .select('clinic_id')
-        .eq('id', user.id)
-        .single();
+      const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user?.id).single();
 
       if (!profile?.clinic_id) throw new Error("Clínica não identificada");
 
-      // 2. Preparar Data ISO
       const isoDate = new Date(formData.date).toISOString();
 
-      // 3. Inserir na Tabela Transactions
+      // ✅ LOGICA DE DESCRIÇÃO LIMPA: Prioriza o nome do serviço
+      const selectedService = services.find(s => s.id === formData.service_id);
+      
+      // Se tiver serviço, a descrição principal vira o NOME DO SERVIÇO
+      // O que o usuário digitou vira um complemento (opcional)
+      const finalDescription = selectedService 
+        ? (formData.description ? `${selectedService.name} - ${formData.description}` : selectedService.name)
+        : formData.description;
+
       const { error } = await supabase.from('transactions').insert({
         clinic_id: profile.clinic_id,
-        description: formData.description,
+        description: finalDescription, // Ex: "Limpeza de Pele - Paciente Maria"
         amount: Number(formData.amount),
         type: formData.type,
         category: formData.category,
         payment_method: formData.payment_method,
-        status: 'paid', // Lançamentos manuais geralmente já estão liquidados
+        service_id: formData.service_id || null, // Vínculo oficial para o ranking
+        status: 'paid',
         created_at: isoDate,
         paid_at: isoDate,
-        due_date: isoDate, // Corrigido: Evita o erro de NOT NULL constraint
+        due_date: isoDate,
       });
 
       if (error) throw error;
 
       toast.success("Lançamento registrado com sucesso!");
-      onSuccess(); // Recarrega a lista e os gráficos ao fundo
-      onClose();   // Fecha o modal
+      onSuccess();
+      onClose();
       
-      // Limpar formulário para o próximo uso
+      // Reset total do form
       setFormData({
         description: "",
         amount: "",
         type: "expense",
         category: "Comissão",
         payment_method: "pix",
-        date: new Date().toISOString().split('T')[0]
+        date: new Date().toISOString().split('T')[0],
+        service_id: ""
       });
 
     } catch (error: any) {
-      console.error("Erro no lançamento:", error);
       toast.error("Erro ao salvar: " + (error.message || "Erro desconhecido"));
     } finally {
       setLoading(false);
@@ -80,145 +113,90 @@ export function NewTransactionModal({ isOpen, onClose, onSuccess }: NewTransacti
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 font-sans">
-      <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300 border border-gray-100 dark:border-gray-700">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 font-sans text-gray-900">
+      <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 dark:border-gray-700 animate-in zoom-in-95 duration-300">
         
-        {/* HEADER */}
-        <div className="px-8 py-6 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-900/50">
+        <div className="px-8 py-6 border-b flex justify-between items-center bg-gray-50/50">
           <div>
-            <h3 className="font-black text-gray-900 dark:text-white uppercase italic tracking-tighter text-lg">Novo Lançamento</h3>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Financeiro & Fluxo de Caixa</p>
+            <h3 className="font-black uppercase italic tracking-tighter text-lg">Novo Lançamento</h3>
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Financeiro Vilagi</p>
           </div>
-          <button 
-            type="button" 
-            onClick={onClose} 
-            className="p-2 hover:bg-rose-50 hover:text-rose-500 rounded-full transition-colors text-gray-400"
-          >
-            <X size={22}/>
-          </button>
+          <button onClick={onClose} className="p-2 hover:bg-rose-50 hover:text-rose-500 rounded-full transition-colors text-gray-400"><X size={22}/></button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           
-          {/* SELETOR DE TIPO (RECEITA / DESPESA) */}
-          <div className="flex p-1 bg-gray-100 dark:bg-gray-900 rounded-2xl gap-1">
-            <button 
-                type="button"
-                onClick={() => setFormData({...formData, type: 'income', category: 'Vendas'})}
-                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                    formData.type === 'income' ? 'bg-white dark:bg-gray-800 text-emerald-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'
-                }`}
-            >
-                Entrada / Receita
-            </button>
-            <button 
-                type="button"
-                onClick={() => setFormData({...formData, type: 'expense', category: 'Comissão'})}
-                className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                    formData.type === 'expense' ? 'bg-white dark:bg-gray-800 text-rose-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'
-                }`}
-            >
-                Saída / Despesa
-            </button>
+          <div className="flex p-1 bg-gray-100 rounded-2xl gap-1">
+            <button type="button" onClick={() => setFormData({...formData, type: 'income', category: 'Vendas'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'income' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'}`}>Entrada / Receita</button>
+            <button type="button" onClick={() => setFormData({...formData, type: 'expense', category: 'Comissão'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.type === 'expense' ? 'bg-white text-rose-600 shadow-sm' : 'text-gray-400'}`}>Saída / Despesa</button>
           </div>
 
           <div className="space-y-4">
-            {/* DESCRIÇÃO */}
+            {formData.type === 'income' && (
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1"><Scissors size={10}/> Procedimento</label>
+                <select 
+                    className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
+                    value={formData.service_id}
+                    onChange={e => {
+                        const s = services.find(serv => serv.id === e.target.value);
+                        setFormData({
+                          ...formData, 
+                          service_id: e.target.value, 
+                          amount: s ? s.price.toString() : formData.amount
+                        });
+                    }}
+                >
+                    <option value="">-- Selecione o Serviço --</option>
+                    {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
+
             <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Descrição</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Observação / Descrição</label>
                 <input 
-                    required
-                    placeholder="Ex: Aluguel, Comissão, Insumos..."
-                    className="w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold text-gray-700 dark:text-gray-200 transition-all"
+                    placeholder={formData.type === 'income' ? "Ex: Nome da Paciente..." : "Ex: Aluguel, Luz, Insumos..."}
+                    className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-gray-700"
                     value={formData.description}
                     onChange={e => setFormData({...formData, description: e.target.value})}
                 />
             </div>
 
-            {/* VALOR E DATA */}
             <div className="grid grid-cols-2 gap-4">
                 <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
-                        <DollarSign size={10}/> Valor (R$)
-                    </label>
-                    <input 
-                        required
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-black text-lg text-gray-900 dark:text-white"
-                        value={formData.amount}
-                        onChange={e => setFormData({...formData, amount: e.target.value})}
-                    />
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1"><DollarSign size={10}/> Valor (R$)</label>
+                    <input required type="number" step="0.01" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 font-black text-lg" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} />
                 </div>
                 <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Data</label>
-                    <input 
-                        type="date"
-                        required
-                        className="w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold text-gray-700 dark:text-gray-200"
-                        value={formData.date}
-                        onChange={e => setFormData({...formData, date: e.target.value})}
-                    />
+                    <input type="date" required className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
                 </div>
             </div>
 
-            {/* CATEGORIA E MÉTODO */}
             <div className="grid grid-cols-2 gap-4">
                 <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1">
-                        <Tag size={10}/> Categoria
-                    </label>
-                    <select 
-                        className="w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold text-gray-600 dark:text-gray-300 appearance-none cursor-pointer"
-                        value={formData.category}
-                        onChange={e => setFormData({...formData, category: e.target.value})}
-                    >
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1 flex items-center gap-1"><Tag size={10}/> Categoria</label>
+                    <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
                         {formData.type === 'income' ? (
-                            <>
-                                <option value="Vendas">Vendas de Serviços</option>
-                                <option value="Produtos">Venda de Produtos</option>
-                                <option value="Outros">Outras Entradas</option>
-                            </>
+                            <><option value="Vendas">Vendas de Serviços</option><option value="Produtos">Produtos</option></>
                         ) : (
-                            <>
-                                <option value="Comissão">Comissão Profissional</option>
-                                <option value="Insumos">Materiais / Insumos</option>
-                                <option value="Aluguel">Aluguel / Condomínio</option>
-                                <option value="Energia/Água">Energia / Água</option>
-                                <option value="Marketing">Marketing / ADS</option>
-                                <option value="Pessoal">Salários / Encargos</option>
-                                <option value="Outros">Outras Despesas</option>
-                            </>
+                            <><option value="Comissão">Comissão</option><option value="Insumos">Materiais</option><option value="Aluguel">Aluguel</option></>
                         )}
                     </select>
                 </div>
                 <div>
                     <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Método</label>
-                    <select 
-                        className="w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold text-gray-600 dark:text-gray-300 appearance-none cursor-pointer"
-                        value={formData.payment_method}
-                        onChange={e => setFormData({...formData, payment_method: e.target.value})}
-                    >
-                        <option value="pix">Pix (Imediato)</option>
-                        <option value="credit_card">Cartão de Crédito</option>
-                        <option value="debit_card">Cartão de Débito</option>
-                        <option value="cash">Dinheiro Espécie</option>
-                        <option value="transfer">Transferência</option>
+                    <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500 text-xs font-bold" value={formData.payment_method} onChange={e => setFormData({...formData, payment_method: e.target.value})}>
+                        <option value="pix">Pix</option><option value="credit_card">Cartão Crédito</option><option value="cash">Dinheiro</option>
                     </select>
                 </div>
             </div>
           </div>
 
-          {/* BOTÃO SUBMIT */}
-          <button 
-            disabled={loading}
-            type="submit" 
-            className="w-full py-5 bg-gray-900 dark:bg-emerald-600 hover:bg-black dark:hover:bg-emerald-700 text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] flex items-center justify-center gap-2 mt-6 transition-all shadow-xl shadow-gray-200 dark:shadow-none"
-          >
+          <button disabled={loading} type="submit" className="w-full py-5 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] flex items-center justify-center gap-2 mt-6 transition-all shadow-xl active:scale-95">
             {loading ? <Loader2 className="animate-spin" size={18}/> : <><Check size={18}/> Confirmar Lançamento</>}
           </button>
-
         </form>
       </div>
     </div>

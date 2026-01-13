@@ -49,7 +49,7 @@ export function PatientAccessModal({ patient, onClose }: Props) {
         email_input: formData.email,
         password_input: formData.password,
         patient_id_input: patient.id,
-        clinic_id_input: patient.clinic_id // ✅ CORRIGIDO AQUI (era patient.clinicId)
+        clinic_id_input: patient.clinic_id // 
       });
 
       if (error) throw error;

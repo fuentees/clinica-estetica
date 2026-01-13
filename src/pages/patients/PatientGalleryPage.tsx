@@ -9,21 +9,21 @@ import { supabase } from "../../lib/supabase";
 import { Button } from "../../components/ui/button";
 import { BeforeAfterSlider } from "../../components/BeforeAfterSlider";
 
+interface GalleryPhoto {
+    id: string;
+    url: string;
+    created_at: string;
+    source: 'gallery' | 'evolution'; // Para saber de onde veio
+}
+
 export function PatientGalleryPage() {
   const { id } = useParams();
   
-  // Agora photos é um array de objetos, não só strings, para ser mais seguro
-  const [photos, setPhotos] = useState<{id: string, url: string, created_at: string}[]>([]);
-  
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  
-  // Estado para Lightbox (Zoom)
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
-  
-  // Estado para Comparação Manual
   const [compareSelection, setCompareSelection] = useState<string[]>([]);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,15 +33,48 @@ export function PatientGalleryPage() {
   async function loadData() {
     try {
         setLoading(true);
-        // Busca na tabela DEDICADA de fotos (muito mais seguro)
-        const { data, error } = await supabase
+        
+        // 1. Busca fotos da Galeria (Tabela patient_photos)
+        const { data: galleryData } = await supabase
             .from("patient_photos")
-            .select("*")
-            .eq("patient_id", id)
-            .order("created_at", { ascending: true }); // Mais antigas primeiro para a timeline
+            .select("id, url, created_at")
+            .eq("patient_id", id);
 
-        if (error) throw error;
-        setPhotos(data || []);
+        // 2. Busca fotos das Evoluções (JSON em evolution_records)
+        const { data: evolutionData } = await supabase
+            .from("evolution_records")
+            .select("id, created_at, attachments")
+            .eq("patient_id", id);
+
+        const allPhotos: GalleryPhoto[] = [];
+
+        // Processa Galeria
+        if (galleryData) {
+            galleryData.forEach(p => {
+                allPhotos.push({ ...p, source: 'gallery' });
+            });
+        }
+
+        // Processa Evoluções (Extrai URLs do JSON)
+        if (evolutionData) {
+            evolutionData.forEach(record => {
+                if (record.attachments && record.attachments.photos && Array.isArray(record.attachments.photos)) {
+                    record.attachments.photos.forEach((photoUrl: string) => {
+                        allPhotos.push({
+                            id: record.id, // Usa ID da evolução como referência
+                            url: photoUrl,
+                            created_at: record.created_at,
+                            source: 'evolution'
+                        });
+                    });
+                }
+            });
+        }
+
+        // Ordena por data (mais antigas primeiro para timeline visual)
+        allPhotos.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+        setPhotos(allPhotos);
     } catch (error) { 
         console.error("Erro ao carregar galeria:", error); 
     } finally { 
@@ -54,33 +87,28 @@ export function PatientGalleryPage() {
      
      setUploading(true);
      const file = e.target.files[0];
-     // Nome do arquivo limpo
      const fileName = `${id}/${Date.now()}_${Math.random().toString(36).substring(7)}`; 
      
      try {
-         // 1. Upload Físico (Storage)
          const { error: uploadError } = await supabase.storage.from('patient-photos').upload(fileName, file);
          if (uploadError) throw uploadError;
          
-         // 2. Pegar URL
          const { data } = supabase.storage.from('patient-photos').getPublicUrl(fileName);
          const publicUrl = data.publicUrl;
          
-         // 3. Salvar no Banco (INSERT simples e robusto)
          const { data: newPhoto, error: dbError } = await supabase
-            .from("patient_photos")
-            .insert({
-                patient_id: id,
-                url: publicUrl
-            })
-            .select()
-            .single();
+           .from("patient_photos")
+           .insert({
+               patient_id: id,
+               url: publicUrl
+           })
+           .select()
+           .single();
 
          if (dbError) throw dbError;
          
-         // Atualiza a tela imediatamente
-         setPhotos(prev => [...prev, newPhoto]);
-         toast.success("Foto salva com segurança!");
+         setPhotos(prev => [...prev, { ...newPhoto, source: 'gallery' }]);
+         toast.success("Foto salva!");
      } catch (err: any) { 
          console.error(err);
          toast.error("Erro ao salvar: " + err.message); 
@@ -90,32 +118,23 @@ export function PatientGalleryPage() {
      }
   }
 
-  const handleDelete = async (photoId: string, urlToDelete: string) => {
-      if(!confirm("Tem certeza que deseja apagar esta foto permanentemente?")) return;
+  const handleDelete = async (photoId: string, urlToDelete: string, source: 'gallery' | 'evolution') => {
+      if (source === 'evolution') {
+          toast.error("Fotos de evolução devem ser apagadas no Prontuário.");
+          return;
+      }
+
+      if(!confirm("Apagar esta foto da galeria?")) return;
       
       try {
-          // 1. Remove do Banco
-          const { error } = await supabase
-            .from("patient_photos")
-            .delete()
-            .eq("id", photoId);
-
+          const { error } = await supabase.from("patient_photos").delete().eq("id", photoId);
           if (error) throw error;
 
-          // 2. Remove do Storage (opcional, mas bom para limpar)
-          try {
-             const path = urlToDelete.split('/patient-photos/')[1]; 
-             if (path) await supabase.storage.from('patient-photos').remove([decodeURIComponent(path)]);
-          } catch (e) { console.log("Erro ao limpar storage", e)}
-
-          // 3. Atualiza tela
           setPhotos(prev => prev.filter(p => p.id !== photoId));
           setCompareSelection(prev => prev.filter(url => url !== urlToDelete));
           toast.success("Foto excluída.");
-
       } catch (error: any) {
-          console.error(error);
-          toast.error("Erro ao excluir: " + error.message);
+          toast.error("Erro ao excluir.");
       }
   }
 
@@ -124,14 +143,13 @@ export function PatientGalleryPage() {
         setCompareSelection(prev => prev.filter(p => p !== url));
     } else {
         if (compareSelection.length >= 2) {
-            toast.error("Remova uma foto antes de adicionar outra.");
+            toast.error("Selecione apenas 2 fotos para comparar.");
             return;
         }
         setCompareSelection(prev => [...prev, url]);
     }
   }
 
-  // Helper para data
   const formatDate = (dateString: string) => {
       return new Date(dateString).toLocaleDateString('pt-BR');
   }
@@ -157,7 +175,7 @@ export function PatientGalleryPage() {
                         Timeline <span className="text-pink-600">Visual</span>
                     </h2>
                     <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">
-                        {photos.length} Fotos Registradas
+                        {photos.length} Fotos (Galeria + Prontuário)
                     </p>
                 </div>
             </div>
@@ -170,7 +188,7 @@ export function PatientGalleryPage() {
                     className="h-14 px-8 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl transition-all hover:scale-105 active:scale-95"
                 >
                     {uploading ? <Loader2 className="animate-spin mr-2" /> : <Upload size={18} className="mr-2 text-pink-500" />} 
-                    Nova Foto
+                    Nova Foto Avulsa
                 </Button>
             </div>
         </div>
@@ -201,7 +219,6 @@ export function PatientGalleryPage() {
                     )}
                 </div>
 
-                {/* CORREÇÃO DO CORTE E BARRA PRETA: h-[600px] e bg-gray-100 */}
                 <div className="max-w-lg mx-auto w-full h-[600px] rounded-[2rem] overflow-hidden shadow-2xl border-4 border-gray-100 dark:border-gray-900 animate-in zoom-in-95 duration-700 bg-gray-100 dark:bg-gray-950 flex items-center justify-center">
                     <BeforeAfterSlider 
                         beforeImage={compareSelection.length === 2 ? compareSelection[0] : photos[0].url} 
@@ -230,13 +247,14 @@ export function PatientGalleryPage() {
             </div>
         ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                {/* .slice().reverse() para mostrar as mais novas primeiro na grade */}
+                {/* Mostra as mais recentes primeiro na grade */}
                 {photos.slice().reverse().map((photo, i) => {
                     const isSelected = compareSelection.includes(photo.url);
+                    const isEvolution = photo.source === 'evolution';
                     
                     return (
                         <div 
-                            key={photo.id} 
+                            key={`${photo.id}-${i}`} 
                             className={`group relative aspect-[3/4] rounded-[2rem] overflow-hidden border-4 shadow-lg bg-gray-100 transition-all duration-500 hover:shadow-2xl hover:-translate-y-2 cursor-pointer
                                 ${isSelected ? 'border-pink-500 ring-4 ring-pink-500/20 z-10 scale-105' : 'border-white dark:border-gray-800'}
                             `}
@@ -248,6 +266,13 @@ export function PatientGalleryPage() {
                                 alt={`Foto ${i}`} 
                             />
                             
+                            {/* Badge de Origem */}
+                            {isEvolution && (
+                                <div className="absolute top-4 left-4 bg-black/50 backdrop-blur-sm text-white text-[8px] font-black uppercase px-2 py-1 rounded-lg">
+                                    Prontuário
+                                </div>
+                            )}
+
                             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4 md:p-6"
                                  onClick={(e) => e.stopPropagation()} 
                             >
@@ -260,13 +285,16 @@ export function PatientGalleryPage() {
                                         <ArrowRightLeft size={18}/>
                                      </button>
 
-                                     <button 
-                                        onClick={(e) => { e.stopPropagation(); handleDelete(photo.id, photo.url); }} 
-                                        className="p-3 bg-red-600/80 hover:bg-red-600 text-white rounded-full backdrop-blur-md transition-all hover:scale-110 hover:shadow-lg hover:shadow-red-600/30"
-                                        title="Excluir"
-                                     >
-                                        <Trash2 size={18}/>
-                                     </button>
+                                     {/* Só permite excluir se for da galeria (não evolução) */}
+                                     {!isEvolution && (
+                                         <button 
+                                            onClick={(e) => { e.stopPropagation(); handleDelete(photo.id, photo.url, photo.source); }} 
+                                            className="p-3 bg-red-600/80 hover:bg-red-600 text-white rounded-full backdrop-blur-md transition-all hover:scale-110 hover:shadow-lg hover:shadow-red-600/30"
+                                            title="Excluir"
+                                         >
+                                            <Trash2 size={18}/>
+                                         </button>
+                                     )}
                                 </div>
                                 
                                 <div className="text-center">

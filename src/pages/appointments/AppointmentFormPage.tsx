@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,16 +8,16 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { toast } from 'react-hot-toast';
 import { 
-  Loader2, ArrowLeft, Calendar as CalendarIcon, Clock, 
-  Package, CheckCircle2, User, Sparkles, CreditCard, AlertTriangle, DoorOpen, Stethoscope 
+  Loader2, ArrowLeft, Clock, 
+  Package, CheckCircle2, User, Sparkles, DoorOpen, Stethoscope,
+  Info, FileText, Search
 } from 'lucide-react'; 
 import { addMinutes, format, parseISO } from 'date-fns';
 
-// --- SCHEMA CORRIGIDO (Tudo snake_case) ---
 const appointmentSchema = z.object({
   patient_id: z.string().min(1, "Selecione um paciente"),
   professional_id: z.string().min(1, "Selecione um profissional"),
-  service_id: z.string().min(1, "Selecione um procedimento"), // CORRIGIDO: serviceId -> service_id
+  service_id: z.string().min(1, "Selecione um procedimento"),
   date: z.string().min(1, "Data é obrigatória"),
   time: z.string().min(1, "Horário é obrigatório"),
   room: z.string().optional(),
@@ -26,47 +26,21 @@ const appointmentSchema = z.object({
 
 type AppointmentFormData = z.infer<typeof appointmentSchema>;
 
-// --- TIPAGEM ---
-interface Patient {
-  id: string;
-  name: string;
-  cpf?: string;
-}
-
-interface Professional {
-  id: string;
-  first_name: string;
-  last_name?: string;
-  role: string;
-  full_name?: string;
-  email?: string;
-}
-
-interface Service { 
-  id: string;
-  name: string;
-  duration: number;
-  price: number;
-}
-
-interface PackageType {
-  id: string;
-  title: string;
-  total_sessions: number;
-  used_sessions: number;
-}
+interface Patient { id: string; name: string; }
+interface Professional { id: string; first_name: string; role: string; }
+interface Service { id: string; name: string; duration: number; }
+interface InventoryItem { name: string; quantity: number; unit: string; }
 
 const AVAILABLE_ROOMS = ["Sala 1 - Facial", "Sala 2 - Corporal", "Consultório 1", "Consultório 2", "Box 3"];
 
 export function AppointmentFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const dropdownRef = useRef<HTMLDivElement>(null);
   
-  const preSelectedDate = searchParams.get('date'); 
-  const preSelectedProfId = searchParams.get('professionalId');
-
-  const initialDate = preSelectedDate ? format(parseISO(preSelectedDate), 'yyyy-MM-dd') : new Date().toISOString().split('T')[0];
-  const initialTime = '09:00';
+  const initialDate = searchParams.get('date') 
+    ? format(parseISO(searchParams.get('date')!), 'yyyy-MM-dd') 
+    : new Date().toISOString().split('T')[0];
 
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -75,305 +49,278 @@ export function AppointmentFormPage() {
   const [patientsList, setPatientsList] = useState<Patient[]>([]);
   const [servicesList, setServicesList] = useState<Service[]>([]); 
   const [professionalsList, setProfessionalsList] = useState<Professional[]>([]);
-  const [activePackages, setActivePackages] = useState<PackageType[]>([]);
-  const [usePackageId, setUsePackageId] = useState<string | null>(null);
+  const [serviceKit, setServiceKit] = useState<InventoryItem[]>([]);
+  
+  const [patientSearch, setPatientSearch] = useState("");
+  const [showPatientList, setShowPatientList] = useState(false);
 
-  // Zod usa snake_case agora
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<AppointmentFormData>({
     resolver: zodResolver(appointmentSchema),
     defaultValues: { 
         date: initialDate, 
-        time: initialTime,
-        professional_id: preSelectedProfId || '' 
+        time: '09:00',
+        professional_id: searchParams.get('professionalId') || ''
     }
   });
 
-  // Watch corrigidos para snake_case
-  const selectedPatientId = watch('patient_id');
   const selectedServiceId = watch('service_id');
   const selectedProfessionalId = watch('professional_id');
-  const watchDate = watch('date');
-  const watchTime = watch('time');
 
   useEffect(() => {
-      if (preSelectedProfId) setValue('professional_id', preSelectedProfId);
-      if (preSelectedDate) setValue('date', initialDate);
-  }, [preSelectedProfId, preSelectedDate, setValue, initialDate]);
-
-  // --- CARREGAMENTO INICIAL ---
-  useEffect(() => {
-    let isMounted = true;
-    const timeout = setTimeout(() => {
-        if (isMounted && loading) {
-            setLoading(false);
-            toast.error("O sistema demorou para responder.");
-        }
-    }, 10000);
-
-    async function loadData() {
+    async function loadInitialData() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error("Usuário não logado");
+        const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user?.id).single();
+        if (!profile?.clinic_id) return;
+        setClinicId(profile.clinic_id);
 
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('clinic_id:clinic_id')
-          .eq('id', user.id)
-          .single();
-
-        if (!profile?.clinic_id) throw new Error("Usuário sem clínica vinculada");
-        if (isMounted) setClinicId(profile.clinic_id);
-        
-        const [patientsReq, servicesReq, professionalsReq] = await Promise.allSettled([
-            supabase.from('patients').select('id, cpf, name').eq('clinic_id', profile.clinic_id).order('name'),
-            supabase.from('services').select('id, name, duration, price').eq('clinic_id', profile.clinic_id).order('name'),
-            // Corrigido clinicId -> clinic_id
-            supabase.from('profiles').select('id, first_name, last_name, email, role, clinic_id').eq('clinic_id', profile.clinic_id)
+        const [pats, servs, profs] = await Promise.all([
+          supabase.from('patients').select('id, name').eq('clinic_id', profile.clinic_id).order('name'),
+          supabase.from('services').select('id, name, duration').eq('clinic_id', profile.clinic_id).order('name'),
+          supabase.from('profiles')
+            .select('id, first_name, role')
+            .eq('clinic_id', profile.clinic_id)
+            .in('role', ['profissional', 'esteticista', 'doutor', 'biomedica', 'biomedico']) 
         ]);
 
-        if (isMounted) {
-            if (patientsReq.status === 'fulfilled' && patientsReq.value.data) setPatientsList(patientsReq.value.data);
-            if (servicesReq.status === 'fulfilled' && servicesReq.value.data) setServicesList(servicesReq.value.data);
-            if (professionalsReq.status === 'fulfilled' && professionalsReq.value.data) {
-                const data = professionalsReq.value.data;
-                const filteredProfs = data.filter((p: any) => 
-                    ['profissional', 'admin', 'doutor', 'esteticista', 'recepcionista'].includes(p.role || 'profissional')
-                );
-                setProfessionalsList(filteredProfs);
-            }
-        }
-      } catch (error: any) {
-        console.error("ERRO CRÍTICO:", error);
+        if (pats.data) setPatientsList(pats.data);
+        if (servs.data) setServicesList(servs.data);
+        if (profs.data) setProfessionalsList(profs.data);
       } finally {
-        if (isMounted) setLoading(false);
-        clearTimeout(timeout);
+        setLoading(false);
       }
     }
-    loadData();
-    return () => { isMounted = false; clearTimeout(timeout); };
+    loadInitialData();
   }, []);
 
-  // Busca Pacotes
   useEffect(() => {
-    if (selectedPatientId) {
-        // ... (código comentado mantido)
-        setActivePackages([]); 
-        setUsePackageId(null);
-    } else {
-        setActivePackages([]);
-        setUsePackageId(null);
-    }
-  }, [selectedPatientId]);
+    const fetchKit = async () => {
+      if (!selectedServiceId) {
+        setServiceKit([]);
+        return;
+      }
 
-  const selectedPatient = patientsList.find(p => p.id === selectedPatientId);
-  const selectedService = servicesList.find(s => s.id === selectedServiceId);
-  const selectedProfessional = professionalsList.find(p => p.id === selectedProfessionalId);
+      try {
+        const { data: items } = await supabase
+          .from('procedure_items')
+          .select('inventory_id, quantity_needed')
+          .eq('procedure_id', selectedServiceId); 
+
+        if (items && items.length > 0) {
+          const invIds = items.map(i => i.inventory_id);
+          
+          const { data: invData } = await supabase
+            .from('inventory')
+            .select('id, name')
+            .in('id', invIds);
+
+          if (invData) {
+            const formatted = items.map(item => {
+              const info = invData.find(iv => iv.id === item.inventory_id);
+              return {
+                name: info?.name || 'Insumo',
+                quantity: item.quantity_needed,
+                unit: 'it' 
+              };
+            });
+            setServiceKit(formatted);
+          }
+        } else {
+          setServiceKit([]);
+        }
+      } catch (err) {
+        setServiceKit([]);
+      }
+    };
+
+    fetchKit();
+  }, [selectedServiceId]);
+
+  const filteredPatients = patientsList.filter(p => 
+    p.name.toLowerCase().includes(patientSearch.toLowerCase())
+  );
+
+  const selectPatient = (p: Patient) => {
+    setValue('patient_id', p.id);
+    setPatientSearch(p.name);
+    setShowPatientList(false);
+  };
 
   const onSubmit = async (data: AppointmentFormData) => {
-    if (!clinicId) return toast.error("Erro de identificação da clínica.");
+    if (!clinicId) return;
     setIsSubmitting(true);
     try {
+      // Cria a data combinando dia e hora (no fuso local)
       const startDateTime = new Date(`${data.date}T${data.time}`);
-      const durationMinutes = selectedService?.duration || 60;
-      const endDateTime = addMinutes(startDateTime, durationMinutes);
+      const service = servicesList.find(s => s.id === data.service_id);
+      const endDateTime = addMinutes(startDateTime, service?.duration || 60);
 
-      // ✅ CORREÇÃO: Agora 'data' já vem em snake_case do formulário
+      // ✅ CORREÇÃO DE FUSO HORÁRIO: Remove o deslocamento do 'Z' (UTC)
+      const toLocalISO = (date: Date) => {
+        const offset = date.getTimezoneOffset() * 60000;
+        return new Date(date.getTime() - offset).toISOString().slice(0, -1);
+      };
+
       const { error } = await supabase.from('appointments').insert({
           clinic_id: clinicId,
-          patient_id: data.patient_id,           // Já está snake_case
-          professional_id: data.professional_id, // Já está snake_case
-          service_id: data.service_id,           // Já está snake_case
-          start_time: startDateTime.toISOString(),
-          end_time: endDateTime.toISOString(),
+          patient_id: data.patient_id,
+          professional_id: data.professional_id,
+          service_id: data.service_id,
+          // ✅ Envia string exata sem conversão automática de timezone
+          start_time: toLocalISO(startDateTime), 
+          end_time: toLocalISO(endDateTime),
           status: 'scheduled',
+          room: data.room,
           notes: data.notes,
       });
 
       if (error) throw error;
-
       toast.success('Agendamento confirmado!');
-      if (preSelectedProfId) navigate(-1); else navigate('/appointments');
-
+      navigate('/appointments');
     } catch (error: any) {
-      console.error(error);
-      toast.error(`Erro ao agendar: ${error.message}`);
+      toast.error(error.message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (loading) return (
-    <div className="flex flex-col h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 gap-4">
-        <Loader2 className="animate-spin text-pink-600 w-10 h-10" />
-        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest animate-pulse">Sincronizando Agenda...</p>
-    </div>
-  );
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-pink-600 w-12 h-12" /></div>;
 
   return (
-    <div className="max-w-[1400px] mx-auto p-4 md:p-8 min-h-screen bg-gray-50 dark:bg-gray-900 animate-in fade-in duration-500">
+    <div className="max-w-[1400px] mx-auto p-4 md:p-8 min-h-screen bg-gray-50 dark:bg-gray-900 animate-in fade-in">
       
       <div className="flex items-center gap-4 mb-8">
-        <Button variant="ghost" onClick={() => navigate(-1)} className="bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
-          <ArrowLeft size={20} />
-        </Button>
+        <Button variant="ghost" onClick={() => navigate(-1)} className="bg-white dark:bg-gray-800 shadow-sm border rounded-xl"><ArrowLeft size={20} /></Button>
         <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Nova Sessão</h1>
-            <p className="text-sm text-gray-500">Agendamento de atendimento</p>
+            <h1 className="text-2xl font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">Novo <span className="text-pink-600">Agendamento</span></h1>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Controle de Logística e Agenda</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* FORMULÁRIO */}
         <div className="lg:col-span-8 space-y-6">
-            <form id="appt-form" onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+            <form id="appt-form" onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 
-                {/* 1. SELEÇÃO DE PACIENTE */}
-                <section className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-800 dark:text-white"><User size={18} className="text-pink-600"/> Dados do Paciente</h2>
-                    <div className="md:col-span-2">
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Nome do Paciente</label>
-                        {patientsList.length === 0 ? (
-                            <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-lg text-yellow-800 text-sm flex items-center gap-2"><AlertTriangle size={16}/> Nenhum paciente cadastrado.</div>
-                        ) : (
-                            <select {...register('patient_id')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 transition-all cursor-pointer">
-                                <option value="">Selecione o paciente...</option>
-                                {patientsList.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                            </select>
+                {/* BUSCA DE PACIENTE */}
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700 relative" ref={dropdownRef}>
+                    <label className="text-[10px] font-black uppercase text-gray-400 mb-3 block flex items-center gap-2"><User size={14} className="text-pink-600"/> Paciente</label>
+                    <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input 
+                            type="text"
+                            placeholder="Pesquisar paciente..."
+                            value={patientSearch}
+                            onFocus={() => setShowPatientList(true)}
+                            onChange={(e) => {
+                                setPatientSearch(e.target.value);
+                                setShowPatientList(true);
+                            }}
+                            className="w-full pl-12 pr-12 h-16 bg-gray-50 dark:bg-gray-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 text-sm font-bold shadow-inner"
+                        />
+                        {showPatientList && (
+                            <div className="absolute z-50 w-full mt-2 bg-white dark:bg-gray-800 border border-gray-100 rounded-2xl shadow-2xl max-h-60 overflow-y-auto">
+                                {filteredPatients.map(p => (
+                                    <button key={p.id} type="button" onClick={() => selectPatient(p)} className="w-full text-left px-6 py-4 hover:bg-pink-50 dark:hover:bg-pink-900/20 text-sm font-bold text-gray-700 dark:text-gray-200 border-b last:border-0 border-gray-50 dark:border-gray-800 transition-colors">
+                                        {p.name}
+                                    </button>
+                                ))}
+                            </div>
                         )}
-                        {errors.patient_id && <span className="text-xs text-red-500 mt-1 block">{errors.patient_id.message}</span>}
                     </div>
-                </section>
+                </div>
 
-                {/* 2. SELEÇÃO DE PROFISSIONAL */}
-                <section className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                    <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800 dark:text-white"><Sparkles size={18} className="text-purple-600"/> Profissional</h2>
-                        <span className="text-xs text-gray-400 font-mono">Total: {professionalsList.length}</span>
+                {/* PROCEDIMENTO */}
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700">
+                    <label className="text-[10px] font-black uppercase text-gray-400 mb-3 block flex items-center gap-2"><Sparkles size={14} className="text-purple-600"/> Tratamento</label>
+                    <select {...register('service_id')} className="w-full h-16 px-6 bg-gray-50 dark:bg-gray-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 font-bold text-sm shadow-inner appearance-none cursor-pointer">
+                        <option value="">-- Selecione o serviço --</option>
+                        {servicesList.map(s => <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>)}
+                    </select>
+                </div>
+
+                {/* PROFISSIONAL */}
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700">
+                    <label className="text-[10px] font-black uppercase text-gray-400 mb-4 block flex items-center gap-2"><Stethoscope size={14} className="text-blue-600"/> Profissional</label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {professionalsList.map(p => (
+                            <label key={p.id} className={`cursor-pointer p-4 rounded-3xl border-2 transition-all flex flex-col items-center gap-3 ${selectedProfessionalId === p.id ? 'border-pink-500 bg-pink-50 shadow-md ring-2 ring-pink-500/20' : 'border-gray-50 bg-gray-50 dark:bg-gray-900'}`}>
+                                <input type="radio" value={p.id} {...register('professional_id')} className="hidden" />
+                                <div className={`w-14 h-14 rounded-full flex items-center justify-center font-black text-xl text-white shadow-lg ${selectedProfessionalId === p.id ? 'bg-pink-500 scale-110' : 'bg-gray-400'} transition-transform`}>
+                                    {p.first_name[0]}
+                                </div>
+                                <span className="text-[10px] font-black uppercase truncate w-full text-center tracking-tight">{p.first_name}</span>
+                            </label>
+                        ))}
                     </div>
-                    
-                    {professionalsList.length === 0 ? (
-                        <div className="text-center p-6 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-900/50">
-                            <AlertTriangle className="mx-auto text-orange-500 mb-2" size={24} />
-                            <p className="text-sm font-bold text-orange-700 dark:text-orange-300">Nenhum profissional encontrado.</p>
-                            <p className="text-xs text-orange-600 mt-1">Verifique se existem usuários vinculados a esta clínica.</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                            {professionalsList.map(p => (
-                                <label key={p.id} className={`cursor-pointer relative p-4 rounded-xl border-2 transition-all hover:shadow-md flex flex-col items-center text-center gap-3 ${selectedProfessionalId === p.id ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 shadow-md ring-1 ring-pink-500' : 'border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 hover:border-pink-200'}`}>
-                                    <input type="radio" value={p.id} {...register('professional_id')} className="absolute opacity-0 w-full h-full cursor-pointer left-0 top-0" />
-                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-lg transition-colors ${selectedProfessionalId === p.id ? 'bg-pink-500' : 'bg-gray-400 dark:bg-gray-600'}`}>
-                                        {p.first_name ? p.first_name[0].toUpperCase() : (p.email ? p.email[0].toUpperCase() : '?')}
-                                    </div>
-                                    <div className="w-full">
-                                        <span className="block font-bold text-sm text-gray-800 dark:text-white truncate">
-                                            {p.first_name || p.email || "Sem Nome"}
-                                        </span>
-                                        <span className="block text-[10px] uppercase font-semibold text-gray-500 mt-1 tracking-wide">{p.role || "Colaborador"}</span>
-                                    </div>
-                                    {selectedProfessionalId === p.id && (
-                                        <div className="absolute top-2 right-2 text-pink-500 animate-in zoom-in duration-200"><CheckCircle2 size={18} fill="currentColor" className="text-white"/></div>
-                                    )}
-                                </label>
-                            ))}
-                        </div>
-                    )}
-                    {errors.professional_id && <span className="text-xs text-red-500 mt-2 block font-medium">{errors.professional_id.message}</span>}
-                </section>
+                </div>
 
-                {/* 3. SERVIÇO & DATA & SALA */}
-                <section className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-800 dark:text-white"><Clock size={18} className="text-blue-600"/> Detalhes da Sessão</h2>
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block flex items-center gap-1"><Stethoscope size={12}/> Tratamento / Serviço</label>
-                            <select {...register('service_id')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 cursor-pointer">
-                                <option value="">Selecione...</option>
-                                {servicesList.map(s => (<option key={s.id} value={s.id}>{s.name} • {s.duration} min • R$ {s.price}</option>))}
-                            </select>
-                            {errors.service_id && <span className="text-xs text-red-500 mt-1 block">{errors.service_id.message}</span>}
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Data</label>
-                                <Input type="date" {...register('date')} className="bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700" />
-                                {errors.date && <span className="text-xs text-red-500 mt-1 block">{errors.date.message}</span>}
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Horário</label>
-                                <Input type="time" {...register('time')} className="bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700" />
-                                {errors.time && <span className="text-xs text-red-500 mt-1 block">{errors.time.message}</span>}
-                            </div>
-                        </div>
-
-                        <div className="md:col-span-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block flex items-center gap-1"><DoorOpen size={12}/> Sala / Consultório</label>
-                            <select {...register('room')} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500">
-                                <option value="">Selecione a sala (Opcional)</option>
-                                {AVAILABLE_ROOMS.map(room => (<option key={room} value={room}>{room}</option>))}
-                            </select>
-                        </div>
-                        <div className="md:col-span-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Observações (Opcional)</label>
-                            <textarea {...register('notes')} rows={3} className="w-full p-3 border rounded-xl bg-gray-50 dark:bg-gray-900 dark:border-gray-700 outline-none focus:ring-2 focus:ring-pink-500 resize-none" placeholder="Ex: Paciente tem sensibilidade..."></textarea>
-                        </div>
+                {/* LOGÍSTICA */}
+                <div className="grid md:grid-cols-3 gap-6">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                        <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block">Data</label>
+                        <Input type="date" {...register('date')} className="h-14 border-none bg-gray-50 font-black text-sm" />
                     </div>
-                </section>
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                        <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block">Hora</label>
+                        <Input type="time" {...register('time')} className="h-14 border-none bg-gray-50 font-black text-sm" />
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                        <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block flex items-center gap-1"><DoorOpen size={12}/> Sala</label>
+                        <select {...register('room')} className="w-full h-14 bg-gray-50 dark:bg-gray-900 border-none rounded-xl font-black text-xs outline-none cursor-pointer">
+                            <option value="">Selecione (Opcional)</option>
+                            {AVAILABLE_ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] border border-gray-100 shadow-sm">
+                    <label className="text-[10px] font-black uppercase text-gray-400 mb-2 block flex items-center gap-2"><FileText size={14}/> Notas de Sessão</label>
+                    <textarea {...register('notes')} rows={3} className="w-full p-4 bg-gray-50 dark:bg-gray-900 border-none rounded-2xl outline-none focus:ring-2 focus:ring-pink-500 resize-none text-sm font-medium" placeholder="Informações adicionais..."></textarea>
+                </div>
             </form>
         </div>
 
-        {/* RESUMO */}
-        <div className="lg:col-span-4 space-y-6">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 sticky top-6">
-                <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-6 border-b pb-4 dark:border-gray-700">Resumo do Agendamento</h3>
-                <div className="space-y-4 mb-6">
-                    <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-500">Paciente</span>
-                        <span className="text-sm font-bold text-gray-800 dark:text-white text-right truncate max-w-[150px]">{selectedPatient ? selectedPatient.name : '-'}</span>
+        {/* DASHBOARD DIREITO */}
+        <div className="lg:col-span-4">
+            <div className="bg-gray-900 text-white p-10 rounded-[3rem] shadow-2xl sticky top-8 border-t-[12px] border-pink-600">
+                <h3 className="text-xl font-black italic uppercase tracking-tighter mb-8 flex items-center gap-3"><Info size={24} className="text-pink-500"/> Logística</h3>
+                
+                <div className="space-y-6">
+                    <div className="p-6 bg-white/5 rounded-[2rem] border border-white/10">
+                        <p className="text-[10px] font-black uppercase text-pink-400 mb-6 flex items-center gap-2"><Package size={14}/> Kit de Materiais</p>
+                        
+                        {serviceKit.length > 0 ? (
+                          <div className="space-y-4">
+                            {serviceKit.map((item, idx) => (
+                              <div key={idx} className="flex justify-between items-center border-b border-white/5 pb-3">
+                                <span className="text-xs font-bold text-gray-200 uppercase">{item.name}</span>
+                                <span className="text-xs text-pink-500 font-black">{item.quantity} <span className="text-[9px] text-gray-500 uppercase">{item.unit}</span></span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="py-10 text-center opacity-40 border-2 border-dashed border-white/10 rounded-2xl">
+                            <Package size={24} className="mx-auto mb-3" />
+                            <p className="text-[8px] font-black uppercase tracking-[0.2em] leading-relaxed">Selecione o tratamento para<br/>carregar o kit</p>
+                          </div>
+                        )}
                     </div>
-                    <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-500">Profissional</span>
-                        <span className="text-sm font-bold text-gray-800 dark:text-white text-right">{selectedProfessional ? (selectedProfessional.first_name || 'Sem Nome') : '-'}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-500">Data/Hora</span>
-                        <span className="text-sm font-bold text-gray-800 dark:text-white text-right">{watchDate && watchTime ? `${new Date(watchDate).toLocaleDateString('pt-BR')} às ${watchTime}` : '-'}</span>
-                    </div>
-                    <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-100 dark:border-gray-700">
-                        <p className="text-xs text-gray-400 uppercase font-bold mb-1">Serviço Selecionado</p>
-                        <p className="text-base font-bold text-pink-600">{selectedService?.name || 'Nenhum selecionado'}</p>
+
+                    <div className="p-6 bg-white/5 rounded-[2rem] border border-white/10 flex items-center justify-between">
+                         <div>
+                            <p className="text-[10px] font-black uppercase text-blue-400 mb-1">Duração Reservada</p>
+                            <p className="text-4xl font-black italic tracking-tighter">{servicesList.find(s => s.id === selectedServiceId)?.duration || '0'} <span className="text-sm">MIN</span></p>
+                         </div>
+                         <Clock size={40} className="text-blue-500 opacity-30" />
                     </div>
                 </div>
-                
-                {selectedService && (
-                    <div className="mb-6 animate-in fade-in slide-in-from-bottom-4">
-                        <p className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-1"><CreditCard size={12}/> Método de Cobrança</p>
-                        <div className="space-y-2">
-                            {/* Lógica de pacotes simplificada para visualização */}
-                            <label className={`flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all ${usePackageId === null ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-100 dark:border-gray-700 hover:border-blue-200'}`}>
-                                <div className="flex items-center gap-3">
-                                    <input type="radio" name="payment_method" checked={usePackageId === null} onChange={() => setUsePackageId(null)} className="text-blue-600 focus:ring-blue-500 w-4 h-4"/>
-                                    <div>
-                                        <span className="block text-sm font-bold text-gray-800 dark:text-white">Pagamento Avulso</span>
-                                        <span className="text-xs text-gray-500">Sessão única</span>
-                                    </div>
-                                </div>
-                                <span className="text-sm font-bold text-blue-600">
-                                    {selectedService.price ? `R$ ${selectedService.price}` : 'R$ -'}
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                )}
 
-                <Button form="appt-form" type="submit" disabled={isSubmitting} className="w-full h-12 text-lg bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white shadow-lg shadow-pink-200 dark:shadow-none transition-all">
-                    {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle2 className="mr-2" />} Confirmar Agenda
+                <Button form="appt-form" type="submit" disabled={isSubmitting} className="w-full mt-12 h-20 rounded-[1.5rem] bg-pink-600 hover:bg-pink-700 text-white font-black uppercase tracking-[0.2em] text-xs shadow-2xl transition-all active:scale-95 group">
+                    {isSubmitting ? <Loader2 className="animate-spin" /> : <><CheckCircle2 size={20} className="mr-2" /> Confirmar Agenda</>}
                 </Button>
             </div>
         </div>
-
       </div>
     </div>
   );

@@ -498,6 +498,12 @@ model Appointment {
   professionalId String  @map("professional_id") @db.Uuid
   serviceId      String? @map("service_id") @db.Uuid
 
+  status String   @default("scheduled")
+  notes  String?
+  room   String?  // <-- ADICIONE ESTA LINHA AQUI
+  price  Decimal? @db.Decimal(10, 2)
+  // ... resto do modelo
+
   // Relacionamentos
   patient      Patient  @relation(fields: [patientId], references: [id])
   professional Profile  @relation(fields: [professionalId], references: [id])
@@ -509,6 +515,7 @@ model Appointment {
   @@index([clinicId, startAt])
   @@index([professionalId, startAt])
   @@map("appointments")
+  
 }
 
 // ======================================================
@@ -808,4 +815,24 @@ model Procedure {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("procedures")
+}
+model Inventory {
+  id          String           @id @default(uuid())
+  clinic_id   String
+  name        String
+  unit        String           // ml, g, unidade
+  quantity    Float            @default(0)
+  min_stock   Float            @default(0)
+  cost_price  Float            @default(0) // Custo por unidade para o financeiro
+  procedures  ProcedureItem[]
+}
+
+model ProcedureItem {
+  id           String    @id @default(uuid())
+  service_id   String
+  inventory_id String
+  quantity     Float     // Quanto consome por sessão (ex: 5ml)
+  
+  service      Service   @relation(fields: [service_id], references: [id])
+  inventory    Inventory @relation(fields: [inventory_id], references: [id])
 }

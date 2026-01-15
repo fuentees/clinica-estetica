@@ -21,7 +21,10 @@ import {
   CheckCircle2,
   MapPin,
   AlertTriangle,
-  ShieldAlert
+  ShieldAlert,
+  ThermometerSun,
+  Droplets,
+  Target
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { format, differenceInYears, differenceInDays } from "date-fns";
@@ -32,13 +35,6 @@ import { toast } from "react-hot-toast";
 import ProcedureExecution from '../../components/patients/ProcedureExecution';
 
 // --- HELPERS ---
-const getAlertLevel = (text: string) => {
-    const t = text.toLowerCase();
-    if (t.includes('gestante') || t.includes('alergia') || t.includes('câncer')) return 'high';
-    if (t.includes('fumante') || t.includes('diabetes') || t.includes('hipertensão')) return 'medium';
-    return 'low';
-};
-
 const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
         scheduled: 'Agendado',
@@ -64,6 +60,8 @@ const getStatusColor = (status: string) => {
     }
 };
 
+const isYes = (val: any) => String(val || '').toLowerCase().includes('sim');
+
 export default function PatientOverviewPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -87,6 +85,9 @@ export default function PatientOverviewPage() {
   const [stats, setStats] = useState({ totalEvolutions: 0, daysSinceLast: 0 });
   const [medicalAlerts, setMedicalAlerts] = useState<{level: string, text: string}[]>([]);
   const [inconsistencyAlert, setInconsistencyAlert] = useState<string | null>(null);
+  
+  // Tags Clínicas (Agora aceita null)
+  const [clinicalTags, setClinicalTags] = useState<{fitz?: string | null, skinType?: string | null, complaint?: string | null}>({});
 
   useEffect(() => {
     if (id) loadOverviewData();
@@ -104,13 +105,23 @@ export default function PatientOverviewPage() {
       const { data: pat } = await supabase.from('patients').select('*').eq('id', id).single();
       if (pat) {
           setPatient(pat);
+          const anam = pat.anamnesis || {};
+          
+          // Alertas de Risco
           const alerts = [];
-          if (pat.anamnesis?.alergias?.length > 0) alerts.push({ level: 'high', text: `Alergia: ${pat.anamnesis.alergias}` });
-          if (pat.anamnesis?.gestante === 'sim') alerts.push({ level: 'high', text: "Gestante" });
-          if (pat.anamnesis?.doencas?.includes('câncer')) alerts.push({ level: 'high', text: "Histórico Oncológico" });
-          if (pat.anamnesis?.fumante === 'sim') alerts.push({ level: 'medium', text: "Fumante" });
-          if (pat.anamnesis?.doencas?.includes('diabetes')) alerts.push({ level: 'medium', text: "Diabético" });
+          if (anam.alergias && anam.alergias.length > 2 && !anam.alergias.toLowerCase().includes('nao')) alerts.push({ level: 'high', text: `ALERGIA: ${anam.alergias}` });
+          if (isYes(anam.gestante)) alerts.push({ level: 'high', text: "Gestante" });
+          if (anam.doencas?.toLowerCase().includes('câncer')) alerts.push({ level: 'high', text: "Histórico Oncológico" });
+          if (isYes(anam.fumante)) alerts.push({ level: 'medium', text: "Fumante" });
+          if (anam.doencas?.toLowerCase().includes('diabetes')) alerts.push({ level: 'medium', text: "Diabético" });
           setMedicalAlerts(alerts.sort((a, b) => (a.level === 'high' ? -1 : 1)));
+
+          // Tags Clínicas (Só preenche se existir valor real)
+          setClinicalTags({
+              fitz: (anam.fototipo || anam.facialFitzpatrick || null),
+              skinType: (anam.biotipo || anam.tipodepele || null),
+              complaint: (anam.queixaPrincipal || anam.queixa || null)
+          });
       }
 
       // 2. Próximo Agendamento
@@ -126,24 +137,19 @@ export default function PatientOverviewPage() {
       
       if (nextAppt) setNextAppointment(nextAppt);
 
-      // 3. Planos Ativos (QUERY COPIADA DO FINANCEIRO)
-      const { data: plansData, error: plansError } = await supabase
+      // 3. Planos Ativos (Usando cliente_id)
+      const { data: plansData } = await supabase
         .from('planos_clientes')
-        .select(`*, service:services (id, name)`) // Igual ao financeiro
-        .eq('cliente_id', id) // Igual ao financeiro
+        .select(`*, service:services (id, name)`)
+        .eq('cliente_id', id)
         .order('created_at', { ascending: false });
 
-      if (plansError) {
-          console.error("Erro ao buscar planos:", plansError);
-      } else if (plansData) {
-          // Normaliza os dados igual ao financeiro
+      if (plansData) {
           const normalized = plansData.map((pkg: any) => ({
              ...pkg,
              service_id: pkg.service_id || pkg.service?.id || pkg.procedure_id,
              service_name: pkg.service?.name || pkg.nome_plano
           }));
-          
-          // Filtra apenas os ativos (com saldo)
           const activeOnly = normalized.filter((p: any) => p.sessoes_restantes > 0);
           setActivePlans(activeOnly);
       }
@@ -197,8 +203,14 @@ export default function PatientOverviewPage() {
               .eq('id', nextAppointment.id);
 
           if (error) throw error;
+          
           toast.success(`Status atualizado`);
-          loadOverviewData(); 
+          
+          if (newStatus === 'completed') {
+              navigate(`/patients/${id}/evolution`);
+          } else {
+              loadOverviewData(); 
+          }
       } catch (error) {
           toast.error("Erro ao atualizar status");
       }
@@ -234,13 +246,7 @@ export default function PatientOverviewPage() {
       {/* HEADER */}
       <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-2">
-             <button 
-                onClick={() => setConsultationMode(!consultationMode)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-black uppercase transition-all ${consultationMode ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500'}`}
-             >
-                 {consultationMode ? <Eye size={16}/> : <EyeOff size={16}/>}
-                 {consultationMode ? 'Modo Consulta (Leitura)' : 'Modo Edição'}
-             </button>
+             <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter">Visão Geral</h2>
           </div>
           <Button onClick={handlePrintSummary} variant="ghost" size="sm" className="text-gray-400 hover:text-pink-600">
               <Printer size={18} className="mr-2"/> Resumo
@@ -279,7 +285,9 @@ export default function PatientOverviewPage() {
             
             {/* CARD DE PERFIL */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden pb-8">
-                <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-pink-500 to-purple-600 opacity-10"></div>
+                {/* Degradê Restaurado (Opacidade média para ficar bonito e legível) */}
+                <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-pink-500/20 to-purple-600/20"></div>
+                
                 <div className="relative flex flex-col items-center text-center mt-8">
                     <div className="w-28 h-28 rounded-full border-4 border-white dark:border-gray-800 shadow-xl overflow-hidden bg-gray-100 mb-4">
                         {patient?.avatar_url ? (
@@ -291,8 +299,31 @@ export default function PatientOverviewPage() {
                     <h2 className="text-xl font-black text-gray-900 dark:text-white uppercase tracking-tighter">{patient?.name}</h2>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">{calculateAge(patient?.birth_date)} • {patient?.occupation || 'Profissão não inf.'}</p>
                     
+                    {/* TAGS CLÍNICAS (Só aparecem se tiver dado) */}
+                    <div className="flex justify-center gap-2 mt-4 mb-4 flex-wrap">
+                        {clinicalTags.fitz && (
+                            <div className="bg-gray-50 dark:bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center gap-2" title="Fototipo">
+                                <ThermometerSun size={14} className="text-orange-500"/>
+                                <span className="text-[10px] font-black uppercase text-gray-600 dark:text-gray-300">Fitz: {clinicalTags.fitz}</span>
+                            </div>
+                        )}
+                        {clinicalTags.skinType && (
+                            <div className="bg-gray-50 dark:bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center gap-2" title="Biotipo">
+                                <Droplets size={14} className="text-blue-500"/>
+                                <span className="text-[10px] font-black uppercase text-gray-600 dark:text-gray-300">{clinicalTags.skinType}</span>
+                            </div>
+                        )}
+                    </div>
+                    
+                    {clinicalTags.complaint && (
+                        <div className="mb-6 w-full max-w-xs bg-pink-50/50 p-3 rounded-xl border border-pink-100 text-center mx-auto">
+                            <span className="text-[9px] font-black uppercase text-pink-400 block mb-1 tracking-widest flex items-center justify-center gap-1"><Target size={10}/> Queixa</span>
+                            <span className="text-xs font-bold text-pink-900 line-clamp-2">{clinicalTags.complaint}</span>
+                        </div>
+                    )}
+
                     {!consultationMode && (
-                        <div className="flex flex-col gap-2 mt-8 w-full max-w-xs">
+                        <div className="flex flex-col gap-2 w-full max-w-xs">
                             <div className="grid grid-cols-2 gap-2">
                                 <Button onClick={() => navigate('/appointments/new')} className="bg-gray-900 hover:bg-black text-white h-12 rounded-xl font-black uppercase text-[9px] tracking-widest shadow-lg">
                                     <CalendarPlus size={14} className="mr-2"/> Agendar
@@ -391,14 +422,14 @@ export default function PatientOverviewPage() {
                 </div>
             </div>
 
-            {/* ✅ WIDGET DE PLANOS ATIVOS (CORRIGIDO) */}
+            {/* WIDGET DE PLANOS ATIVOS */}
             <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
                 <div className="relative z-10">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-2 text-gray-900 dark:text-white">
                             <Package size={16} className="text-pink-500"/> Planos Ativos
                         </h3>
-                        <Button onClick={() => navigate(`/patients/${id}/financial?tab=pacotes`)} variant="ghost" size="sm" className="text-[10px] uppercase font-bold text-gray-400 hover:text-pink-600 h-8">
+                        <Button onClick={() => navigate(`/patients/${id}/treatment-plans`)} variant="ghost" size="sm" className="text-[10px] uppercase font-bold text-gray-400 hover:text-pink-600 h-8">
                             Gerenciar
                         </Button>
                     </div>
@@ -406,7 +437,7 @@ export default function PatientOverviewPage() {
                     {activePlans.length > 0 ? (
                         <div className="grid gap-3">
                             {activePlans.map((plan) => {
-                                const progress = (plan.sessoes_restantes / plan.sessoes_totais) * 100;
+                                const progress = (plan.sessoes_used / plan.sessoes_totais) * 100;
                                 return (
                                     <div key={plan.id} className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                                         <div className="flex justify-between items-center mb-2">
@@ -458,7 +489,7 @@ export default function PatientOverviewPage() {
                                 {format(new Date(lastEvolution.date), "dd/MM/yyyy")}
                             </span>
                             <span className="text-[10px] font-bold text-gray-400 uppercase">
-                                Dr(a). {lastEvolution.profiles?.first_name}
+                                Dr(a). {lastEvolution.profiles?.first_name || "Profissional"}
                             </span>
                         </div>
                         <div className="p-5 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800">

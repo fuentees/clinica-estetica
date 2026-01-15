@@ -14,43 +14,56 @@ import {
   X,
   Package,
   Sparkles,
-  ClipboardList // ✅ Ícone novo para prescrições
+  ClipboardList,
+  FileSignature
 } from "lucide-react";
 
 // IMPORTAÇÕES DOS CONTEXTOS
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 
+// ✅ 1. Definimos o tipo do item de menu para o TypeScript não reclamar
+interface NavItem {
+  icon: any; // Aceita os componentes do Lucide
+  label: string;
+  path: string;
+}
+
 export function Layout() {
-  // ✅ Pegamos as flags de cargo aqui
   const { profile, signOut, isAdmin, isProfessional, user } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // ✅ LÓGICA DE MENU DINÂMICO
-  // Se for Profissional (Larissa), vê um menu. Se for Admin, vê outro.
-  let menuItems = [];
+  // ✅ 2. Inicializamos as variáveis com o Tipo definido acima
+  let mainNavItems: NavItem[] = [];   
+  let footerNavItems: NavItem[] = []; 
 
   if (isProfessional && !isAdmin) {
-    // === MENU DO PROF===
-    menuItems = [
+    // === MENU DO PROFISSIONAL ===
+    mainNavItems = [
       { icon: LayoutDashboard, label: "Meu Painel", path: `/professionals/${user?.id}` },
-      { icon: ClipboardList, label: "Prescrições", path: "/prescriptions" }, // Atalho útil
-      { icon: Calendar, label: "Minha Agenda", path: "/appointments" }, // Agenda filtrada
+      { icon: ClipboardList, label: "Prescrições", path: "/prescriptions" }, 
+      { icon: Calendar, label: "Minha Agenda", path: "/appointments" }, 
     ];
   } else {
     // === MENU DO ADMIN / GERAL ===
-    menuItems = [
+    // 1. Itens Principais (Topo)
+    mainNavItems = [
       { icon: LayoutDashboard, label: "Dashboard", path: "/" },
       { icon: Calendar, label: "Agenda", path: "/appointments" },
       { icon: Users, label: "Pacientes", path: "/patients" },
       { icon: Stethoscope, label: "Profissionais", path: "/professionals" },
-      { icon: ClipboardList, label: "Prescrições", path: "/prescriptions" }, // Atalho útil
+      { icon: ClipboardList, label: "Prescrições", path: "/prescriptions" }, 
       { icon: Sparkles, label: "Serviços", path: "/services" }, 
       { icon: Package, label: "Estoque", path: "/inventory" },
       { icon: Wallet, label: "Financeiro", path: "/payments" },
+    ];
+
+    // 2. Itens de Configuração (Fundo)
+    footerNavItems = [
+      { icon: FileSignature, label: "Termos & Docs", path: "/config/terms" }, 
       { icon: Settings, label: "Ajustes", path: "/settings" },
     ];
   }
@@ -64,6 +77,28 @@ export function Layout() {
     }
   };
 
+  // Componente auxiliar para renderizar um link de menu
+  const RenderNavItem = ({ item }: { item: NavItem }) => {
+    const isActive = item.path === '/' 
+      ? location.pathname === '/' 
+      : location.pathname.startsWith(item.path);
+      
+    return (
+      <Link
+        to={item.path}
+        onClick={() => setIsMobileMenuOpen(false)}
+        className={`flex items-center gap-4 px-4 py-3 rounded-2xl font-bold text-[11px] uppercase tracking-widest transition-all group ${
+          isActive 
+            ? "bg-gray-900 text-white shadow-xl dark:bg-pink-600 shadow-gray-900/10" 
+            : "text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 dark:hover:text-white"
+        }`}
+      >
+        <item.icon size={18} className={`transition-colors ${isActive ? "text-pink-500 dark:text-white" : "group-hover:text-gray-900 dark:group-hover:text-white"}`} />
+        {item.label}
+      </Link>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex transition-colors duration-300 font-sans">
       
@@ -71,43 +106,35 @@ export function Layout() {
       <aside className="hidden lg:flex w-72 flex-col bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 fixed h-full z-50 transition-all duration-300">
         <div className="p-8 h-full flex flex-col">
           
-          {/* LOGO */}
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 bg-pink-600 rounded-2xl flex items-center justify-center shadow-lg shadow-pink-500/30">
+          {/* LOGO CLICÁVEL (HOME) */}
+          <Link to="/" className="flex items-center gap-3 mb-8 group cursor-pointer">
+            <div className="w-10 h-10 bg-pink-600 rounded-2xl flex items-center justify-center shadow-lg shadow-pink-500/30 group-hover:scale-110 transition-transform">
               <Stethoscope className="text-white" size={22} />
             </div>
-            <span className="text-xl font-black tracking-tighter dark:text-white italic uppercase">
+            <span className="text-xl font-black tracking-tighter dark:text-white italic uppercase group-hover:opacity-80 transition-opacity">
               VF <span className="text-pink-600">Clinic</span>
             </span>
-          </div>
+          </Link>
 
-          {/* NAVEGAÇÃO */}
-          <nav className="space-y-2 flex-1">
-            {menuItems.map((item) => {
-              // Lógica de Ativo
-              const isActive = item.path === '/' 
-                ? location.pathname === '/' 
-                : location.pathname.startsWith(item.path);
-
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={`flex items-center gap-4 px-4 py-4 rounded-2xl font-bold text-[11px] uppercase tracking-widest transition-all group ${
-                    isActive 
-                      ? "bg-gray-900 text-white shadow-xl dark:bg-pink-600 shadow-gray-900/10" 
-                      : "text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 dark:hover:text-white"
-                  }`}
-                >
-                  <item.icon size={18} className={`transition-colors ${isActive ? "text-pink-500 dark:text-white" : "group-hover:text-gray-900 dark:group-hover:text-white"}`} />
-                  {item.label}
-                </Link>
-              );
-            })}
+          {/* NAVEGAÇÃO PRINCIPAL (TOPO) */}
+          <nav className="space-y-1 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+            {mainNavItems.map((item) => (
+              <RenderNavItem key={item.path} item={item} />
+            ))}
           </nav>
 
-          {/* PERFIL E BOTÕES NO RODAPÉ DA SIDEBAR */}
-          <div className="mt-auto pt-8 border-t border-gray-50 dark:border-gray-800">
+          {/* NAVEGAÇÃO DE CONFIGURAÇÃO (FUNDO - ACIMA DO PERFIL) */}
+          {footerNavItems.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-50 dark:border-gray-800 space-y-1">
+               <p className="px-4 text-[9px] font-black text-gray-300 uppercase tracking-widest mb-2">Configurações</p>
+               {footerNavItems.map((item) => (
+                  <RenderNavItem key={item.path} item={item} />
+               ))}
+            </div>
+          )}
+
+          {/* PERFIL E BOTÕES NO RODAPÉ */}
+          <div className="mt-6 pt-6 border-t border-gray-50 dark:border-gray-800">
             <div className="flex items-center gap-4 mb-6">
               <img 
                 src={profile?.avatarUrl || "https://github.com/shadcn.png"} 
@@ -128,12 +155,14 @@ export function Layout() {
               <button 
                 onClick={toggleTheme} 
                 className="flex-1 h-12 rounded-xl flex items-center justify-center bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Alternar Tema"
               >
                 {isDark ? <Sun size={18} /> : <Moon size={18} />}
               </button>
               <button 
                 onClick={handleLogout} 
                 className="flex-1 h-12 rounded-xl flex items-center justify-center bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-100 transition-colors"
+                title="Sair"
               >
                 <LogOut size={18} />
               </button>
@@ -144,12 +173,12 @@ export function Layout() {
 
       {/* HEADER MOBILE */}
       <div className="lg:hidden fixed top-0 w-full bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 p-4 flex justify-between items-center z-[60]">
-        <div className="flex items-center gap-2">
+        <Link to="/" className="flex items-center gap-2">
            <div className="w-8 h-8 bg-pink-600 rounded-lg flex items-center justify-center text-white">
              <Stethoscope size={16}/>
            </div>
            <span className="font-black tracking-tighter dark:text-white uppercase italic text-sm">VF Clinic</span>
-        </div>
+        </Link>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-gray-500 dark:text-white hover:bg-gray-50 rounded-lg">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -167,18 +196,20 @@ export function Layout() {
 
       {/* MENU MOBILE OVERLAY */}
       {isMobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 bg-white dark:bg-gray-900 z-50 pt-24 p-6 space-y-2 animate-in slide-in-from-top-10 duration-200">
-           {menuItems.map((item) => (
-             <Link
-               key={item.path}
-               to={item.path}
-               onClick={() => setIsMobileMenuOpen(false)}
-               className="flex items-center gap-4 p-4 rounded-2xl font-black uppercase text-xs tracking-widest text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border border-transparent hover:border-gray-100"
-             >
-               <item.icon size={20} className="text-pink-500" />
-               {item.label}
-             </Link>
+        <div className="lg:hidden fixed inset-0 bg-white dark:bg-gray-900 z-50 pt-24 p-6 space-y-2 animate-in slide-in-from-top-10 duration-200 overflow-y-auto">
+           {/* Itens Principais */}
+           {mainNavItems.map((item) => (
+             <RenderNavItem key={item.path} item={item} />
            ))}
+           
+           {/* Divisor Mobile */}
+           {footerNavItems.length > 0 && <div className="h-px bg-gray-100 dark:bg-gray-800 my-4"></div>}
+
+           {/* Itens de Configuração Mobile */}
+           {footerNavItems.map((item) => (
+             <RenderNavItem key={item.path} item={item} />
+           ))}
+
            <button 
              onClick={handleLogout} 
              className="w-full mt-8 bg-gray-900 dark:bg-white dark:text-black text-white h-14 rounded-2xl font-black tracking-widest uppercase text-xs shadow-xl flex items-center justify-center gap-2"

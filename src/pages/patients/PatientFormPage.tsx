@@ -16,20 +16,20 @@ const patientSchema = z.object({
   first_name: z.string().min(1, "Nome é obrigatório"),
   last_name: z.string().min(1, "Sobrenome é obrigatório"),
   cpf: z.string().optional().or(z.literal("")), 
-  rg: z.string().optional(),
+  rg: z.string().optional().or(z.literal("")),
   date_of_birth: z.string().min(1, "Data de nascimento é obrigatória"),
-  sexo: z.string().optional(),
-  profissao: z.string().optional(),
-  estado_civil: z.string().optional(),
+  sexo: z.string().optional().or(z.literal("")),
+  profissao: z.string().optional().or(z.literal("")),
+  estado_civil: z.string().optional().or(z.literal("")),
   email: z.string().email("Email inválido").optional().or(z.literal("")),
   phone: z.string().min(1, "Telefone é obrigatório"),
-  cep: z.string().optional(),
-  rua: z.string().optional(),
-  numero: z.string().optional(),
-  bairro: z.string().optional(),
-  cidade: z.string().optional(),
-  estado: z.string().optional(),
-  address: z.string().optional(), 
+  cep: z.string().optional().or(z.literal("")),
+  rua: z.string().optional().or(z.literal("")),
+  numero: z.string().optional().or(z.literal("")),
+  bairro: z.string().optional().or(z.literal("")),
+  cidade: z.string().optional().or(z.literal("")),
+  estado: z.string().optional().or(z.literal("")),
+  address: z.string().optional().or(z.literal("")), 
 });
 
 type PatientFormData = z.infer<typeof patientSchema>;
@@ -140,7 +140,7 @@ export function PatientFormPage() {
 
       if (data) {
         if (data.name) {
-             const parts = data.name.split(' ');
+             const parts = data.name.trim().split(/\s+/);
              setValue("first_name", parts[0] || "");
              setValue("last_name", parts.slice(1).join(' ') || "");
         }
@@ -158,7 +158,6 @@ export function PatientFormPage() {
         setValue("cidade", data.cidade || "");
         setValue("estado", data.estado || "");
 
-        // Fallback para endereço antigo que salvava tudo junto
         if (!data.rua && data.address) {
             setValue("rua", data.address); 
         }
@@ -174,63 +173,74 @@ export function PatientFormPage() {
   const onSubmit = async (data: PatientFormData) => {
     try {
       const ageCalc = data.date_of_birth ? calculateAge(data.date_of_birth) : null;
-      const ageInt = typeof ageCalc === "number" ? ageCalc : null;
       const fullName = `${data.first_name} ${data.last_name}`.trim();
       const fullAddress = `${data.rua || ""}, ${data.numero || ""} - ${data.bairro || ""}, ${data.cidade || ""} - ${data.estado || ""}, CEP: ${data.cep || ""}`;
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Sessão expirada.");
-
-      // Busca o clinicId garantindo a tipagem correta
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("clinic_id:clinic_id") // Alias explícito para garantir retorno
-        .eq("id", user.id)
-        .single();
-
-      // Ajuste de segurança para tipagem do retorno
-      const userClinicId = profile?.clinic_id || (profile as any)?.clinic_id;
-
-      if (!userClinicId) {
-        throw new Error("Usuário sem clínica vinculada.");
-      }
-
-      // Payload preparado com chaves snake_case para o Supabase
+      // 1. Montamos o objeto de dados limpo (sem clinic_id ainda)
       const patientDataToSave = {
-        clinic_id: userClinicId,
         name: fullName, 
         email: data.email || null,
         phone: data.phone,
-        cpf: data.cpf,
-        rg: data.rg,
+        cpf: data.cpf || null,
+        rg: data.rg || null,
         date_of_birth: data.date_of_birth,
-        idade: ageInt,
-        profissao: data.profissao,
-        sexo: data.sexo,
-        cep: data.cep,
-        rua: data.rua,
-        numero: data.numero,
-        bairro: data.bairro,
-        cidade: data.cidade,
-        estado: data.estado,
+        idade: typeof ageCalc === "number" ? ageCalc : null,
+        profissao: data.profissao || null,
+        sexo: data.sexo || null,
+        cep: data.cep || null,
+        rua: data.rua || null,
+        numero: data.numero || null,
+        bairro: data.bairro || null,
+        cidade: data.cidade || null,
+        estado: data.estado || null,
         address: fullAddress,
-        // Removido updatedAt para evitar erros (Supabase gerencia via trigger se configurado)
       };
 
       if (isEditing) {
-        const { error } = await supabase.from("patients").update(patientDataToSave).eq("id", id);
+        // ✅ No UPDATE não enviamos clinic_id para não violar RLS de mutação de clínica
+        const { error } = await supabase
+          .from("patients")
+          .update(patientDataToSave)
+          .eq("id", id);
+
         if (error) throw error;
         toast.success("Cadastro atualizado com sucesso!");
+        navigate(-1);
       } else {
-        const { error } = await supabase.from("patients").insert(patientDataToSave);
+        // ✅ No INSERT buscamos o clinic_id do profissional logado
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Sessão expirada.");
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("clinic_id")
+          .eq("id", user.id)
+          .single();
+
+        const userClinicId = profile?.clinic_id;
+
+        if (!userClinicId) {
+          throw new Error("Sua conta não possui clínica vinculada.");
+        }
+
+        const { error } = await supabase.from("patients").insert({
+          ...patientDataToSave,
+          clinic_id: userClinicId
+        });
+
         if (error) throw error;
         toast.success("Paciente cadastrado com sucesso!");
         navigate("/patients");
       }
     } catch (error: any) {
-      console.error(error);
-      toast.error(`Erro: ${error.message || "Falha ao salvar"}`);
+      console.error("ERRO AO SALVAR:", error);
+      toast.error(`Erro ao salvar: ${error.message || "Falha na comunicação com o banco"}`);
     }
+  };
+
+  const onError = (errors: any) => {
+    console.error("ERROS DE VALIDAÇÃO:", errors);
+    toast.error("Verifique os campos obrigatórios em vermelho.");
   };
 
   if (isLoadingData) {
@@ -248,7 +258,7 @@ export function PatientFormPage() {
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between mb-10 bg-white dark:bg-gray-800 p-6 rounded-[2rem] shadow-sm border border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate("/patients")} className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-2xl text-gray-400 transition-colors">
+          <button type="button" onClick={() => navigate(-1)} className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-2xl text-gray-400 transition-colors">
             <ArrowLeft size={24} />
           </button>
           <div>
@@ -260,13 +270,13 @@ export function PatientFormPage() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-10">
+      <form onSubmit={handleSubmit(onSubmit, onError)} className="space-y-10">
         
         {/* SEÇÃO 1: DADOS PESSOAIS */}
         <Section title="Identificação Pessoal" icon={User}>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <InputWithLabel label="Primeiro Nome" {...register("first_name")} error={errors.first_name?.message} placeholder="Ex: Maria" />
-            <InputWithLabel label="Sobrenome" {...register("last_name")} error={errors.last_name?.message} placeholder="Ex: Silva" />
+            <InputWithLabel label="Primeiro Nome" {...register("first_name")} error={errors.first_name?.message} placeholder="Maria" />
+            <InputWithLabel label="Sobrenome" {...register("last_name")} error={errors.last_name?.message} placeholder="Silva" />
             
             <InputWithLabel 
               label="CPF" 
@@ -351,11 +361,11 @@ export function PatientFormPage() {
 
         {/* RODAPÉ DE AÇÃO */}
         <div className="flex justify-end gap-4 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 shadow-xl">
-          <Button type="button" variant="outline" onClick={() => navigate("/patients")} className="h-14 px-8 rounded-2xl font-bold">
+          <Button type="button" variant="outline" onClick={() => navigate(-1)} className="h-14 px-8 rounded-2xl font-bold">
             Descartar
           </Button>
-          <Button type="submit" disabled={isSubmitting} className="h-14 px-12 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl transition-all hover:scale-[1.02]">
-            {isSubmitting ? <Loader2 className="animate-spin" /> : "Finalizar Cadastro"}
+          <Button type="submit" disabled={isSubmitting} className="h-14 px-12 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl transition-all hover:scale-[1.02] active:scale-95">
+            {isSubmitting ? <Loader2 className="animate-spin" /> : (isEditing ? "Salvar Alterações" : "Finalizar Cadastro")}
           </Button>
         </div>
       </form>

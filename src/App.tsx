@@ -16,6 +16,9 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import DashboardPage from "./pages/dashboard/DashboardPage"; 
 import { SettingsPage } from "./pages/settings/SettingsPage";
 
+// --- PÁGINAS DE CONFIGURAÇÃO ---
+import ConsentTemplatesPage from "./pages/config/ConsentTemplatesPage";
+
 // --- PÁGINAS DE AGENDAMENTO ---
 import { AppointmentsPage } from "./pages/appointments/AppointmentsPage";
 import { AppointmentFormPage } from "./pages/appointments/AppointmentFormPage";
@@ -61,13 +64,17 @@ import { ProfessionalAvailabilityPage } from "./pages/professionals/Professional
 import ProfessionalCommissionPage from "./pages/professionals/ProfessionalCommissionPage";
 import ProfessionalHistoryPage from "./pages/professionals/ProfessionalHistoryPage";
 
-// --- ✅ PÁGINAS DO PORTAL DO PACIENTE ---
+// --- PÁGINAS DO PORTAL DO PACIENTE ---
 import { PatientLayout } from "./pages/portal/PatientLayout";
 import { PatientHomePage } from "./pages/portal/PatientHomePage";
 import { PatientLoginPage } from "./pages/portal/PatientLoginPage";
 import { PatientProfilePage } from "./pages/portal/PatientProfilePage"; 
 import { PatientAppointmentsPage } from "./pages/portal/PatientAppointmentsPage"; 
 import { PatientPackagesPage } from "./pages/portal/PatientPackagesPage"; 
+
+// --- ✅ PÁGINAS PÚBLICAS DE ASSINATURA ---
+import { SignConsentPage } from "./pages/public/SignConsentPage"; // Termos Específicos
+import SignGeneralTermPage from "./pages/public/SignGeneralTermPage"; // ✅ Termo Geral (Novo)
 
 const queryClient = new QueryClient();
 
@@ -98,6 +105,12 @@ function App() {
 
               {/* LOGIN DO PACIENTE */}
               <Route path="/portal/login" element={<PatientLoginPage />} />
+
+              {/* ✅ ROTAS PÚBLICAS DE ASSINATURA (QR CODE / WHATSAPP) */}
+              <Route path="/sign" element={<SignConsentPage />} />
+              
+              {/* ✅ NOVA ROTA PÚBLICA PARA O TERMO GERAL */}
+              <Route path="/sign-general/:patientId" element={<SignGeneralTermPage />} />
 
               {/* ROTA RAIZ */}
               <Route path="/" element={<ProtectedRoute allowedRoles={['admin', 'profissional', 'recepcionista', 'paciente']} />}>
@@ -151,7 +164,7 @@ function App() {
                   <Route path="inventory/:id/edit" element={<InventoryFormPage />} />
                   <Route path="inventory/kits" element={<ProcedureKits />} />
                   
-                  {/* --- ROTAS DE SERVIÇOS (Corrigido) --- */}
+                  {/* --- ROTAS DE SERVIÇOS --- */}
                   <Route path="services" element={<TreatmentsPage />} />
                   <Route path="services/new" element={<TreatmentFormPage />} />
                   <Route path="services/edit/:id" element={<TreatmentFormPage />} />
@@ -166,6 +179,10 @@ function App() {
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  
+                  {/* GERENCIADOR DE TERMOS (BIBLIOTECA) */}
+                  <Route path="/config/templates" element={<ConsentTemplatesPage />} />
+                  
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                 </Route>
               </Route>

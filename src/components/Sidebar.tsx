@@ -2,15 +2,15 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Home, Calendar, Users, Activity, 
-  Package, DollarSign, Settings, LogOut, UserCog, ClipboardList, LayoutDashboard
+  Package, DollarSign, Settings, LogOut, UserCog, ClipboardList, LayoutDashboard,
+  FileSignature // ✅ 1. Ícone importado
 } from 'lucide-react';
 
 export function Sidebar() {
   const { profile, user, signOut } = useAuth();
   const location = useLocation();
 
-  // Pega o cargo diretamente do texto no banco de dados para evitar erros de lógica
-  // Valores esperados: 'admin', 'profissional', 'recepcionista', 'paciente'
+  // Pega o cargo diretamente do texto no banco de dados
   const userRole = profile?.role; 
 
   // --- 1. VISÃO DO PACIENTE (Totalmente isolada) ---
@@ -19,7 +19,7 @@ export function Sidebar() {
       <aside className="w-64 h-screen bg-gray-900 text-white flex flex-col border-r border-gray-800 p-6">
         <h2 className="text-xl font-black text-pink-500 mb-8 uppercase italic">Portal Paciente</h2>
         <Link to="/portal" className="flex items-center gap-3 p-3 bg-pink-600 rounded-xl mb-auto font-bold shadow-lg shadow-pink-900/20">
-           <Home size={18} /> Início
+            <Home size={18} /> Início
         </Link>
         <button onClick={signOut} className="flex items-center gap-3 p-3 text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all uppercase font-bold text-xs mt-auto">
           <LogOut size={18} /> Sair
@@ -122,6 +122,13 @@ export function Sidebar() {
                   <DollarSign size={18} className="text-green-500" />
                   <span className="text-xs font-bold uppercase tracking-tight">Financeiro</span>
                 </Link>
+                
+                {/* ✅ 2. BOTÃO NOVO AQUI (CONFIGURAÇÃO DE TERMOS) */}
+                <Link to="/config/terms" className={linkClass('/config/terms')}>
+                   <FileSignature size={18} />
+                   <span className="text-xs font-bold uppercase tracking-tight">Termos & Docs</span>
+                </Link>
+
                 <Link to="/settings" className={linkClass('/settings')}>
                   <Settings size={18} />
                   <span className="text-xs font-bold uppercase tracking-tight">Configurações</span>

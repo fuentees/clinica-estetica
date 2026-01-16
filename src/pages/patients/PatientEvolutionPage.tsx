@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Toaster, toast } from "react-hot-toast";
-import { TrendingUp, ShieldCheck, Play, StopCircle, Loader2, KeyRound, History, CheckCircle2 } from "lucide-react";
+import { TrendingUp, Play, Loader2, History, Activity, CheckCircle2 } from "lucide-react"; 
 import { Button } from "../../components/ui/button";
-import { supabase } from "../../lib/supabase"; // Importação necessária para o Realtime
+import { supabase } from "../../lib/supabase";
 
 import { usePatientEvolution } from "./hooks/usePatientEvolution";
 import { useConsentFlow } from "./hooks/useConsentFlow";
@@ -18,81 +18,108 @@ import { ClinicalRecord } from "./types/clinical";
 
 export function PatientEvolutionPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<ClinicalRecord | null>(null);
   
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [showEndModal, setShowEndModal] = useState(false);
-  const [profPass, setProfPass] = useState("");
+  const [clinicData, setClinicData] = useState<any>(null); // ✅ Novo estado para dados da clínica
 
+  // Hook principal
   const { 
-    loading, 
-    records, 
-    servicesList, 
-    inventoryList, 
-    customTemplates, 
-    stats, 
-    context, 
-    saveEvolution, 
-    invalidateRecord,
-    saveNewTemplate,
-    deleteTemplate 
+    loading, records, servicesList, customTemplates, stats, context, 
+    saveEvolution, invalidateRecord, saveNewTemplate, deleteTemplate, 
+    activeAppointmentId, printRecord,
+    activePrescription,
+    addPrescriptionItem,
+    updatePrescriptionItem,
+    removePrescriptionItem
   } = usePatientEvolution(id);
 
-  const { status: consentStatus, pendingTemplate, modalOpen, setModalOpen, checkConsentRequirement, setStatus } = useConsentFlow(context.clinicId, id, context.professionalId, context.professionalName, context.patientName);
+  const { status: consentStatus, pendingTemplate, modalOpen, setModalOpen, checkConsentRequirement, setStatus } = useConsentFlow(
+    context.clinicId, 
+    id, 
+    context.professionalId, 
+    context.professionalName, 
+    context.patientName
+  );
 
-  // ✅ MONITORAMENTO REALTIME: Detecta assinatura do paciente no celular instantaneamente
+  // ✅ Busca dados da clínica para passar para a impressão da Timeline
+  useEffect(() => {
+    async function fetchClinicData() {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user.id).single();
+            if (profile?.clinic_id) {
+                const { data: clinic } = await supabase.from('clinics').select('*').eq('id', profile.clinic_id).single();
+                setClinicData(clinic);
+            }
+        }
+    }
+    fetchClinicData();
+  }, []);
+
+  // Lógica de Sessão e AutoStart
+  useEffect(() => {
+    const storedSession = localStorage.getItem(`session_active_${id}`);
+    const autoStart = searchParams.get('autoStart') === 'true';
+    
+    if (autoStart || storedSession === 'true' || activeAppointmentId) {
+        if (!isSessionActive) {
+            setIsSessionActive(true);
+            if (!localStorage.getItem(`timer_start_${id}`)) {
+                localStorage.setItem(`timer_start_${id}`, Date.now().toString());
+            }
+            localStorage.setItem(`session_active_${id}`, 'true');
+        }
+    }
+  }, [id, searchParams, activeAppointmentId, isSessionActive]);
+
+  // Listener de Assinatura
   useEffect(() => {
     if (!id || consentStatus !== 'pending') return;
-
-    const channel = supabase
-      .channel('consent-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'patient_consents',
-          filter: `patient_id=eq.${id}`
-        },
+    const channel = supabase.channel('consent-updates')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'patient_consents', filter: `patient_id=eq.${id}` }, 
         (payload) => {
           if (payload.new.status === 'signed') {
-            setStatus('signed');
-            toast.success("Assinatura detectada! Termo validado.", {
-              icon: <CheckCircle2 className="text-emerald-500" />,
-              duration: 5000
-            });
+            if (setStatus) setStatus('signed');
+            toast.success("Assinatura detectada!", { icon: <CheckCircle2 className="text-emerald-500" /> });
           }
         }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      ).subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [id, consentStatus, setStatus]);
 
-  const handleEndSession = () => {
-    if (!profPass) return toast.error("Senha obrigatória");
-    setIsSessionActive(false); setShowEndModal(false); setProfPass("");
-    toast.success("Atendimento Encerrado!");
+  const handleStartSession = () => {
+      setIsSessionActive(true);
+      localStorage.setItem(`session_active_${id}`, 'true');
+      if (!localStorage.getItem(`timer_start_${id}`)) {
+          localStorage.setItem(`timer_start_${id}`, Date.now().toString());
+      }
+      toast.success("Atendimento Iniciado!");
   };
 
   const handleSave = async (data: any, files: File[]): Promise<void> => {
     if (!isSessionActive) { toast.error("Inicie o atendimento!"); return; }
-    // Travamento de segurança SaaS Vilagi
-    if (consentStatus === 'pending') { 
-      toast.error("Assinatura obrigatória para este procedimento!", {
-        description: "O paciente precisa assinar o termo antes de salvar a evolução."
-      } as any); 
-      return; 
+    if (consentStatus === 'pending') { toast.error("Assinatura do termo obrigatória!"); return; }
+
+    try {
+      await saveEvolution(data, files);
+      setIsSessionActive(false);
+      localStorage.removeItem(`session_active_${id}`);
+      localStorage.removeItem(`timer_start_${id}`);
+    } catch (error) {
+      console.error(error);
     }
-    await saveEvolution(data, files);
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-pink-600" size={40}/></div>;
 
-  const filteredRecords = records.filter((r: ClinicalRecord) => r.subject.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredRecords = records.filter((r: ClinicalRecord) => 
+    r.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.description.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   const lastValidDescription = records.find(r => !r.deleted_at)?.description || "";
 
   return (
@@ -101,45 +128,24 @@ export function PatientEvolutionPage() {
       <Toaster position="top-right" />
 
       <PrintableView patientName={context.patientName} records={records} />
-      <RecordDetailsModal record={selectedRecord} onClose={() => setSelectedRecord(null)} />
+      
+      <RecordDetailsModal 
+        record={selectedRecord} 
+        onClose={() => setSelectedRecord(null)} 
+        onPrint={printRecord} 
+      />
       
       <ConsentModal 
         isOpen={modalOpen} 
         onClose={() => setModalOpen(false)} 
-        onSigned={() => { 
-          if(setStatus) setStatus('signed'); 
-          toast.success("Termo assinado com sucesso!"); 
-        }} 
+        onSigned={() => { if(setStatus) setStatus('signed'); }} 
         patientId={id || ""} 
         professionalId={context.professionalId || ""} 
         clinicId={context.clinicId || ""} 
         procedureName={pendingTemplate?.title || ""} 
       />
 
-      {showEndModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-           <div className="bg-white dark:bg-gray-900 p-8 rounded-[2.5rem] w-full max-w-md shadow-2xl space-y-4 border-4 border-pink-50">
-              <h3 className="text-xl font-black flex items-center gap-2 text-gray-900 dark:text-white uppercase italic tracking-tighter"><ShieldCheck className="text-emerald-500" size={28}/> Finalizar Sessão</h3>
-              <p className="text-gray-500 text-[11px] font-bold uppercase tracking-widest">Confirme sua identidade para encerrar o prontuário.</p>
-              <div className="relative">
-                <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-pink-500" size={20}/>
-                <input 
-                  type="password" 
-                  value={profPass} 
-                  onChange={e => setProfPass(e.target.value)} 
-                  className="w-full h-14 bg-gray-50 border-2 border-gray-100 rounded-2xl pl-12 pr-4 outline-none focus:border-pink-500 font-black tracking-[0.5em] transition-all" 
-                  placeholder="••••••••" 
-                />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <Button variant="outline" onClick={() => setShowEndModal(false)} className="flex-1 h-14 rounded-2xl font-bold border-2">Cancelar</Button>
-                <Button onClick={handleEndSession} className="flex-1 bg-gray-900 hover:bg-black text-white h-14 rounded-2xl font-black uppercase tracking-widest">Assinar</Button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {/* HEADER DINÂMICO VILAGI */}
+      {/* HEADER PACIENTE */}
       <div className="bg-gray-900 text-white p-10 rounded-[3rem] shadow-2xl flex flex-col md:flex-row justify-between items-center gap-8 no-print relative overflow-hidden">
          <div className="absolute top-0 right-0 w-80 h-80 bg-pink-600/10 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
          
@@ -160,22 +166,30 @@ export function PatientEvolutionPage() {
          </div>
 
          <div className="flex items-center gap-8 relative z-10 bg-white/5 p-6 rounded-[2.5rem] border border-white/10 backdrop-blur-xl shadow-inner">
-            <SessionTimer isActive={isSessionActive} />
+            <SessionTimer isActive={isSessionActive} patientId={id || "temp"} />
             <div className="h-16 w-px bg-white/10 hidden md:block"></div>
-            {!isSessionActive ? 
-               <Button onClick={() => setIsSessionActive(true)} className="bg-pink-600 hover:bg-pink-700 text-white h-16 px-10 gap-4 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl hover:scale-[1.02] active:scale-95 transition-all"><Play size={24}/> INICIAR</Button> : 
-               <Button onClick={() => setShowEndModal(true)} className="bg-red-500 hover:bg-red-600 text-white h-16 px-10 gap-4 rounded-2xl font-black uppercase tracking-[0.2em] animate-pulse shadow-2xl shadow-red-500/20"><StopCircle size={24}/> ENCERRAR</Button>
-            }
+            
+            {!isSessionActive ? (
+                <Button 
+                    onClick={handleStartSession} 
+                    className="text-white h-16 px-10 gap-4 rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl transition-all duration-300 bg-pink-600 hover:bg-pink-700 hover:scale-[1.02] active:scale-95"
+                >
+                    <Play size={24}/> INICIAR
+                </Button>
+            ) : (
+                <div className="h-16 px-10 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 rounded-2xl font-black uppercase tracking-[0.2em] flex items-center gap-4 animate-pulse cursor-default select-none shadow-lg">
+                    <Activity size={24} /> EM ANDAMENTO
+                </div>
+            )}
          </div>
       </div>
 
       <div className="flex flex-col gap-12 no-print">
-         {/* FORMULÁRIO DE EVOLUÇÃO */}
          <div className="w-full bg-white dark:bg-gray-800 p-10 rounded-[3.5rem] shadow-xl border border-gray-100 dark:border-gray-700 relative">
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-b-full"></div>
+            
             <EvolutionForm 
                 services={servicesList} 
-                inventory={inventoryList} 
                 consentStatus={consentStatus} 
                 isSessionActive={isSessionActive} 
                 onProcedureChange={checkConsentRequirement} 
@@ -187,10 +201,14 @@ export function PatientEvolutionPage() {
                 customTemplates={customTemplates}
                 onSaveTemplate={saveNewTemplate}
                 onDeleteTemplate={deleteTemplate} 
+                activePrescription={activePrescription}
+                addPrescriptionItem={addPrescriptionItem}
+                updatePrescriptionItem={updatePrescriptionItem}
+                removePrescriptionItem={removePrescriptionItem}
             />
          </div>
 
-         {/* TIMELINE DE HISTÓRICO */}
+         {/* TIMELINE HISTÓRICA */}
          <div className="pt-6">
             <div className="flex items-center justify-between mb-10 px-4">
               <h3 className="text-2xl font-black text-gray-900 dark:text-white flex items-center gap-4 uppercase italic tracking-tighter">
@@ -200,11 +218,15 @@ export function PatientEvolutionPage() {
                   Histórico Clínico
               </h3>
             </div>
+            
             <EvolutionTimeline 
               records={filteredRecords} 
               onSearch={setSearchTerm} 
               onSelectRecord={setSelectedRecord} 
               onInvalidate={invalidateRecord} 
+              onPrint={printRecord}
+              patientName={context.patientName}
+              clinicData={clinicData} // ✅ Passando dados da clínica para a Timeline
             />
          </div>
       </div>

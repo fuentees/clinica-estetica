@@ -34,7 +34,10 @@ import { PatientPlanningPage } from "./pages/patients/PatientPlanningPage";
 import PatientAIAnalysisPage from "./pages/patients/PatientAIAnalysisPage";
 import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage"; 
 import { PatientEvolutionPage } from "./pages/patients/PatientEvolutionPage";
-import { PatientFinancialPage } from "./pages/patients/PatientFinancialPage";
+
+// ⚠️ CORREÇÃO AQUI: Removi as chaves { } pois a página é export default
+import {PatientFinancialPage}  from "./pages/patients/PatientFinancialPage"; 
+
 import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
 import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
 import { PatientPrescriptionsPage } from "./pages/patients/PatientPrescriptionsPage";
@@ -50,7 +53,7 @@ import { InventoryPage } from "./pages/inventory/InventoryPage";
 import { InventoryFormPage } from "./pages/inventory/InventoryFormPage"; 
 import { ProcedureKits } from "./pages/inventory/ProcedureKits";
 
-// --- FINANCEIRO (ADM) ---
+// --- FINANCEIRO GERAL (ADM) ---
 import { PaymentsPage } from "./pages/payments/PaymentsPage";
 import { CashFlowPage } from "./pages/payments/CashFlowPage";
 
@@ -73,8 +76,8 @@ import { PatientAppointmentsPage } from "./pages/portal/PatientAppointmentsPage"
 import { PatientPackagesPage } from "./pages/portal/PatientPackagesPage"; 
 
 // --- ✅ PÁGINAS PÚBLICAS DE ASSINATURA ---
-import { SignConsentPage } from "./pages/public/SignConsentPage"; // Termos Específicos
-import SignGeneralTermPage from "./pages/public/SignGeneralTermPage"; // ✅ Termo Geral (Novo)
+import { SignConsentPage } from "./pages/public/SignConsentPage"; 
+import SignGeneralTermPage from "./pages/public/SignGeneralTermPage"; 
 
 const queryClient = new QueryClient();
 
@@ -122,17 +125,20 @@ function App() {
                 <Route element={<Layout />}>
                   <Route path="/dashboard" element={<DashboardResolver />} />
                   
+                  {/* ROTAS DE PACIENTES */}
                   <Route path="patients/:id" element={<PatientDashboardLayout />}>
                       <Route index element={<PatientOverviewPage />} />
                       <Route path="anamnesis" element={<PatientAnamnesisPage />} />
                       <Route path="evolution" element={<PatientEvolutionPage />} />
                       <Route path="prescriptions" element={<PatientPrescriptionsPage />} />
                       <Route path="gallery" element={<PatientGalleryPage />} />
-                      <Route path="treatment-plans" element={<PatientPlanningPage />} />
                       <Route path="bioimpedance" element={<PatientBioimpedancePage />} />
                       <Route path="terms" element={<PatientTermsPage />} />
                       <Route path="details" element={<PatientFormPage />} /> 
                       <Route path="ai-analysis" element={<PatientAIAnalysisPage />} /> 
+                      
+                      {/* ✅ AS ROTAS ESSENCIAIS PARA O DASHBOARD FUNCIONAR */}
+                      <Route path="treatment-plans" element={<PatientPlanningPage />} />
                       <Route path="financial" element={<PatientFinancialPage />} />
                   </Route>
 
@@ -173,16 +179,18 @@ function App() {
                 </Route>
               </Route>
 
-              {/* 🔒 BLOCO 3: SÓ ADMIN */}
+              {/* 🔒 BLOCO 3: SÓ ADMIN (FINANCEIRO GERAL) */}
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route element={<Layout />}>
+                  {/* Atenção: O Dashboard pode tentar acessar /financial, redirecione mentalmente para /payments */}
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
+                  
+                  {/* ✅ Redirecionamento de segurança para evitar erro 404 */}
+                  <Route path="financial" element={<Navigate to="/payments" replace />} />
+                  
                   <Route path="/settings" element={<SettingsPage />} />
-                  
-                  {/* GERENCIADOR DE TERMOS (BIBLIOTECA) */}
                   <Route path="/config/templates" element={<ConsentTemplatesPage />} />
-                  
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                 </Route>
               </Route>

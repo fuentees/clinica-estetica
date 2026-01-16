@@ -19,7 +19,6 @@ type PrescriptionForm = {
   treatments: TreatmentItem[];
 };
 
-// --- FUNÇÃO AUXILIAR DE DATA SEGURA (Para input type="date") ---
 const getLocalDateString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -37,6 +36,7 @@ export function PrescriptionFormPage() {
   const [initializing, setInitializing] = useState(true);
   const [patientsList, setPatientsList] = useState<any[]>([]);
   const [professionalsList, setProfessionalsList] = useState<any[]>([]);
+  const [clinicData, setClinicData] = useState<any>(null);
   const [clinicId, setClinicId] = useState<string | null>(null);
 
   const {
@@ -49,7 +49,7 @@ export function PrescriptionFormPage() {
     formState: { errors },
   } = useForm<PrescriptionForm>({
     defaultValues: {
-      date: getLocalDateString(), // ✅ Data de hoje correta (Local)
+      date: getLocalDateString(),
       title: "Recomendação Terapêutica",
       treatments: [
         {
@@ -80,14 +80,23 @@ export function PrescriptionFormPage() {
         // 1. Pega ClinicID
         const { data: profile } = await supabase
             .from("profiles")
-            .select("clinic_id:clinic_id")
+            .select("clinic_id")
             .eq("id", user.id)
             .single();
 
         if (!profile?.clinic_id) throw new Error("Sem clínica vinculada");
         setClinicId(profile.clinic_id);
 
-        // 2. Carrega Listas
+        // 2. Carrega Dados da Clínica
+        const { data: clinic } = await supabase
+            .from("clinics")
+            .select("*")
+            .eq("id", profile.clinic_id)
+            .single();
+        
+        setClinicData(clinic);
+
+        // 3. Carrega Listas
         const [patsRes, profsRes] = await Promise.all([
           supabase.from("patients").select("*").eq("clinic_id", profile.clinic_id).order("name", { ascending: true }),
           supabase.from("profiles").select("*").eq("clinic_id", profile.clinic_id), 
@@ -96,7 +105,7 @@ export function PrescriptionFormPage() {
         setPatientsList(patsRes.data || []);
         setProfessionalsList(profsRes.data || []);
 
-        // 3. Edição
+        // 4. Edição
         if (editId) {
           const { data: pres } = await supabase
             .from("prescriptions")
@@ -105,26 +114,25 @@ export function PrescriptionFormPage() {
             .single();
 
           if (pres) {
-            // ✅ CORREÇÃO DE DATA E SNAKE_CASE
-            // Pega a string do banco (YYYY-MM-DD...) e corta no T.
-            // Isso evita que o navegador converta para o dia anterior devido ao fuso.
             const safeDate = pres.date ? String(pres.date).split("T")[0] : "";
 
             reset({
-              patient_id: pres.patient_id, // snake_case      
-              professional_id: pres.professional_id, // snake_case
+              patient_id: pres.patient_id,      
+              professional_id: pres.professional_id, 
               date: safeDate, 
               title: pres.notes,
               treatments: pres.medications || [],
             });
           }
         } else {
-          // Se for novo, seleciona o usuário atual como profissional padrão
           const prof = profsRes.data?.find((p: any) => p.id === user.id);
           if (prof) setValue("professional_id", prof.id);
+          
+          const urlPatientId = searchParams.get("patient_id");
+          if (urlPatientId) setValue("patient_id", urlPatientId);
         }
       } catch (err) {
-        toast.error("Erro ao sincronizar dados da clínica.");
+        toast.error("Erro ao sincronizar dados.");
         console.error(err);
       } finally {
         setInitializing(false);
@@ -132,11 +140,8 @@ export function PrescriptionFormPage() {
     }
 
     initPage();
-  }, [editId, reset, setValue]);
+  }, [editId, reset, setValue, searchParams]);
 
-  // ---------------------------
-  // SALVAR RECEITA
-  // ---------------------------
   const onSubmit = async (data: PrescriptionForm) => {
     try {
       setLoading(true);
@@ -151,7 +156,7 @@ export function PrescriptionFormPage() {
         professional_id: data.professional_id,
         notes: data.title,
         medications: data.treatments,
-        date: data.date, // Salva a string YYYY-MM-DD direto (o Supabase aceita Date como string)
+        date: data.date, 
       };
 
       if (editId) {
@@ -192,47 +197,107 @@ export function PrescriptionFormPage() {
       if (f.includes('enferm')) return "COREN";
       if (f.includes('fisiotera')) return "CREFITO";
       if (f.includes('medic') || f.includes('médic') || f.includes('dermatologista')) return "CRM";
-      if (f.includes('estetic') || f.includes('estétic')) return "MEI/CNPJ";
       return "Registro";
   };
 
+  const formatDisplayDate = (dateString: string) => {
+      if (!dateString) return "--/--/----";
+      const parts = dateString.split('-');
+      if (parts.length === 3) {
+          const [year, month, day] = parts;
+          return `${day}/${month}/${year}`;
+      }
+      return dateString;
+  };
+
+  // ✅ DADOS PARA IMPRESSÃO (Prepara antes)
+  const profDetails = getProfessionalDetails(watchedValues.professional_id);
+  const council = getCouncilLabel(profDetails?.formacao);
+  const clinicName = clinicData?.name || "CLÍNICA DE ESTÉTICA";
+  const clinicAddress = clinicData?.address ? `${clinicData.address} • ${clinicData.phone || ''}` : "Excelência em Tratamentos";
+  const clinicLogo = clinicData?.logo_url; // URL do Logo
+
   // -----------------------------------------------------
-  // LOGICA DE IMPRESSÃO
+  // LOGICA DE IMPRESSÃO (IGUAL AO PRONTUÁRIO)
   // -----------------------------------------------------
   const handlePrint = () => {
     const content = document.getElementById("print-area")?.innerHTML;
     if (!content) return toast.error("Sem conteúdo para impressão.");
-    const headHTML = document.querySelector("head")?.innerHTML || "";
+    
     const printWindow = window.open("", "_blank", "width=800,height=1000");
-
     if (!printWindow) return;
+
+    // ✅ Prepara o HTML do Logo para a impressão
+    const logoHtml = clinicLogo 
+      ? `<img src="${clinicLogo}" alt="${clinicName}" style="max-height: 80px; max-width: 250px; object-fit: contain;" />` 
+      : `<h1 class="clinic-name-print">${clinicName}</h1>`;
 
     printWindow.document.open();
     printWindow.document.write(`
       <html>
         <head>
-          ${headHTML}
+          <title>Receita - ${getPatientName(watchedValues.patient_id)}</title>
           <style>
-            @page { margin: 0; }
-            body { background: white !important; padding: 20mm; font-family: 'Inter', sans-serif; }
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .print-hidden { display: none !important; }
+            @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&family=Open+Sans:wght@400;600&display=swap');
+            @page { margin: 0; size: A4; }
+            body { 
+                background: white !important; 
+                padding: 0; 
+                margin: 0; 
+                font-family: 'Open Sans', sans-serif; 
+                color: #333;
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            }
+            .print-container { padding: 40px; max-width: 800px; margin: 0 auto; min-height: 95vh; position: relative; }
             
-            .signature-img-print {
-                max-height: 80px; 
-                display: block; 
-                margin: 0 auto 10px auto;
-                position: relative; 
-                z-index: 10;
-                transform: translateY(-5px);
-            }
+            /* Header com suporte a Logo */
+            .header-print { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #db2777; padding-bottom: 20px; margin-bottom: 40px; }
+            .clinic-name-print { font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 24px; color: #1f2937; margin: 0; text-transform: uppercase; letter-spacing: -0.5px; }
+            .clinic-sub-print { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; }
+            
+            .doc-type-print { font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 12px; color: #db2777; text-transform: uppercase; letter-spacing: 2px; text-align: right; }
+            .doc-date-print { font-size: 14px; font-weight: 800; font-style: italic; color: #111; margin-top: 4px; text-align: right; }
 
-            .patient-name-print {
-                font-size: 14px !important; 
-            }
+            /* Restante dos estilos (igual ao anterior) */
+            .patient-box-print { background: #fdf2f8; border-left: 4px solid #db2777; padding: 20px; border-radius: 8px; margin-bottom: 40px; }
+            .patient-label-print { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #db2777; letter-spacing: 1px; margin-bottom: 4px; }
+            .patient-name-print { font-family: 'Montserrat', sans-serif; font-size: 22px; font-weight: 800; color: #111; letter-spacing: -0.5px; text-transform: uppercase; }
+            .doc-title-print { text-align: center; margin-bottom: 40px; }
+            .doc-title-text-print { font-family: 'Montserrat', sans-serif; font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; border-bottom: 2px solid #111; padding-bottom: 4px; display: inline-block; font-style: italic; }
+            .treatment-item-print { margin-bottom: 30px; page-break-inside: avoid; }
+            .treatment-name-print { font-family: 'Montserrat', sans-serif; font-size: 16px; font-weight: 800; text-transform: uppercase; color: #111; margin-bottom: 10px; padding-left: 15px; border-left: 3px solid #fce7f3; }
+            .component-row-print { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px dashed #e5e7eb; color: #4b5563; width: 80%; margin-left: 15px; }
+            .component-name-print { font-weight: 600; }
+            .component-qty-print { font-weight: 800; font-style: italic; }
+            .obs-box-print { background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #f3f4f6; margin-top: 10px; margin-left: 15px; font-size: 13px; font-style: italic; color: #6b7280; line-height: 1.5; }
+            .footer-print { position: fixed; bottom: 0; left: 0; right: 0; text-align: center; padding: 40px; background: white; }
+            .signature-img-print { height: 70px; display: block; margin: 0 auto 10px auto; }
+            .prof-line-print { width: 250px; border-top: 1px solid #d1d5db; margin: 0 auto 10px auto; }
+            .prof-name-print { font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 14px; text-transform: uppercase; color: #111; }
+            .prof-reg-print { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+            .clinic-footer-print { font-size: 9px; font-weight: 700; color: #d1d5db; text-transform: uppercase; letter-spacing: 2px; margin-top: 20px; }
           </style>
         </head>
-        <body>${content}</body>
+        <body>
+            <div class="print-container">
+                <div class="header-print">
+                  <div>
+                    ${logoHtml}
+                    <p class="clinic-sub-print">${clinicAddress}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="doc-type-print">Documento</p>
+                    <p class="doc-date-print">${formatDisplayDate(watchedValues.date)}</p>
+                  </div>
+                </div>
+
+                ${document.getElementById("patient-section-preview")?.outerHTML || ''}
+                ${document.getElementById("doc-title-preview")?.outerHTML || ''}
+                ${document.getElementById("treatments-preview")?.outerHTML || ''}
+                ${document.getElementById("footer-preview")?.outerHTML || ''}
+            </div>
+        </body>
       </html>
     `);
     printWindow.document.close();
@@ -245,33 +310,19 @@ export function PrescriptionFormPage() {
     };
   };
 
-  // Helper para formatar data visualmente na folha A4
-  const formatDisplayDate = (dateString: string) => {
-      if (!dateString) return "--/--/----";
-      const parts = dateString.split('-');
-      if (parts.length === 3) {
-          const [year, month, day] = parts;
-          return `${day}/${month}/${year}`;
-      }
-      return dateString;
-  };
-
   if (initializing)
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-white dark:bg-gray-950">
         <Loader2 className="animate-spin w-12 h-12 text-pink-600 mb-4" />
-        <p className="text-xs font-black text-gray-400 uppercase tracking-widest italic">Acessando Arquivos da Clínica...</p>
+        <p className="text-xs font-black text-gray-400 uppercase tracking-widest italic">Carregando Editor...</p>
       </div>
     );
-
-  const profDetails = getProfessionalDetails(watchedValues.professional_id);
-  const council = getCouncilLabel(profDetails?.formacao);
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900 overflow-hidden animate-in fade-in duration-500">
 
       {/* LADO ESQUERDO: CONFIGURAÇÃO (45%) */}
-      <div className="w-full md:w-1/2 lg:w-[45%] border-r bg-white dark:bg-gray-900 flex flex-col shadow-2xl">
+      <div className="w-full md:w-1/2 lg:w-[45%] border-r bg-white dark:bg-gray-900 flex flex-col shadow-2xl z-20">
 
         {/* HEADER */}
         <div className="p-6 border-b flex justify-between items-center bg-white dark:bg-gray-900 sticky top-0 z-10">
@@ -280,8 +331,8 @@ export function PrescriptionFormPage() {
               <ArrowLeft size={22} />
             </Button>
             <div>
-              <h1 className="text-xl font-black italic tracking-tighter uppercase">{editId ? "Revisar" : "Nova"} <span className="text-pink-600">Receita</span></h1>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Editor de Documentos</p>
+              <h1 className="text-xl font-black italic tracking-tighter uppercase">{editId ? "Editar" : "Nova"} <span className="text-pink-600">Receita</span></h1>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Recomendação Avulsa</p>
             </div>
           </div>
 
@@ -301,7 +352,7 @@ export function PrescriptionFormPage() {
           {/* DADOS BASE */}
           <div className="bg-gray-50 dark:bg-gray-800/40 p-8 rounded-[2rem] space-y-6 border border-gray-100 dark:border-gray-800 shadow-inner">
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Paciente Selecionado</label>
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Paciente</label>
               <select {...register("patient_id", { required: true })} className="w-full h-12 px-4 rounded-2xl border-0 bg-white dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none shadow-sm">
                 <option value="">Buscar paciente...</option>
                 {patientsList.map((p) => (
@@ -312,7 +363,7 @@ export function PrescriptionFormPage() {
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Emitente</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Profissional</label>
                 <select {...register("professional_id")} className="w-full h-12 px-4 rounded-2xl border-0 bg-white dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none shadow-sm">
                   {professionalsList.map((p) => (
                     <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>
@@ -320,21 +371,21 @@ export function PrescriptionFormPage() {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Data de Emissão</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Data</label>
                 <input type="date" {...register("date")} className="w-full h-12 px-4 rounded-2xl border-0 bg-white dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none shadow-sm" />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Cabeçalho do Documento</label>
-              <input {...register("title")} className="w-full h-12 px-4 rounded-2xl border-0 bg-white dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none shadow-sm" placeholder="Ex: Recomendação Pós-Peeling" />
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Título do Documento</label>
+              <input {...register("title")} className="w-full h-12 px-4 rounded-2xl border-0 bg-white dark:bg-gray-900 font-bold text-sm focus:ring-2 focus:ring-pink-500 outline-none shadow-sm" placeholder="Ex: Protocolo Home Care" />
             </div>
           </div>
 
           {/* LISTA DE TRATAMENTOS DINÂMICA */}
           <div className="space-y-8">
             <h2 className="text-xs font-black text-gray-400 uppercase tracking-[0.3em] flex items-center gap-3">
-              <Stethoscope size={14} className="text-pink-600" /> Itens da Prescrição
+              <Stethoscope size={14} className="text-pink-600" /> Itens da Receita
             </h2>
             {treatmentFields.map((field, index) => (
               <div key={field.id} className="p-8 bg-white dark:bg-gray-800 rounded-[2.5rem] border border-gray-100 dark:border-gray-700 relative shadow-lg animate-in slide-in-from-bottom-4 duration-500">
@@ -344,22 +395,22 @@ export function PrescriptionFormPage() {
 
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Nome do Protocolo / Medicamento</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Nome do Item</label>
                     <input
                       {...register(`treatments.${index}.name` as const)}
                       className="w-full h-12 px-4 border-2 border-gray-50 dark:border-gray-700 rounded-2xl font-bold focus:border-pink-500 transition-colors outline-none"
-                      placeholder="Ex: SkinCare Noturno"
+                      placeholder="Ex: Sabonete Facial"
                     />
                   </div>
 
                   <TreatmentComponents index={index} control={control} register={register} />
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Instruções de Uso (Posologia)</label>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Modo de Uso</label>
                     <textarea
                       {...register(`treatments.${index}.observations` as const)}
                       className="w-full p-4 border-2 border-gray-50 dark:border-gray-700 rounded-2xl font-medium text-sm focus:border-pink-500 transition-colors outline-none resize-none h-24"
-                      placeholder="Ex: Aplicar 3 gotas antes de dormir..."
+                      placeholder="Instruções..."
                     />
                   </div>
                 </div>
@@ -371,62 +422,64 @@ export function PrescriptionFormPage() {
               onClick={() => appendTreatment({ name: "", components: [{ name: "", quantity: "" }], observations: "" })}
               className="w-full py-6 border-4 border-dashed border-gray-100 dark:border-gray-800 rounded-[2.5rem] text-gray-400 hover:text-pink-600 hover:border-pink-100 transition-all font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3"
             >
-              <Plus size={20} /> Adicionar Novo Protocolo
+              <Plus size={20} /> Adicionar Item
             </button>
           </div>
         </div>
       </div>
 
       {/* LADO DIREITO: PREVIEW A4 (55%) */}
-      <div className="hidden md:flex w-1/2 lg:w-[55%] bg-gray-50 dark:bg-gray-950 items-center justify-center p-12 overflow-y-auto custom-scrollbar">
-        <div id="print-area" className="w-full max-w-[21cm] min-h-[29.7cm] bg-white p-[2.5cm] shadow-2xl flex flex-col justify-between text-gray-800 relative ring-1 ring-gray-100">
+      <div className="hidden md:flex w-1/2 lg:w-[55%] bg-gray-100 dark:bg-gray-950 items-center justify-center p-12 overflow-y-auto custom-scrollbar">
+        <div id="print-area" className="w-full max-w-[21cm] min-h-[29.7cm] bg-white p-[2.5cm] shadow-2xl flex flex-col justify-between relative ring-1 ring-gray-200">
           
           <div>
-            {/* Logo/Nome Clínica */}
-            <div className="border-b-4 border-pink-600 pb-8 mb-10 flex justify-between items-end">
+            {/* ✅ CABEÇALHO PREVIEW COM LOGO */}
+            <div className="header-print flex justify-between items-end border-b-2 border-pink-600 pb-5 mb-10">
               <div>
-                <h2 className="text-4xl font-black italic tracking-tighter text-gray-900 uppercase">VF <span className="text-pink-600"> Clinic</span></h2>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">Health & Visual Excellence</p>
+                {clinicLogo ? (
+                  <img src={clinicLogo} alt={clinicName} className="max-h-20 object-contain mb-2" />
+                ) : (
+                  <h1 className="clinic-name-print text-2xl font-black text-gray-900 uppercase tracking-tighter">{clinicName}</h1>
+                )}
+                <p className="clinic-sub-print text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">{clinicAddress}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Emissão</p>
-                {/* DATA VISUAL BLINDADA */}
-                <p className="text-sm font-black italic">{formatDisplayDate(watchedValues.date)}</p>
+                <p className="doc-type-print text-xs font-bold text-pink-600 uppercase tracking-widest">Documento</p>
+                <p className="doc-date-print text-sm font-black italic text-gray-900 mt-1">{formatDisplayDate(watchedValues.date)}</p>
               </div>
             </div>
 
-            {/* Cabeçalho Paciente */}
-            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 mb-12">
-              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest mb-2">Paciente</p>
-              <p className="text-2xl font-black text-gray-900 italic tracking-tighter uppercase patient-name-print">{getPatientName(watchedValues.patient_id)}</p>
+            {/* PACIENTE (Com ID para o seletor de impressão) */}
+            <div id="patient-section-preview" className="patient-box-print bg-pink-50 border-l-4 border-pink-500 p-5 rounded-lg mb-10">
+              <p className="patient-label-print text-[10px] font-black text-pink-600 uppercase tracking-widest mb-1">Paciente</p>
+              <p className="patient-name-print text-xl font-black text-gray-900 uppercase tracking-tighter">{getPatientName(watchedValues.patient_id)}</p>
             </div>
 
-            <div className="text-center mb-16">
-              <h3 className="text-xl font-black uppercase italic tracking-[0.2em] border-b-2 border-gray-900 inline-block pb-1">
+            <div id="doc-title-preview" className="doc-title-print text-center mb-10">
+              <h3 className="doc-title-text-print text-lg font-black uppercase tracking-[0.2em] border-b-2 border-gray-900 inline-block pb-1 italic">
                 {watchedValues.title}
               </h3>
             </div>
 
-            {/* Itens da Receita */}
-            <div className="space-y-12">
+            {/* ITENS (Com ID para o seletor de impressão) */}
+            <div id="treatments-preview" className="space-y-8">
               {watchedValues.treatments?.map((t, idx) => (
-                <div key={idx} className="relative pl-8 border-l-2 border-pink-100">
-                  <div className="absolute -left-[7px] top-0 w-3 h-3 rounded-full bg-pink-500 shadow-[0_0_10px_rgba(236,72,153,0.5)]"></div>
-                  <h4 className="font-black text-lg text-gray-900 uppercase tracking-tighter italic mb-4">{t.name}</h4>
+                <div key={idx} className="treatment-item-print mb-8">
+                  <h4 className="treatment-name-print text-base font-black text-gray-900 uppercase tracking-tighter italic mb-3 pl-4 border-l-4 border-pink-100">{t.name}</h4>
 
                   {t.components?.length > 0 && (
-                    <ul className="mb-6 space-y-2">
+                    <div className="mb-4 pl-4 w-3/4">
                       {t.components.map((c, i) => c.name && (
-                        <li key={i} className="flex justify-between items-center text-gray-600 border-b border-gray-50 pb-1 w-2/3 text-sm">
-                          <span className="font-medium">{c.name}</span>
+                        <div key={i} className="component-row-print flex justify-between text-sm py-1 border-b border-dashed border-gray-200 text-gray-600">
+                          <span className="font-semibold">{c.name}</span>
                           <span className="font-black italic text-gray-400">{c.quantity}</span>
-                        </li>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
                   )}
 
                   {t.observations && (
-                    <div className="bg-gray-50/50 p-4 rounded-xl border border-gray-100 text-sm font-medium leading-relaxed italic text-gray-500">
+                    <div className="obs-box-print bg-gray-50 p-4 rounded-lg border border-gray-100 text-sm font-medium italic text-gray-500 ml-4">
                         {t.observations}
                     </div>
                   )}
@@ -435,25 +488,22 @@ export function PrescriptionFormPage() {
             </div>
           </div>
 
-          {/* ASSINATURA AUTOMÁTICA */}
-          <div className="mt-20 text-center">
+          {/* RODAPÉ (Com ID para o seletor de impressão) */}
+          <div id="footer-preview" className="footer-print text-center mt-20">
             {profDetails?.signature_data ? (
-               <div className="flex justify-center -mb-6 relative z-10">
-                  <img src={profDetails.signature_data} className="h-24 object-contain signature-img-print" alt="Assinatura" />
-               </div>
+                <img src={profDetails.signature_data} className="signature-img-print h-20 mx-auto mb-2" alt="Assinatura" />
             ) : (
-               <div className="h-16"></div>
+                <div className="h-16"></div>
             )}
 
-            <div className="border-t-2 border-gray-200 pt-6 w-1/2 mx-auto">
-                <p className="text-sm font-black text-gray-900 uppercase tracking-widest italic">
-                   Dr(a). {profDetails ? `${profDetails.first_name} ${profDetails.last_name}` : "Especialista"}
-                </p>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.3em] mt-2">
-                    {council}: {profDetails?.registration_number || '---'}
-                </p>
-            </div>
-            <p className="text-[8px] font-bold text-gray-300 uppercase tracking-[0.4em] mt-8">Documento Oficial Autenticado</p>
+            <div className="prof-line-print w-64 border-t border-gray-300 mx-auto mb-2"></div>
+            <p className="prof-name-print text-sm font-black text-gray-900 uppercase tracking-widest italic">
+                Dr(a). {profDetails ? `${profDetails.first_name} ${profDetails.last_name}` : "Especialista"}
+            </p>
+            <p className="prof-reg-print text-[10px] font-bold text-gray-400 uppercase tracking-[0.3em] mt-1">
+                {council}: {profDetails?.registration_number || '---'}
+            </p>
+            <p className="clinic-footer-print text-[8px] font-bold text-gray-300 uppercase tracking-[0.4em] mt-6">Documento Oficial Autenticado</p>
           </div>
 
         </div>
@@ -462,41 +512,22 @@ export function PrescriptionFormPage() {
   );
 }
 
-// --- SUB-COMPONENTE DE FÓRMULAS ---
+// --- SUB-COMPONENTE ---
 function TreatmentComponents({ index, control, register }: any) {
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: `treatments.${index}.components`,
-  });
+  const { fields, append, remove } = useFieldArray({ control, name: `treatments.${index}.components` });
 
   return (
     <div className="bg-gray-50 dark:bg-gray-900/50 p-6 border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-3xl">
-      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 block">Fórmula Personalizada / Ativos</label>
+      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 block">Fórmula / Ativos</label>
       <div className="space-y-3">
         {fields.map((field, k) => (
-          <div key={field.id} className="flex gap-3 animate-in slide-in-from-left-2 duration-300">
-            <input
-              {...register(`treatments.${index}.components.${k}.name`)}
-              placeholder="Nome do Ativo"
-              className="flex-1 h-10 px-3 bg-white dark:bg-gray-800 border-0 rounded-xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-pink-500"
-            />
-            <input
-              {...register(`treatments.${index}.components.${k}.quantity`)}
-              placeholder="Qtd"
-              className="w-20 h-10 px-3 bg-white dark:bg-gray-800 border-0 rounded-xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-pink-500"
-            />
-            <button type="button" onClick={() => remove(k)} className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-rose-500 transition-colors">
-              <X size={16} />
-            </button>
+          <div key={field.id} className="flex gap-3">
+            <input {...register(`treatments.${index}.components.${k}.name`)} placeholder="Nome do Ativo" className="flex-1 h-10 px-3 bg-white dark:bg-gray-800 border-0 rounded-xl text-xs font-bold shadow-sm outline-none" />
+            <input {...register(`treatments.${index}.components.${k}.quantity`)} placeholder="Qtd" className="w-20 h-10 px-3 bg-white dark:bg-gray-800 border-0 rounded-xl text-xs font-bold shadow-sm outline-none" />
+            <button type="button" onClick={() => remove(k)} className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-rose-500"><X size={16} /></button>
           </div>
         ))}
-        <button
-          type="button"
-          onClick={() => append({ name: "", quantity: "" })}
-          className="h-10 px-4 text-[10px] text-pink-600 font-black uppercase tracking-widest flex items-center gap-2 hover:bg-pink-50 rounded-xl transition-all mt-2"
-        >
-          <Plus size={14} /> Novo Ativo
-        </button>
+        <button type="button" onClick={() => append({ name: "", quantity: "" })} className="h-10 px-4 text-[10px] text-pink-600 font-black uppercase tracking-widest flex items-center gap-2 hover:bg-pink-50 rounded-xl mt-2"><Plus size={14} /> Novo Ativo</button>
       </div>
     </div>
   );

@@ -3,14 +3,26 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { 
   FileText, Plus, Search, 
-  RefreshCw, AlertCircle, ChevronRight, FilePenLine, Trash2, Loader2, Pill 
+  RefreshCw, AlertCircle, ChevronRight, FilePenLine, Trash2, Loader2, Pill, History, Stethoscope
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { toast } from "react-hot-toast";
 
+// Interface para unificar os dois tipos de dados
+interface UnifiedPrescription {
+  id: string;
+  source: 'legacy' | 'evolution'; // Para saber de onde veio
+  date: string;
+  patient_name: string;
+  patient_id: string;
+  professional_name: string;
+  description: string;
+}
+
 export function PrescriptionsPage() {
   const navigate = useNavigate();
-  const [prescriptions, setPrescriptions] = useState<any[]>([]);
+  // Alterado para usar a interface unificada
+  const [prescriptions, setPrescriptions] = useState<UnifiedPrescription[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -36,108 +48,118 @@ export function PrescriptionsPage() {
 
       if (!profile?.clinic_id) throw new Error("Clínica não identificada");
 
-      // 2. Busca Otimizada com JOIN
-      const { data, error } = await supabase
+      // ==========================================================
+      // BUSCA 1: LEGADO (Tabela prescriptions antiga)
+      // ==========================================================
+      const legacyQuery = supabase
         .from('prescriptions')
-        .select(`
-            *,
-            patient:patients!patient_id ( name ),
-            professional:profiles!professional_id ( first_name, last_name, email )
-        `)
+        .select(`*, patient:patients!patient_id ( name ), professional:profiles!professional_id ( first_name, last_name )`)
         .eq('clinic_id', profile.clinic_id)
         .order('created_at', { ascending: false });
 
-      if (error) {
-          console.warn("Tentativa de Join falhou, tentando busca manual...", error);
-          const { data: rawData, error: rawError } = await supabase
-            .from('prescriptions')
-            .select('*')
-            .eq('clinic_id', profile.clinic_id)
-            .order('created_at', { ascending: false });
-            
-          if (rawError) throw rawError;
-          
-          if (rawData) {
-              const pIds = rawData.map((r: any) => r.patient_id).filter(Boolean);
-              const profIds = rawData.map((r: any) => r.professional_id).filter(Boolean);
-              
-              const [pats, profs] = await Promise.all([
-                  supabase.from('patients').select('id, name').in('id', pIds),
-                  supabase.from('profiles').select('id, first_name, last_name').in('id', profIds)
-              ]);
-              
-              const enriched = rawData.map((item: any) => ({
-                  ...item,
-                  patient: pats.data?.find((p: any) => p.id === item.patient_id),
-                  professional: profs.data?.find((p: any) => p.id === item.professional_id)
-              }));
-              
-              setPrescriptions(enriched);
-              return;
-          }
-      }
+      // ==========================================================
+      // BUSCA 2: NOVA (Tabela evolution_records)
+      // ==========================================================
+      // *Nota: Se você não criou a coluna deleted_at ainda, remova o .is('deleted_at', null)
+      const evolutionQuery = supabase
+        .from('evolution_records')
+        .select(`*, patient:patients!patient_id ( name ), professional:profiles!professional_id ( first_name, last_name )`)
+        .eq('clinic_id', profile.clinic_id)
+        .order('date', { ascending: false });
 
-      setPrescriptions(data || []);
+      // Executa as duas em paralelo
+      const [legacyRes, evoRes] = await Promise.all([legacyQuery, evolutionQuery]);
+
+      if (legacyRes.error) console.warn("Erro busca legado:", legacyRes.error);
+      if (evoRes.error) console.warn("Erro busca nova:", evoRes.error);
+
+      // ==========================================================
+      // UNIFICAÇÃO DOS DADOS
+      // ==========================================================
+      
+      // 1. Trata os dados antigos
+      const legacyItems: UnifiedPrescription[] = (legacyRes.data || []).map((item: any) => ({
+          id: item.id,
+          source: 'legacy',
+          date: item.created_at,
+          patient_name: item.patient?.name || 'Paciente Removido',
+          patient_id: item.patient_id,
+          professional_name: item.professional?.first_name || 'Profissional',
+          description: item.notes || "Receita Avulsa (Legado)"
+      }));
+
+      // 2. Trata os dados novos (Filtra apenas quem tem receita)
+      const newItems: UnifiedPrescription[] = (evoRes.data || [])
+        .filter((r: any) => Array.isArray(r.attachments?.prescription) && r.attachments.prescription.length > 0)
+        .map((item: any) => ({
+            id: item.id,
+            source: 'evolution',
+            date: item.date,
+            patient_name: item.patient?.name || 'Paciente Removido',
+            patient_id: item.patient_id,
+            professional_name: item.professional?.first_name || 'Profissional',
+            description: item.subject || "Evolução com Prescrição"
+        }));
+
+      // 3. Junta tudo e ordena
+      const allData = [...newItems, ...legacyItems].sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      setPrescriptions(allData);
 
     } catch (error: any) {
       console.error("Erro na listagem:", error);
-      setErrorMsg("Não foi possível carregar as receitas. " + error.message);
+      setErrorMsg("Erro ao carregar dados unificados: " + error.message);
       toast.error("Erro ao carregar lista.");
     } finally {
       setLoading(false);
     }
   }
 
-  const handleDelete = async (id: string, e: any) => {
+  // Lógica de Delete (Só permite deletar LEGADO aqui por segurança)
+  const handleDelete = async (item: UnifiedPrescription, e: any) => {
       e.stopPropagation();
-      if(!confirm("Tem certeza que deseja excluir esta receita permanentemente?")) return;
+      
+      if (item.source === 'evolution') {
+          return toast.error("Receitas do Prontuário devem ser editadas na ficha do paciente.");
+      }
+
+      if(!confirm("Tem certeza que deseja excluir esta receita antiga permanentemente?")) return;
       
       try {
-        const { error } = await supabase.from('prescriptions').delete().eq('id', id);
+        const { error } = await supabase.from('prescriptions').delete().eq('id', item.id);
         if(error) throw error;
         
         toast.success("Receita removida.");
-        setPrescriptions(prev => prev.filter(item => item.id !== id));
+        setPrescriptions(prev => prev.filter(p => p.id !== item.id));
       } catch (error) {
         toast.error("Erro ao excluir.");
       }
   }
 
-  const handleOpenPrescription = (id: string) => {
-      navigate(`/prescriptions/new?id=${id}`);
+  // Navegação Inteligente
+  const handleOpenPrescription = (item: UnifiedPrescription) => {
+      if (item.source === 'legacy') {
+          // Vai para a tela antiga
+          navigate(`/prescriptions/new?id=${item.id}`);
+      } else {
+          // Vai para o Prontuário Novo
+          navigate(`/patients/${item.patient_id}/evolution`);
+      }
   };
 
   const filtered = prescriptions.filter(item => {
-      const pName = (item.patient?.name || "Paciente Removido").toLowerCase();
-      const profName = (item.professional?.first_name || "").toLowerCase();
+      const pName = (item.patient_name || "").toLowerCase();
+      const profName = (item.professional_name || "").toLowerCase();
       const term = searchTerm.toLowerCase();
       return pName.includes(term) || profName.includes(term);
   });
 
-  const getProfName = (item: any) => {
-      const p = item.professional;
-      if (!p) return 'Profissional Desconhecido';
-      if (p.first_name) return `Dr(a). ${p.first_name} ${p.last_name || ''}`;
-      return p.email || 'Profissional';
-  }
-
-  // ✅ CORREÇÃO DE DATA:
-  // Se a string for curta (ex: '2023-10-08'), adicionamos T12:00 para forçar meio-dia
-  // Assim o fuso horário não joga para o dia anterior
   const formatDateFixed = (dateString: string) => {
       if (!dateString) return "--/--/----";
-      
-      // Se for formato ISO completo com hora, usa normal
-      if (dateString.includes('T') && dateString.includes('Z')) {
-          return new Date(dateString).toLocaleDateString('pt-BR');
-      }
-      
-      // Se for apenas data (YYYY-MM-DD), adiciona meio dia
-      if (dateString.length === 10) {
-          return new Date(dateString + "T12:00:00").toLocaleDateString('pt-BR');
-      }
-
-      return new Date(dateString).toLocaleDateString('pt-BR');
+      if (dateString.includes('T')) return new Date(dateString).toLocaleDateString('pt-BR');
+      return new Date(dateString + "T12:00:00").toLocaleDateString('pt-BR');
   };
 
   return (
@@ -151,7 +173,7 @@ export function PrescriptionsPage() {
             </div>
             <div>
                 <h1 className="text-3xl font-black text-gray-900 dark:text-white tracking-tighter uppercase italic">Central de <span className="text-pink-600">Receitas</span></h1>
-                <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Gestão de prescrições e orientações</p>
+                <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mt-1">Histórico Unificado (Legado + Prontuário)</p>
             </div>
         </div>
         
@@ -202,7 +224,7 @@ export function PrescriptionsPage() {
         {/* Header Tabela */}
         <div className="grid grid-cols-12 gap-4 px-8 py-5 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
             <div className="col-span-4 text-[10px] font-black text-gray-400 uppercase tracking-widest">Paciente</div>
-            <div className="col-span-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Médico/Profissional</div>
+            <div className="col-span-3 text-[10px] font-black text-gray-400 uppercase tracking-widest">Origem / Médico</div>
             <div className="col-span-2 hidden md:block text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Data</div>
             <div className="col-span-5 md:col-span-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-right">Ações</div>
         </div>
@@ -223,29 +245,41 @@ export function PrescriptionsPage() {
             ) : (
                 filtered.map((item) => (
                     <div 
-                        key={item.id} 
+                        key={`${item.source}-${item.id}`} 
                         className="grid grid-cols-12 gap-4 px-8 py-6 items-center hover:bg-pink-50/30 dark:hover:bg-gray-900/40 transition-all group cursor-pointer"
-                        onClick={() => handleOpenPrescription(item.id)}
+                        onClick={() => handleOpenPrescription(item)}
                     >
+                        {/* PACIENTE */}
                         <div className="col-span-4 flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center font-black text-sm shrink-0 border border-blue-100 dark:border-blue-800">
-                                {item.patient?.name?.charAt(0) || '?'}
+                            {/* ÍCONE DE ORIGEM: History (Legado) ou Stethoscope (Prontuário) */}
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-sm shrink-0 border ${item.source === 'evolution' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                                {item.source === 'evolution' ? <Stethoscope size={20}/> : <History size={20}/>}
                             </div>
-                            <div className="font-black text-gray-900 dark:text-white uppercase tracking-tighter italic truncate">
-                                {item.patient?.name || 'Paciente Removido'}
+                            <div>
+                                <div className="font-black text-gray-900 dark:text-white uppercase tracking-tighter italic truncate">
+                                    {item.patient_name}
+                                </div>
+                                {/* Label indicando origem */}
+                                <div className="text-[9px] font-bold uppercase tracking-widest mt-1 flex gap-2">
+                                     {item.source === 'legacy' ? (
+                                         <span className="text-gray-400 bg-gray-100 px-2 rounded">ANTIGO</span>
+                                     ) : (
+                                         <span className="text-emerald-600 bg-emerald-50 px-2 rounded">PRONTUÁRIO</span>
+                                     )}
+                                     <span className="text-gray-400 truncate max-w-[100px]">{item.description}</span>
+                                </div>
                             </div>
                         </div>
 
                         <div className="col-span-3">
                             <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest truncate block">
-                                {getProfName(item)}
+                                {item.professional_name}
                             </span>
                         </div>
 
                         <div className="col-span-2 hidden md:block text-center">
                             <span className="text-xs font-black text-gray-400 dark:text-gray-500 tabular-nums">
-                                {/* AQUI: Usando a função corrigida */}
-                                {formatDateFixed(item.date || item.created_at)}
+                                {formatDateFixed(item.date)}
                             </span>
                         </div>
 
@@ -253,17 +287,23 @@ export function PrescriptionsPage() {
                             <Button 
                                 variant="ghost" 
                                 className="h-10 px-4 rounded-xl text-blue-600 hover:bg-blue-50 font-black uppercase text-[10px] tracking-widest flex items-center gap-2"
-                                onClick={(e) => { e.stopPropagation(); handleOpenPrescription(item.id); }}
+                                onClick={(e) => { e.stopPropagation(); handleOpenPrescription(item); }}
                             >
-                                <FilePenLine size={16}/> <span className="hidden sm:inline">Editar</span>
+                                <FilePenLine size={16}/> <span className="hidden sm:inline">Visualizar</span>
                             </Button>
                             
-                            <button 
-                                className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-                                onClick={(e) => handleDelete(item.id, e)}
-                            >
-                                <Trash2 size={18}/>
-                            </button>
+                            {/* BOTÃO DE EXCLUIR: Só aparece para LEGADO */}
+                            {item.source === 'legacy' ? (
+                                <button 
+                                    className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                                    onClick={(e) => handleDelete(item, e)}
+                                >
+                                    <Trash2 size={18}/>
+                                </button>
+                            ) : (
+                                // Espaço vazio para manter alinhamento em itens novos
+                                <div className="w-10 h-10"></div>
+                            )}
 
                             <ChevronRight size={20} className="text-gray-200 group-hover:text-pink-300 group-hover:translate-x-1 transition-all"/>
                         </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { 
   Search, Plus, Minus, Trash2, FileText, Sparkles, Syringe, Zap, 
   ShoppingBag, Loader2, Tag, Calendar, CheckCircle2, Play, 
-  Stethoscope, Save
+  Stethoscope, Save, CalendarCheck, ArrowRight 
 } from "lucide-react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"; 
 import { supabase } from "../../lib/supabase";
@@ -57,7 +57,6 @@ export function PatientPlanningPage() {
   const [activeCategory, setActiveCategory] = useState<string>("todos");
   const [clinicId, setClinicId] = useState<string | null>(null);
   
-  // SELEÇÃO DO PROFISSIONAL (Necessário para a comissão futura)
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>(""); 
   
   const [selectedItems, setSelectedItems] = useState<BudgetItem[]>([]);
@@ -70,7 +69,6 @@ export function PatientPlanningPage() {
   const [executionModalOpen, setExecutionModalOpen] = useState(false);
   const [planToExecute, setPlanToExecute] = useState<ClientPlan | null>(null);
 
-  // 1. CARREGAR DADOS
   useEffect(() => {
     initPage();
   }, [patientId, searchParams]);
@@ -89,8 +87,6 @@ export function PatientPlanningPage() {
 
       const currentClinicId = profile?.clinic_id || user.id;
       setClinicId(currentClinicId);
-      
-      // Define o profissional logado como padrão
       setSelectedProfessionalId(user.id);
 
       // A. Carregar Catálogo
@@ -100,18 +96,16 @@ export function PatientPlanningPage() {
         .eq('clinic_id', currentClinicId)
         .eq('is_active', true)
         .order('name');
-
       if (servicesData) setProcedures(servicesData);
 
-      // B. Carregar Lista de Profissionais
+      // B. Carregar Profissionais
       const { data: profsData } = await supabase
         .from('profiles')
         .select('id, full_name, commission_rate')
         .eq('clinic_id', currentClinicId);
-      
       if (profsData) setProfessionals(profsData);
 
-      // C. Carregar Planos Ativos (Histórico do paciente)
+      // C. Carregar Planos Ativos
       if (patientId) {
           const { data: plansData } = await supabase
               .from('planos_clientes')
@@ -128,15 +122,10 @@ export function PatientPlanningPage() {
           }
       }
 
-      // D. Carregar Orçamento (Edição)
+      // D. Carregar Edição
       const editId = searchParams.get('edit');
       if (editId) {
-          const { data: budgetToEdit } = await supabase
-              .from('budgets')
-              .select('*')
-              .eq('id', editId)
-              .single();
-
+          const { data: budgetToEdit } = await supabase.from('budgets').select('*').eq('id', editId).single();
           if (budgetToEdit) {
               let loadedItems = budgetToEdit.items;
               if (typeof loadedItems === 'string') {
@@ -147,38 +136,18 @@ export function PatientPlanningPage() {
               if (budgetToEdit.professional_id) setSelectedProfessionalId(budgetToEdit.professional_id);
           }
       }
-
-    } catch (err) {
-      console.error("Erro ao carregar:", err);
-      toast.error("Erro ao carregar dados.");
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { console.error(err); } finally { setLoading(false); }
   }
 
-  // --- HANDLERS ---
+  // --- HANDLERS AUXILIARES ---
   const handleExecuteClick = (plano: ClientPlan) => {
     if (!plano.service_id) return toast.error("Plano sem serviço vinculado.");
     setPlanToExecute(plano);
     setExecutionModalOpen(true);
   };
-
-  const handleExecutionSuccess = () => {
-       setExecutionModalOpen(false);
-       setPlanToExecute(null);
-       initPage(); 
-  };
-
-  const handleAgendarClick = (plano: ClientPlan) => {
-    setPlanoParaAgendar(plano);
-    setModalAberto(true);
-  };
-
-  const handleModalClose = () => {
-    setModalAberto(false);
-    setPlanoParaAgendar(null);
-    initPage();
-  };
+  const handleExecutionSuccess = () => { setExecutionModalOpen(false); setPlanToExecute(null); initPage(); };
+  const handleAgendarClick = (plano: ClientPlan) => { setPlanoParaAgendar(plano); setModalAberto(true); };
+  const handleModalClose = () => { setModalAberto(false); setPlanoParaAgendar(null); initPage(); };
 
   const addItem = (proc: Procedure) => {
     const existing = selectedItems.find(i => i.id === proc.id);
@@ -192,8 +161,7 @@ export function PatientPlanningPage() {
   const updateQty = (internalId: string, delta: number) => {
     setSelectedItems(prev => prev.map(item => {
       if (item.internalId === internalId) {
-        const newQty = Math.max(1, item.qty + delta);
-        return { ...item, qty: newQty };
+        return { ...item, qty: Math.max(1, item.qty + delta) };
       }
       return item;
     }));
@@ -213,41 +181,6 @@ export function PatientPlanningPage() {
     return matchesSearch && matchesCategory;
   });
 
-  // --- AÇÃO PRINCIPAL: SALVAR ORÇAMENTO (ENVIAR PARA RECEPÇÃO) ---
-  const handleSaveBudget = async () => {
-    if(selectedItems.length === 0) return toast.error("O orçamento está vazio.");
-    if(!selectedProfessionalId) return toast.error("Selecione o profissional responsável.");
-
-    setSaving(true);
-    try {
-        // Salva apenas na tabela 'budgets' com status 'pending'
-        // A Recepção verá isso na tela Financeira e fará a cobrança
-        const { error } = await supabase.from('budgets').insert({
-            clinic_id: clinicId,
-            patient_id: patientId,
-            professional_id: selectedProfessionalId, // Vínculo para comissão futura
-            items: selectedItems,
-            subtotal,
-            discount,
-            total,
-            status: 'pending' // Fica pendente aguardando pagamento na recepção
-        });
-
-        if (error) throw error;
-
-        toast.success("Orçamento salvo! Enviado para o Financeiro.");
-        setSelectedItems([]);
-        setDiscount(0);
-        // Opcional: Navegar para outra tela ou manter aqui para fazer outro
-        navigate(`../financial?tab=orcamentos`);
-
-    } catch(e: any) { 
-        toast.error("Erro ao salvar: " + e.message); 
-    } finally {
-        setSaving(false);
-    }
-  };
-
   const getIcon = (cat: string) => {
      const c = cat?.toLowerCase() || '';
      if (c.includes('toxina') || c.includes('preenchedor')) return <Syringe size={18}/>;
@@ -256,23 +189,58 @@ export function PatientPlanningPage() {
   };
 
   const categories = [
-    { id: 'todos', label: 'Tudo' },
-    { id: 'toxina', label: 'Toxina' },
-    { id: 'preenchedor', label: 'Preenchedores' },
-    { id: 'bioestimulador', label: 'Bioestimuladores' },
-    { id: 'tecnologia', label: 'Tecnologias' },
-    { id: 'facial', label: 'Faciais' },
-    { id: 'corporal', label: 'Corporais' },
+    { id: 'todos', label: 'Tudo' }, { id: 'toxina', label: 'Toxina' },
+    { id: 'preenchedor', label: 'Preenchedores' }, { id: 'bioestimulador', label: 'Bioestimuladores' },
+    { id: 'tecnologia', label: 'Tecnologias' }, { id: 'facial', label: 'Faciais' }, { id: 'corporal', label: 'Corporais' },
   ];
+
+  // --- O BOTÃO MÁGICO CORRIGIDO ---
+  const handleFinalizeAndSchedule = async () => {
+    if(selectedItems.length === 0) return toast.error("O orçamento está vazio.");
+    if(!selectedProfessionalId) return toast.error("Selecione o profissional.");
+
+    setSaving(true);
+    try {
+        // 1. Salva como PENDENTE
+        // Isso GARANTE que apareça na tela da recepção para cobrança
+        const { error } = await supabase.from('budgets').insert({
+            clinic_id: clinicId,
+            patient_id: patientId,
+            professional_id: selectedProfessionalId, 
+            items: selectedItems,
+            subtotal,
+            discount,
+            total,
+            status: 'pending' // <--- ESSA É A CHAVE!
+        });
+
+        if (error) throw error;
+
+        // Pega o ID do serviço para a agenda
+        const mainServiceId = selectedItems[0]?.id || "";
+
+        toast.success("Enviado para Recepção! Abrindo Agenda...", { duration: 3000, icon: '🚀' });
+        
+        // 2. Redireciona para a AGENDA (/appointments)
+        // O médico vai agendar enquanto a recepção recebe o alerta de cobrança
+        setTimeout(() => {
+            navigate(`/appointments?patientId=${patientId}&action=new_appointment&serviceId=${mainServiceId}`);
+        }, 1000);
+
+    } catch(e: any) { 
+        toast.error("Erro: " + e.message); 
+    } finally {
+        setSaving(false);
+    }
+  };
 
   if (loading) return <div className="p-10 h-96 flex flex-col items-center justify-center"><Loader2 className="animate-spin text-pink-500 w-10 h-10"/></div>;
 
   return (
     <div className="h-[calc(100vh-140px)] flex flex-col xl:flex-row gap-6 animate-in fade-in duration-500 relative">
       
-      {/* --- ESQUERDA: CATÁLOGO DE PROCEDIMENTOS --- */}
+      {/* ESQUERDA: CATÁLOGO */}
       <div className="flex-1 flex flex-col gap-6 h-full overflow-hidden">
-         {/* PLANOS ATIVOS (VISUALIZAÇÃO APENAS) */}
          {activePlans.length > 0 && (
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-gray-800 p-6 rounded-3xl border border-emerald-100 dark:border-gray-700 shrink-0">
                 <div className="flex items-center gap-2 mb-4">
@@ -284,18 +252,11 @@ export function PatientPlanningPage() {
                         <div key={plano.id} className="min-w-[220px] bg-white dark:bg-gray-900 p-4 rounded-2xl border border-emerald-100 shadow-sm flex flex-col justify-between group hover:shadow-md transition-all">
                             <div>
                                 <h4 className="font-bold text-gray-900 dark:text-white text-sm truncate">{plano.nome_plano}</h4>
-                                <div className="mt-2">
-                                    <span className="text-2xl font-black text-emerald-600">{plano.sessoes_restantes}</span>
-                                    <span className="text-xs text-gray-500 font-medium"> / {plano.sessoes_totais}</span>
-                                </div>
+                                <div className="mt-2"><span className="text-2xl font-black text-emerald-600">{plano.sessoes_restantes}</span><span className="text-xs text-gray-500 font-medium"> / {plano.sessoes_totais}</span></div>
                             </div>
                             <div className="flex gap-2 mt-3 opacity-80 group-hover:opacity-100 transition-opacity">
-                                <Button onClick={() => handleExecuteClick(plano)} variant="outline" className="flex-1 h-8 text-[10px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 uppercase">
-                                    <Play size={12} className="mr-1" /> Realizar
-                                </Button>
-                                <Button onClick={() => handleAgendarClick(plano)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-[10px] font-bold uppercase">
-                                    <Calendar size={12} className="mr-1" /> Agendar
-                                </Button>
+                                <Button onClick={() => handleExecuteClick(plano)} variant="outline" className="flex-1 h-8 text-[10px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 uppercase"><Play size={12} className="mr-1" /> Realizar</Button>
+                                <Button onClick={() => handleAgendarClick(plano)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-[10px] font-bold uppercase"><Calendar size={12} className="mr-1" /> Agendar</Button>
                             </div>
                         </div>
                     ))}
@@ -311,9 +272,7 @@ export function PatientPlanningPage() {
              </div>
              <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
                 {categories.map(cat => (
-                   <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all ${activeCategory === cat.id ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>
-                      {cat.label}
-                   </button>
+                   <button key={cat.id} onClick={() => setActiveCategory(cat.id)} className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all ${activeCategory === cat.id ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>{cat.label}</button>
                 ))}
              </div>
          </div>
@@ -335,39 +294,22 @@ export function PatientPlanningPage() {
          </div>
       </div>
 
-      {/* --- DIREITA: CARRINHO DE ORÇAMENTO (APENAS MONTAGEM) --- */}
+      {/* DIREITA: CARRINHO */}
       <div className="xl:w-[450px] shrink-0 flex flex-col h-full bg-white dark:bg-gray-800 border border-gray-100 rounded-[2.5rem] shadow-xl overflow-hidden relative">
          <div className="p-6 bg-gray-50 dark:bg-gray-900/50 border-b">
-             <div className="flex items-center gap-3 mb-4">
-                <FileText className="text-pink-500" size={20}/>
-                <h2 className="text-lg font-black text-gray-900 dark:text-white uppercase">Novo Orçamento</h2>
-             </div>
-             
-             {/* SELETOR DE PROFISSIONAL (ESSENCIAL PARA COMISSÃO) */}
+             <div className="flex items-center gap-3 mb-4"><FileText className="text-pink-500" size={20}/><h2 className="text-lg font-black text-gray-900 dark:text-white uppercase">Novo Orçamento</h2></div>
              <div className="relative">
                  <Stethoscope className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16}/>
-                 <select 
-                    value={selectedProfessionalId} 
-                    onChange={(e) => setSelectedProfessionalId(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-pink-500/20 appearance-none"
-                 >
+                 <select value={selectedProfessionalId} onChange={(e) => setSelectedProfessionalId(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-pink-500/20 appearance-none">
                      <option value="" disabled>Selecione o Profissional Responsável</option>
-                     {professionals.map(prof => (
-                         <option key={prof.id} value={prof.id}>
-                             {prof.full_name}
-                         </option>
-                     ))}
+                     {professionals.map(prof => (<option key={prof.id} value={prof.id}>{prof.full_name}</option>))}
                  </select>
              </div>
          </div>
 
-         {/* LISTA DE ITENS */}
          <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
              {selectedItems.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-300 opacity-40">
-                   <ShoppingBag size={24} className="mb-2"/>
-                   <p className="text-[10px] font-black uppercase">Carrinho Vazio</p>
-                </div>
+                <div className="h-full flex flex-col items-center justify-center text-gray-300 opacity-40"><ShoppingBag size={24} className="mb-2"/><p className="text-[10px] font-black uppercase">Carrinho Vazio</p></div>
              ) : (
                 selectedItems.map((item) => (
                    <div key={item.internalId} className="flex items-center justify-between">
@@ -386,13 +328,9 @@ export function PatientPlanningPage() {
              )}
          </div>
 
-         {/* RODAPÉ E BOTÃO DE AÇÃO */}
          <div className="p-6 bg-gray-50 dark:bg-gray-900 border-t space-y-4">
              <div className="space-y-2">
-                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase">
-                   <span>Subtotal</span>
-                   <span>R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                </div>
+                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase"><span>Subtotal</span><span>R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
                 <div className="flex justify-between items-center text-[10px] text-emerald-600 font-black uppercase">
                    <span className="flex items-center gap-1"><Tag size={12}/> Desconto</span>
                    <input type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} className="w-20 text-right bg-white border rounded-lg px-2 py-1 font-bold outline-none focus:border-emerald-500" />
@@ -403,35 +341,23 @@ export function PatientPlanningPage() {
                 </div>
              </div>
              
-             {/* BOTÃO ÚNICO: SALVAR PROPOSTA */}
+             {/* BOTÃO ÚNICO - ELITE FLOW CORRIGIDO */}
              <Button 
-                onClick={handleSaveBudget} 
+                onClick={handleFinalizeAndSchedule} 
                 disabled={saving || selectedItems.length === 0} 
-                className="w-full h-14 bg-gray-900 hover:bg-black text-white rounded-2xl font-black uppercase shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="w-full h-14 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-black uppercase shadow-lg shadow-emerald-200 flex items-center justify-center gap-2 active:scale-95 transition-all"
              >
-                {saving ? <Loader2 className="animate-spin"/> : <Save size={18} className="text-white"/>}
-                Salvar e Enviar para Recepção
+                {saving ? <Loader2 className="animate-spin"/> : <CalendarCheck size={20} />}
+                Finalizar e Agendar <ArrowRight size={18} />
              </Button>
          </div>
       </div>
 
-      {/* --- MODAIS EXTERNOS (Mantidos) --- */}
       {modalAberto && planoParaAgendar && patientId && (
-        <ModalAgendarSessao 
-            clienteSelecionado={{ id: patientId, nome: 'Paciente Atual' }} 
-            planoSelecionado={planoParaAgendar}
-            onClose={handleModalClose}
-        />
+        <ModalAgendarSessao clienteSelecionado={{ id: patientId, nome: 'Paciente Atual' }} planoSelecionado={planoParaAgendar} onClose={handleModalClose}/>
       )}
 
-      {/* --- MODAL DE EXECUÇÃO --- */}
-      <ProcedureExecution 
-          isOpen={executionModalOpen}
-          onClose={() => setExecutionModalOpen(false)}
-          onSuccess={handleExecutionSuccess}
-          plan={planToExecute}
-      />
-      
+      <ProcedureExecution isOpen={executionModalOpen} onClose={() => setExecutionModalOpen(false)} onSuccess={handleExecutionSuccess} plan={planToExecute}/>
     </div>
   );
 }

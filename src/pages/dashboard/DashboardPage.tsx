@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import { 
-  Users, CalendarCheck, Loader2, Sparkles, Activity, Clock, User as UserIcon,
-  Phone, MessageCircle, Check, PackageCheck, PackageX, Trash2, UserPlus, UserX, Pencil, Play, ChevronLeft, ChevronRight, AlertTriangle, UserCheck, RotateCcw
+  Users, CalendarCheck, Loader2, Sparkles, Clock, User as UserIcon,
+  Phone, MessageCircle, Check, PackageCheck, PackageX, Trash2, UserPlus, UserX, 
+  Pencil, Play, ChevronLeft, ChevronRight, AlertTriangle, UserCheck, RotateCcw,
+  Wallet, ArrowRight, CheckCircle2, Eye, ExternalLink, AlertCircle, Timer, Activity
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
-import { format, subDays, addDays, isPast, isToday, isFuture } from "date-fns";
+import { format, subDays, isPast, isToday, isFuture, differenceInMinutes } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "react-hot-toast";
 
@@ -28,6 +30,29 @@ const DAILY_PHRASES_LIST = [
   "Beleza é a confiança que entregamos hoje."
 ];
 
+// --- CRONÔMETRO ---
+function LiveTimer({ startTime }: { startTime: string }) {
+    const [minutes, setMinutes] = useState(0);
+
+    useEffect(() => {
+        const calculateTime = () => {
+            const now = new Date();
+            const start = new Date(startTime);
+            const diff = differenceInMinutes(now, start);
+            setMinutes(diff > 0 ? diff : 0);
+        };
+        calculateTime(); 
+        const interval = setInterval(calculateTime, 60000); 
+        return () => clearInterval(interval);
+    }, [startTime]);
+
+    return (
+        <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-3 py-1 rounded-full flex items-center gap-1 animate-pulse">
+            <Timer size={12} /> {minutes} min
+        </span>
+    );
+}
+
 // 2️⃣ COMPONENTES DE APOIO
 
 function StatCard({ title, value, icon, color, customColor }: any) {
@@ -36,7 +61,8 @@ function StatCard({ title, value, icon, color, customColor }: any) {
         blue: "text-blue-600 bg-blue-50", 
         pink: "text-pink-600 bg-pink-50", 
         red: "text-red-600 bg-red-50 animate-pulse",
-        purple: "text-purple-600 bg-purple-50" 
+        purple: "text-purple-600 bg-purple-50",
+        amber: "text-amber-600 bg-amber-50"
     };
     return (
       <div className="bg-white dark:bg-gray-800 p-6 rounded-[2.5rem] border border-gray-100 shadow-xl flex items-center group transition-all hover:-translate-y-1">
@@ -63,13 +89,16 @@ function TimelineSection({ title, color, children }: { title: string, color: str
     );
 }
 
-function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit }: any) {
+function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit, onNavigateToProfile }: any) {
   const patient = Array.isArray(appt.patients) ? appt.patients[0] : appt.patients;
   const service = Array.isArray(appt.services) ? appt.services[0] : appt.services;
   const prof = Array.isArray(appt.profiles) ? appt.profiles[0] : appt.profiles;
   const apptDate = new Date(appt.start_time);
+  const now = new Date();
   
-  const isLate = isToday(apptDate) && ['scheduled'].includes(appt.status) && apptDate.getTime() < (Date.now() - 15 * 60 * 1000);
+  const diffMinutes = differenceInMinutes(now, apptDate);
+  const isLate = isToday(apptDate) && appt.status === 'scheduled' && diffMinutes > 15;
+  const isInAttendance = appt.status === 'arrived'; // Verifica se está em atendimento
 
   let statusColor = clinicColor || '#ec4899';
   if (appt.status === 'confirmed') statusColor = '#3b82f6'; 
@@ -86,10 +115,20 @@ function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit }: any) 
         </div>
         <div>
           <div className="flex items-center gap-3">
-            <p className="font-black text-gray-900 uppercase italic text-md leading-tight">{patient?.name || 'Paciente'}</p>
-            {isLate && <span className="bg-red-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse">ATRASADO</span>}
+            <p 
+                onClick={onNavigateToProfile}
+                className="font-black text-gray-900 uppercase italic text-md leading-tight cursor-pointer hover:text-pink-600 transition-colors hover:underline"
+                title="Ir para o Perfil do Paciente"
+            >
+                {patient?.name || 'Paciente'}
+            </p>
+
+            {isLate && <span className="bg-red-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1"><AlertCircle size={10}/> ATRASADO</span>}
             {appt.status === 'confirmed' && <span className="bg-blue-100 text-blue-600 text-[8px] font-black px-2 py-0.5 rounded-full">CONFIRMADO</span>}
-            {appt.status === 'arrived' && <span className="bg-purple-600 text-white text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse">NA RECEPÇÃO</span>}
+            
+            {/* MOSTRA O CRONÔMETRO SE ESTIVER EM ATENDIMENTO */}
+            {isInAttendance && <LiveTimer startTime={appt.start_time} />}
+            
             {appt.status === 'completed' && <span className="bg-emerald-100 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded-full">REALIZADO</span>}
             {appt.status === 'no_show' && <span className="bg-red-100 text-red-600 text-[8px] font-black px-2 py-0.5 rounded-full">AUSENTE</span>}
           </div>
@@ -103,16 +142,44 @@ function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit }: any) 
       <div className="flex items-center gap-2 mt-6 md:mt-0">
         {appt.status !== 'completed' && appt.status !== 'no_show' ? (
           <>
-            {appt.status !== 'arrived' && (
+            {/* ESCONDE BOTÃO CHECK SE JÁ ESTIVER EM ATENDIMENTO */}
+            {!isInAttendance && appt.status !== 'confirmed' && (
                 <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'confirmed')} className={`h-10 w-10 p-0 rounded-xl ${appt.status === 'confirmed' ? 'bg-blue-600 text-white border-blue-600' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`} title="Confirmar (Whats/Tel)">
                     <Check size={18}/>
                 </Button>
             )}
-            <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'arrived')} className={`h-10 px-3 rounded-xl font-black uppercase text-[10px] tracking-widest ${appt.status === 'arrived' ? 'bg-purple-600 text-white border-purple-600' : 'border-purple-200 text-purple-600 hover:bg-purple-50'}`} title="Marcar Chegada na Clínica">
-                <UserCheck size={16} className="mr-1.5"/> Chegou
+            
+            {/* ESCONDE BOTÃO CHEGOU SE JÁ ESTIVER EM ATENDIMENTO */}
+            {!isInAttendance && (
+                <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'arrived')} className={`h-10 px-3 rounded-xl font-black uppercase text-[10px] tracking-widest ${appt.status === 'arrived' ? 'bg-purple-600 text-white border-purple-600' : 'border-purple-200 text-purple-600 hover:bg-purple-50'}`} title="Marcar Chegada na Clínica">
+                    <UserCheck size={16} className="mr-1.5"/> Chegou
+                </Button>
+            )}
+
+            {/* BOTÃO INICIAR/EM ATENDIMENTO (O ÚNICO QUE FICA QUANDO ESTÁ ROLANDO) */}
+            <Button 
+                disabled={updatingId === appt.id} 
+                size="sm" 
+                variant="outline" 
+                onClick={(e) => onUpdate(e, appt.id, appt.status, 'start_evolution')} 
+                className={`h-10 px-4 rounded-xl font-black uppercase text-[10px] tracking-widest ${
+                    isInAttendance
+                    ? 'bg-purple-600 text-white border-purple-600 animate-pulse' 
+                    : 'text-emerald-600 border-emerald-100 hover:bg-emerald-50'
+                }`} 
+                title="Ir para Evolução"
+            >
+                {isInAttendance ? (
+                    <><Activity size={16} className="mr-2"/> Em Atendimento</>
+                ) : (
+                    <><Play size={16} className="mr-2 fill-current"/> Iniciar</>
+                )}
             </Button>
-            <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'completed')} className="h-10 px-4 rounded-xl font-black uppercase text-[10px] tracking-widest text-emerald-600 border-emerald-100 hover:bg-emerald-50" title="Iniciar (Baixar Estoque)"><Play size={16} className="mr-2 fill-current"/> Iniciar</Button>
-            <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'no_show')} className="h-10 w-10 p-0 rounded-xl text-gray-300 border-gray-200 hover:text-red-500" title="Marcar Falta"><UserX size={18}/></Button>
+            
+            {/* ESCONDE BOTÃO FALTOU SE JÁ ESTIVER EM ATENDIMENTO */}
+            {!isInAttendance && (
+                <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'no_show')} className="h-10 w-10 p-0 rounded-xl text-gray-300 border-gray-200 hover:text-red-500" title="Marcar Falta"><UserX size={18}/></Button>
+            )}
           </>
         ) : (
           <>
@@ -124,7 +191,11 @@ function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit }: any) 
              </Button>
           </>
         )}
-        <Button variant="ghost" size="sm" onClick={onEdit} className="rounded-lg h-10 w-10 text-gray-200 hover:text-pink-600" title="Editar"><Pencil size={16}/></Button>
+        
+        {/* ESCONDE BOTÃO EDITAR SE JÁ ESTIVER EM ATENDIMENTO (Para evitar conflitos) */}
+        {!isInAttendance && appt.status !== 'completed' && appt.status !== 'no_show' && (
+            <Button variant="ghost" size="sm" onClick={onEdit} className="rounded-lg h-10 w-10 text-gray-200 hover:text-pink-600" title="Editar"><Pencil size={16}/></Button>
+        )}
       </div>
     </div>
   );
@@ -143,10 +214,12 @@ export default function DashboardPage() {
   const [stats, setStats] = useState({ 
     todayTotal: 0, 
     todayCompleted: 0, 
-    todayNoShow: 0 
+    todayNoShow: 0,
+    pendingBudgetsCount: 0 
   });
 
   const [nextAppointments, setNextAppointments] = useState<any[]>([]);
+  const [pendingBudgets, setPendingBudgets] = useState<any[]>([]); 
   const [activeAgendaTab, setActiveAgendaTab] = useState<'pending' | 'completed'>('pending');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -163,6 +236,32 @@ export default function DashboardPage() {
 
   const displayName = profile?.fullName?.split(' ')[0] || user?.email?.split('@')[0] || 'Doutor(a)';
   const profilePhoto = profile?.avatarUrl || (profile as any)?.avatar_url; 
+
+  // ✅ REALTIME: ATUALIZA O DASHBOARD AUTOMATICAMENTE SE O STATUS MUDAR (POR OUTRA ABA OU TELA)
+  useEffect(() => {
+    if (!profile?.clinic_id) return;
+
+    // Escuta mudanças na tabela appointments
+    const channel = supabase
+      .channel('dashboard-appointments')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'appointments',
+          filter: `clinic_id=eq.${profile.clinic_id}` // Filtra pela clínica
+        },
+        () => {
+          fetchRealDashboardData(); // Recarrega os dados sem piscar a tela
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.clinic_id]);
 
   useEffect(() => {
     const day = new Date().getDate();
@@ -197,9 +296,41 @@ export default function DashboardPage() {
     toast.success("Lista restaurada!");
   };
 
+  // --- NAVEGAÇÃO SEGURA ---
+  const goToPatientFinancial = (pId: string) => {
+      if(!pId) return toast.error("Erro: Cadastro do paciente incompleto. ID não encontrado.");
+      navigate(`/patients/${pId}/financial?tab=orcamentos`);
+  };
+
+  const goToPatientBudget = (pId: string, budgetId: string) => {
+      if(!pId) return toast.error("Erro: Cadastro do paciente incompleto.");
+      navigate(`/patients/${pId}/treatment-plans?edit=${budgetId}`);
+  };
+
   const handleUpdateStatus = async (e: React.MouseEvent, apptId: string, currentStatus: string, newStatus: string) => {
     e.stopPropagation();
     if (updatingId) return;
+
+    // ✅ LÓGICA DO BOTÃO INICIAR/EM ATENDIMENTO
+    if (newStatus === 'start_evolution') {
+        const appt = nextAppointments.find(a => a.id === apptId);
+        const pId = Array.isArray(appt?.patients) ? appt?.patients[0]?.id : appt?.patients?.id;
+        
+        if (currentStatus !== 'arrived') {
+            setUpdatingId(apptId);
+            await supabase.from('appointments').update({ status: 'arrived' }).eq('id', apptId);
+            // O Realtime vai atualizar a tela, mas chamamos o fetch aqui para garantir responsividade imediata
+            await fetchRealDashboardData();
+            setUpdatingId(null);
+        }
+        
+        if (pId) {
+            navigate(`/patients/${pId}/evolution?autoStart=true`);
+        } else {
+            toast.error("Erro ao identificar paciente.");
+        }
+        return;
+    }
 
     let targetStatus = newStatus;
     if (currentStatus === 'arrived' && newStatus === 'arrived') targetStatus = 'confirmed';
@@ -217,18 +348,19 @@ export default function DashboardPage() {
         
         if (error) {
             console.error(error);
-            if (error.message.includes('check constraint')) toast.error("Banco de dados rejeitou o status.");
-            else if (error.message.includes('estoque')) toast.error("Estoque insuficiente!");
-            else toast.error("Erro ao atualizar status.");
+            toast.error("Erro ao atualizar status.");
             return;
         }
         
         if (targetStatus === 'arrived') toast.success("Paciente na Recepção! 🟣");
-        else if (targetStatus === 'completed') toast.success("Atendimento Finalizado! 🟢");
         else if (targetStatus === 'confirmed') {
             handleCompleteTask(`pre_${apptId}`);
             toast.success("Confirmado! 🔵");
-        } else toast.success("Status atualizado!");
+        } else if (targetStatus === 'completed') {
+            toast.success("Atendimento Finalizado! 🟢");
+        } else {
+            toast.success("Status atualizado!");
+        }
         
         await fetchRealDashboardData();
     } catch (error) { 
@@ -241,21 +373,21 @@ export default function DashboardPage() {
   async function fetchRealDashboardData() {
     if (!profile?.clinic_id) return;
     try {
-      setLoading(true); 
-      const startOfToday = new Date(new Date().setHours(0,0,0,0)).toISOString();
-      const endOfToday = new Date(new Date().setHours(23,59,59,999)).toISOString();
-
-      const [inv, allAppts] = await Promise.all([
+      // Nota: Não setamos loading=true aqui para evitar "piscar" a tela durante updates em realtime
+      
+      const [inv, allAppts, pendingBudgetsData] = await Promise.all([
         supabase.from('inventory').select('*').eq('clinic_id', profile.clinic_id),
-        supabase.from('appointments').select(`id, start_time, status, patient_id, patients (id, name, phone), services (name), profiles!professional_id (first_name, last_name)`).eq('clinic_id', profile.clinic_id).gte('start_time', subDays(new Date(), 10).toISOString()).order('start_time', { ascending: true })
+        supabase.from('appointments').select(`id, start_time, status, patient_id, patients (id, name, phone), services (name), profiles!professional_id (first_name, last_name)`).eq('clinic_id', profile.clinic_id).gte('start_time', subDays(new Date(), 10).toISOString()).order('start_time', { ascending: true }),
+        supabase.from('budgets').select(`id, total, items, created_at, patients (id, name, phone)`).eq('clinic_id', profile.clinic_id).eq('status', 'pending').order('created_at', { ascending: false }).limit(5)
       ]);
 
       const crit = (inv.data || []).filter(item => Number(item.quantity) <= Number(item.minimum_quantity));
       setCriticalItems(crit.sort((a, b) => Number(a.quantity) - Number(b.quantity)));
       setInventoryStatus(crit.some(item => Number(item.quantity) <= 0) ? 'critical' : (crit.length > 0 ? 'warning' : 'ok'));
+      
       setNextAppointments(allAppts.data || []);
+      setPendingBudgets(pendingBudgetsData.data || []);
 
-      // ✅ MENSAGENS PERSONALIZADAS (OPÇÃO B e A)
       const tasksList: any[] = [];
       (allAppts.data || []).forEach((appt: any) => {
           const apptDate = new Date(appt.start_time);
@@ -266,11 +398,9 @@ export default function DashboardPage() {
           const startFormatted = format(apptDate, "dd/MM 'às' HH:mm", { locale: ptBR });
           
           if (isFuture(apptDate) && appt.status === 'scheduled') {
-              // PRÉ - CONSULTIVA (OPÇÃO B)
               const msg = `Oi *${firstName}*, tudo bem? \nTudo certo para sua sessão de *${serviceName}* com o(a) Dr(a)*${profName}*, no dia *${startFormatted}*.\n\nVocê confirma seu horário? Se tiver alguma dúvida sobre o preparo, é só me chamar aqui! <3`;
               tasksList.push({ id: `pre_${appt.id}`, type: 'pre', patientName: patientData?.name, mobile: patientData?.phone, service: serviceName, time: appt.start_time, message: msg });
           } else if (isPast(apptDate) && appt.status === 'completed') {
-              // PÓS - ATENCIOSA (OPÇÃO A)
               const msg = `Olá, *${firstName}*! ✨\nComo você está se sentindo após a sua sessão de *${serviceName}* ?\n\n O(a) Dr(a)*${profName}* e toda nossa equipe adoraram te receber. Qualquer dúvida sobre os cuidados pós-procedimento, conte conosco! <3`;
               tasksList.push({ id: `post_${appt.id}`, type: 'post', patientName: patientData?.name, mobile: patientData?.phone, service: serviceName, time: appt.start_time, message: msg });
           }
@@ -281,13 +411,13 @@ export default function DashboardPage() {
       setStats({ 
         todayTotal: todayAppts.length, 
         todayCompleted: todayAppts.filter(a => a.status === 'completed').length,
-        todayNoShow: todayAppts.filter(a => a.status === 'no_show').length
+        todayNoShow: todayAppts.filter(a => a.status === 'no_show').length,
+        pendingBudgetsCount: pendingBudgetsData.data?.length || 0 
       });
 
     } catch (error) { console.error(error); } finally { setLoading(false); }
   }
 
-  // ✅ FILTROS E ORDENAÇÃO
   const pendingFilter = (nextAppointments || []).filter(a => 
     isFuture(new Date(a.start_time)) || 
     (isToday(new Date(a.start_time)) && a.status !== 'completed' && a.status !== 'no_show')
@@ -333,16 +463,86 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI - NOVOS INDICADORES DE HOJE */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* KPI */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Agendados Hoje (Total)" value={stats.todayTotal} icon={<Clock size={28} />} color="blue" />
         <StatCard title="Realizados Hoje" value={stats.todayCompleted} icon={<Check size={28} />} color="green" />
         <StatCard title="Ausentes Hoje" value={stats.todayNoShow} icon={<UserX size={28} />} color="red" />
+        <StatCard title="Cobranças Pendentes" value={stats.pendingBudgetsCount} icon={<AlertTriangle size={28} />} color="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[850px]">
+          
+          <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+             <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50">
+                <div className="flex items-center gap-3">
+                   <div className="p-2 bg-white rounded-xl text-amber-600 shadow-sm"><Wallet size={20} /></div>
+                   <div>
+                      <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Aguardando Pagamento</h3>
+                      <p className="text-xs text-amber-700 font-bold uppercase tracking-wider">Atenção Financeira</p>
+                   </div>
+                </div>
+                <span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-gray-500 shadow-sm border border-gray-100">{pendingBudgets.length} Pendentes</span>
+             </div>
+             
+             <div className="divide-y divide-gray-50">
+                {pendingBudgets.length === 0 ? (
+                   <div className="p-8 text-center text-gray-400 flex flex-col items-center">
+                      <CheckCircle2 size={32} className="mb-2 text-emerald-200" />
+                      <p className="text-xs font-bold uppercase tracking-widest">Nenhuma pendência financeira.</p>
+                   </div>
+                ) : (
+                   pendingBudgets.map((budget: any) => {
+                      const pat = budget.patients;
+                      const pName = Array.isArray(pat) ? pat[0]?.name : pat?.name;
+                      const pId = Array.isArray(pat) ? pat[0]?.id : pat?.id;
+                      
+                      let procName = "Orçamento Geral";
+                      try {
+                          const items = typeof budget.items === 'string' ? JSON.parse(budget.items) : budget.items;
+                          if (items && items.length > 0) procName = items[0].name;
+                      } catch (e) {}
+
+                      return (
+                        <div 
+                            key={budget.id} 
+                            onClick={() => goToPatientFinancial(pId)}
+                            className="p-5 flex items-center justify-between hover:bg-amber-50/30 transition-colors cursor-pointer group"
+                        >
+                           <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold">{pName?.charAt(0)}</div>
+                              <div>
+                                 <h4 className="font-bold text-gray-900">{pName || "Paciente"}</h4>
+                                 <p className="text-xs text-amber-600 font-bold uppercase mt-0.5">{procName}</p>
+                                 <p className="text-[10px] text-gray-400 font-medium mt-0.5">{new Date(budget.created_at).toLocaleDateString()}</p>
+                              </div>
+                           </div>
+                           <div className="flex items-center gap-3">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); goToPatientBudget(pId, budget.id); }}
+                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                title="Ver Detalhes do Orçamento"
+                              >
+                                <Eye size={18} />
+                              </button>
+
+                              <div className="text-right hidden sm:block mr-3">
+                                 <p className="text-[10px] text-gray-400 font-bold uppercase">Total</p>
+                                 <p className="font-black text-emerald-600">R$ {Number(budget.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); goToPatientFinancial(pId); }} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-black hover:scale-105 transition-all shadow-lg">
+                                 Cobrar <ArrowRight size={14} />
+                              </button>
+                           </div>
+                        </div>
+                      );
+                   })
+                )}
+             </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[600px]">
             <div className="px-10 py-8 border-b bg-gray-50/50 flex flex-col sm:flex-row justify-between items-center gap-4">
                 <h3 className="text-lg font-black uppercase tracking-widest text-gray-900 italic">Cronograma</h3>
                 <div className="flex bg-gray-100 p-1.5 rounded-xl">
@@ -352,20 +552,40 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex-1 overflow-y-auto no-scrollbar p-8 space-y-10">
-                {/* SEÇÃO 1: HOJE (Mostra o que cabe no filtro da aba atual) */}
                 {agendaAgora.length > 0 && (
                     <TimelineSection title={activeAgendaTab === 'pending' ? "Hoje / Em Sala" : "Realizados Hoje"} color={activeAgendaTab === 'pending' ? "red" : "purple"}>
                         {agendaAgora.map(appt => (
-                            <TimelineCard key={appt.id} appt={appt} clinicColor={clinicData?.primary_color} updatingId={updatingId} onUpdate={handleUpdateStatus} onEdit={() => navigate(`/appointments/${appt.id}/edit`)} />
+                            <TimelineCard 
+                                key={appt.id} 
+                                appt={appt} 
+                                clinicColor={clinicData?.primary_color} 
+                                updatingId={updatingId} 
+                                onUpdate={handleUpdateStatus} 
+                                onEdit={() => navigate(`/appointments/${appt.id}/edit`)}
+                                onNavigateToProfile={() => {
+                                    const pId = Array.isArray(appt.patients) ? appt.patients[0]?.id : appt.patients?.id;
+                                    if(pId) navigate(`/patients/${pId}`);
+                                }}
+                            />
                         ))}
                     </TimelineSection>
                 )}
 
-                {/* SEÇÃO 2: DIAS FUTUROS (Só aparece na aba Pendentes) */}
                 {activeAgendaTab === 'pending' && agendaFutura.length > 0 && (
                     <TimelineSection title="Próximos Dias" color="gray">
                         {agendaFutura.map(appt => (
-                            <TimelineCard key={appt.id} appt={appt} clinicColor={clinicData?.primary_color} updatingId={updatingId} onUpdate={handleUpdateStatus} onEdit={() => navigate(`/appointments/${appt.id}/edit`)} />
+                            <TimelineCard 
+                                key={appt.id} 
+                                appt={appt} 
+                                clinicColor={clinicData?.primary_color} 
+                                updatingId={updatingId} 
+                                onUpdate={handleUpdateStatus} 
+                                onEdit={() => navigate(`/appointments/${appt.id}/edit`)} 
+                                onNavigateToProfile={() => {
+                                    const pId = Array.isArray(appt.patients) ? appt.patients[0]?.id : appt.patients?.id;
+                                    if(pId) navigate(`/patients/${pId}`);
+                                }}
+                            />
                         ))}
                     </TimelineSection>
                 )}
@@ -386,7 +606,6 @@ export default function DashboardPage() {
         </div>
 
         <div className="lg:col-span-1 space-y-6">
-           {/* ESTOQUE */}
            <div className={`p-8 rounded-[2.5rem] border shadow-xl transition-all ${inventoryStatus === 'ok' ? 'bg-white' : (inventoryStatus === 'critical' ? 'bg-red-50 border-red-200 animate-pulse' : 'bg-amber-50 border-amber-100')}`}>
                 <div className="flex items-center gap-3 mb-8">
                    {inventoryStatus === 'ok' ? <PackageCheck className="text-emerald-600" size={24} /> : <PackageX className={inventoryStatus === 'critical' ? 'text-red-600' : 'text-amber-600'} size={24} />}
@@ -403,15 +622,14 @@ export default function DashboardPage() {
                 <Button onClick={() => navigate('/inventory')} variant="outline" className="w-full mt-8 h-12 rounded-xl border-black/10 font-black uppercase text-[9px] tracking-widest shadow-sm">Almoxarifado</Button>
            </div>
 
-           {/* CRM / RECEPÇÃO ATIVA */}
            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 shadow-2xl flex flex-col min-h-[550px]">
               <div className="flex items-center justify-between mb-8">
                  <h4 className="text-sm font-black uppercase tracking-widest text-gray-400 flex items-center gap-2"><Phone size={18} className="text-pink-600" /> Recepção Ativa</h4>
                  <button onClick={clearCompleted} className="text-gray-300 hover:text-pink-500 transition-colors"><Trash2 size={24}/></button>
               </div>
               <div className="flex bg-gray-50 p-2 rounded-2xl mb-8 shadow-inner">
-                  <button onClick={() => setActiveTab('pre')} className={`flex-1 py-4 rounded-xl text-xs font-black uppercase transition-all ${activeTab === 'pre' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-400'}`}>Confirmar ({countPre})</button>
-                  <button onClick={() => setActiveTab('post')} className={`flex-1 py-4 rounded-xl text-xs font-black uppercase transition-all ${activeTab === 'post' ? 'bg-white text-purple-600 shadow-md' : 'text-gray-400'}`}>Pós ({countPost})</button>
+                 <button onClick={() => setActiveTab('pre')} className={`flex-1 py-4 rounded-xl text-xs font-black uppercase transition-all ${activeTab === 'pre' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-400'}`}>Confirmar ({countPre})</button>
+                 <button onClick={() => setActiveTab('post')} className={`flex-1 py-4 rounded-xl text-xs font-black uppercase transition-all ${activeTab === 'post' ? 'bg-white text-purple-600 shadow-md' : 'text-gray-400'}`}>Pós ({countPost})</button>
               </div>
               <div className="space-y-5 overflow-y-auto no-scrollbar flex-1">
                  {visibleTasks.map(task => (

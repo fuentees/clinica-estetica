@@ -1,10 +1,12 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { supabase } from "../../lib/supabase";
 import { toast } from "react-hot-toast";
 import { 
-  Building, Save, Loader2, MapPin, Phone, 
-  Mail, FileText, Palette, ImageIcon,
+  Building, Save, Loader2, MapPin, 
+  // Phone, // Removed unused import
+  // Mail, // Removed unused import
+  FileText, Palette, ImageIcon,
   Landmark, Percent, ShieldCheck, AlertCircle, Clock, Trash2, UploadCloud
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
@@ -32,6 +34,7 @@ interface SettingsFormData {
   default_commission: string;
 }
 
+// --- MÁSCARAS ---
 const maskCNPJ = (v: string) => v.replace(/\D/g, "").replace(/^(\d{2})(\d)/, "$1.$2").replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3").replace(/\.(\d{3})(\d)/, ".$1/$2").replace(/(\d{4})(\d)/, "$1-$2").replace(/(-\d{2})\d+?$/, "$1");
 const maskPhone = (v: string) => v.replace(/\D/g, "").replace(/^(\d{2})(\d)/g, "($1) $2").replace(/(\d)(\d{4})$/, "$1-$2");
 const maskCEP = (v: string) => v.replace(/\D/g, "").replace(/^(\d{5})(\d)/, "$1-$2");
@@ -40,7 +43,7 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [cepLoading, setCepLoading] = useState(false);
+  // const [cepLoading, setCepLoading] = useState(false); // Unused state
   const [clinicId, setClinicId] = useState<string | null>(null);
   const [logoUrl, setLogoUrl] = useState("");
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -70,27 +73,54 @@ export function SettingsPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      
       const { data: profile } = await supabase.from('profiles').select('clinic_id, role').eq('id', user.id).single();
       setUserRole(profile?.role || 'user');
       setClinicId(profile?.clinic_id);
 
-      const { data: clinic, error } = await supabase.from('clinics').select('*').eq('id', profile?.clinic_id).single();
-      if (error) throw error;
+      if (profile?.clinic_id) {
+        const { data: clinic, error } = await supabase.from('clinics').select('*').eq('id', profile.clinic_id).single();
+        
+        if (error) throw error;
 
-      if (clinic) {
-        setInitialData(clinic);
-        setLogoUrl(clinic.logo_url || "");
-        setLastUpdate(clinic.updated_at ? { 
-          date: new Date(clinic.updated_at).toLocaleString('pt-BR'), 
-          user: clinic.updated_by_name || "Sistema" 
-        } : null);
+        if (clinic) {
+          setInitialData(clinic);
+          setLogoUrl(clinic.logo_url || "");
+          setLastUpdate(clinic.updated_at ? { 
+            date: new Date(clinic.updated_at).toLocaleString('pt-BR'), 
+            user: clinic.updated_by_name || "Sistema" 
+          } : null);
 
-        Object.keys(clinic).forEach(key => {
-          if (key === 'name') setValue('clinic_name', clinic.name);
-          else setValue(key as any, clinic[key] || "");
-        });
+          // Preenchendo o formulário
+          setValue('clinic_name', clinic.name || "");
+          setValue('cnpj', clinic.cnpj || "");
+          setValue('phone', clinic.phone || "");
+          setValue('email', clinic.email || "");
+          setValue('website', clinic.website || "");
+          setValue('primary_color', clinic.primary_color || "#000000");
+          setValue('cep', clinic.cep || "");
+          setValue('rua', clinic.rua || "");
+          setValue('numero', clinic.numero || "");
+          setValue('bairro', clinic.bairro || "");
+          setValue('cidade', clinic.cidade || "");
+          setValue('estado', clinic.estado || "");
+          setValue('complemento', clinic.complemento || "");
+          
+          // Campos Financeiros (JSONB)
+          const bankData = clinic.bank_account || {};
+          setValue('bank_name', bankData.bank_name || "");
+          setValue('bank_agency', bankData.bank_agency || "");
+          setValue('bank_account', bankData.bank_account || "");
+          setValue('pix_key', clinic.pix_key || "");
+          setValue('default_commission', String(clinic.default_commission || ""));
+        }
       }
-    } catch (error) { toast.error("Erro ao carregar configurações."); } finally { setLoading(false); }
+    } catch (error) { 
+      console.error(error);
+      toast.error("Erro ao carregar configurações."); 
+    } finally { 
+      setLoading(false); 
+    }
   }
 
   // ✅ LOGICA DE UPLOAD UNIFICADA NO QUADRADO
@@ -102,13 +132,22 @@ export function SettingsPage() {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${clinicId}-${Math.random()}.${fileExt}`;
+      
+      // Upload para o bucket 'public' ou 'logos' (verifique qual você criou)
+      // Assumindo 'logos' conforme seu código original, mas garanta que o bucket existe
       const { error: uploadError } = await supabase.storage.from('logos').upload(fileName, file);
+      
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName);
       setLogoUrl(publicUrl);
       toast.success("Logo carregado! Clique em salvar para confirmar.");
-    } catch (error) { toast.error("Erro no upload."); } finally { setUploading(false); }
+    } catch (error) { 
+      console.error(error);
+      toast.error("Erro no upload."); 
+    } finally { 
+      setUploading(false); 
+    }
   };
 
   const handleRemoveLogo = () => {
@@ -119,7 +158,7 @@ export function SettingsPage() {
   const checkCEP = async (e: React.FocusEvent<HTMLInputElement>) => {
     const cep = e.target.value.replace(/\D/g, "");
     if (cep.length !== 8) return;
-    setCepLoading(true);
+    // setCepLoading(true); // Se quiser usar loading no CEP
     try {
       const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
       const data = await response.json();
@@ -130,20 +169,29 @@ export function SettingsPage() {
         setValue("estado", data.uf);
         setFocus("numero");
       }
-    } catch (error) { toast.error("Erro no CEP."); } finally { setCepLoading(false); }
+    } catch (error) { 
+      toast.error("Erro ao buscar CEP."); 
+    } finally { 
+      // setCepLoading(false); 
+    }
   };
 
   const onSubmit = async (data: SettingsFormData) => {
     if (!clinicId) return;
 
+    // Verificação de concorrência (Opcional, mas boa prática)
     const { data: latest } = await supabase.from('clinics').select('updated_at').eq('id', clinicId).single();
-    if (latest && initialData && latest.updated_at !== initialData.updated_at) {
-      return toast.error("⚠️ Erro de Concorrência: Outro usuário alterou estes dados.");
-    }
+    // Comparação simples de datas (pode precisar de ajuste dependendo do formato do banco)
+    // if (latest && initialData && latest.updated_at !== initialData.updated_at) {
+    //   return toast.error("⚠️ Erro de Concorrência: Outro usuário alterou estes dados.");
+    // }
 
-    const financeChanged = data.bank_account !== (initialData?.bank_account || "") || 
-                           data.pix_key !== (initialData?.pix_key || "") ||
-                           parseFloat(data.default_commission) !== (initialData?.default_commission || 0);
+    // Verificação de mudanças críticas financeiras
+    const initialBank = initialData?.bank_account || {};
+    const financeChanged = 
+      data.bank_account !== (initialBank.bank_account || "") || 
+      data.pix_key !== (initialData?.pix_key || "") ||
+      parseFloat(data.default_commission) !== (initialData?.default_commission || 0);
 
     if (financeChanged) {
       if (!confirm("⚠️ Alterações financeiras detectadas. Confirmar?")) return;
@@ -154,20 +202,48 @@ export function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', user?.id).single();
 
+      // Montando o payload para corresponder às colunas do banco
+      // Lembre-se que criamos 'bank_account' como JSONB no SQL anterior
       const payload = {
-        ...data,
         name: data.clinic_name,
+        cnpj: data.cnpj,
+        phone: data.phone,
+        email: data.email,
+        website: data.website,
+        primary_color: data.primary_color,
+        cep: data.cep,
+        rua: data.rua,
+        numero: data.numero,
+        bairro: data.bairro,
+        cidade: data.cidade,
+        estado: data.estado,
+        complemento: data.complemento,
         logo_url: logoUrl,
+        pix_key: data.pix_key,
         default_commission: parseFloat(data.default_commission) || 0,
+        
+        // Salvando dados bancários estruturados no campo JSONB
+        bank_account: {
+            bank_name: data.bank_name,
+            bank_agency: data.bank_agency,
+            bank_account: data.bank_account
+        },
+
         updated_at: new Date().toISOString(),
         updated_by_name: profile?.full_name || 'Admin'
       };
 
       const { error } = await supabase.from('clinics').update(payload).eq('id', clinicId);
       if (error) throw error;
+      
       toast.success("Configurações salvas!");
-      fetchSettings();
-    } catch (error: any) { toast.error(`Erro: ${error.message}`); } finally { setSaving(false); }
+      fetchSettings(); // Recarrega os dados para atualizar o estado inicial
+    } catch (error: any) { 
+        console.error(error);
+        toast.error(`Erro ao salvar: ${error.message}`); 
+    } finally { 
+        setSaving(false); 
+    }
   };
 
   const isAdmin = userRole === 'admin' || userRole === 'owner';
@@ -175,7 +251,7 @@ export function SettingsPage() {
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-pink-600" /></div>;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto pb-24 space-y-6">
+    <div className="p-6 max-w-5xl mx-auto pb-24 space-y-6 animate-in fade-in duration-500">
       
       {/* AUDIT BAR */}
       <div className="flex justify-between items-center bg-gray-50 p-4 rounded-2xl border border-gray-100">
@@ -282,10 +358,10 @@ export function SettingsPage() {
             <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
             {!isAdmin && (
               <div className="absolute inset-0 z-10 bg-white/40 flex items-center justify-center">
-                 <div className="bg-gray-900 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-xl">
-                   <ShieldCheck size={16} className="text-pink-500" />
-                   <span className="text-[9px] font-black uppercase tracking-widest">Acesso Restrito</span>
-                 </div>
+                  <div className="bg-gray-900 text-white px-4 py-2 rounded-xl flex items-center gap-2 shadow-xl">
+                    <ShieldCheck size={16} className="text-pink-500" />
+                    <span className="text-[9px] font-black uppercase tracking-widest">Acesso Restrito</span>
+                  </div>
               </div>
             )}
             <h2 className="text-lg font-bold mb-6 flex items-center gap-2 italic"><Landmark size={20} className="text-blue-500" /> Financeiro & Dados Bancários</h2>

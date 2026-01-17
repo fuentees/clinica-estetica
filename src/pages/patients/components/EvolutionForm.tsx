@@ -1,7 +1,9 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { 
-  Save, Loader2, Camera, Copy, Plus, Lock, X, 
-  FileText, Trash2, Syringe, Clock, Pill, ChevronRight, AlertTriangle, AlertOctagon, CheckCircle2, ArrowLeft
+  Loader2, Camera, Copy, Plus, Lock, X, 
+  FileText, Trash2, Syringe, Clock, Pill, ChevronRight, 
+  AlertTriangle, AlertOctagon, CheckCircle2, ArrowLeft,
+  MessageSquare, Send, ShieldCheck, Box
 } from "lucide-react";
 import { Button } from "../../../components/ui/button"; 
 import { CLINICAL_TEMPLATES } from "../utils/clinicalTemplates";
@@ -29,6 +31,10 @@ interface EvolutionFormProps {
   addPrescriptionItem: () => void;
   updatePrescriptionItem: (index: number, data: PrescriptionTreatment) => void;
   removePrescriptionItem: (index: number) => void;
+  
+  // ✅ Props de Orientações Pós
+  postTemplates?: any[];
+  onSendPostInstruction?: (templateId: string) => Promise<void>;
 }
 
 export function EvolutionForm({ 
@@ -36,7 +42,9 @@ export function EvolutionForm({
   onProcedureChange, onOpenConsent, onSave, isSaving, 
   lastRecordDescription, customTemplates, onSaveTemplate, onDeleteTemplate,
   disabled,
-  activePrescription, addPrescriptionItem, updatePrescriptionItem, removePrescriptionItem
+  activePrescription, addPrescriptionItem, updatePrescriptionItem, removePrescriptionItem,
+  postTemplates = [], 
+  onSendPostInstruction
 }: EvolutionFormProps) {
   
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -49,7 +57,7 @@ export function EvolutionForm({
   
   // Estados de Controle
   const [isIntercurrence, setIsIntercurrence] = useState(false);
-  const [showSignatureInput, setShowSignatureInput] = useState(false); // ✅ Controla visibilidade da senha
+  const [showSignatureInput, setShowSignatureInput] = useState(false); 
 
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
@@ -58,6 +66,11 @@ export function EvolutionForm({
   const [templateForm, setTemplateForm] = useState({ id: "", title: "", content: "" });
   const [password, setPassword] = useState("");
   const [isValidating, setIsValidating] = useState(false);
+
+  // Debug: Verificando se os templates estão chegando
+  useEffect(() => {
+    console.log("Templates Pós Recebidos no Form:", postTemplates);
+  }, [postTemplates]);
 
   // --- HANDLERS ---
   const handleSaveCustomTemplate = async () => {
@@ -89,14 +102,27 @@ export function EvolutionForm({
     setPhotoPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
+  // ✅ CORREÇÃO ROBUSTA DA IMPORTAÇÃO DE INSUMOS
   const handleImportAssets = () => {
     if (!isSessionActive) return toast.error("Inicie a sessão.");
-    const selectedService = services.find(s => s.name === type || s.id === type);
-    if (selectedService?.products?.length > 0) {
-        const assetsText = "\n\n--- KIT UTILIZADO ---\n" + selectedService.products.map((p: any) => `• ${p.name} (${p.quantity || '1'}un)`).join("\n");
-        setDesc(prev => prev + assetsText);
-        toast.success("Ativos importados!");
-    } else { toast.error("Sem kit cadastrado."); }
+    
+    // Tenta encontrar o serviço pelo nome (ignorando maiúsculas/minúsculas)
+    const selectedService = services.find(s => 
+        s.name.trim().toLowerCase() === type.trim().toLowerCase()
+    );
+
+    if (selectedService) {
+        // Verifica se products existe e tem itens
+        if (selectedService.products && selectedService.products.length > 0) {
+            const assetsText = "\n\n--- KIT UTILIZADO ---\n" + selectedService.products.map((p: any) => `• ${p.name} (${p.quantity || '1'}un)`).join("\n");
+            setDesc(prev => prev + assetsText);
+            toast.success("Kit importado com sucesso!");
+        } else {
+            toast.error(`O serviço "${selectedService.name}" existe, mas não tem produtos vinculados.`);
+        }
+    } else {
+        toast.error("Serviço não identificado. Verifique o cadastro.");
+    }
   };
 
   const handleInitialSubmit = (e: React.FormEvent) => {
@@ -104,7 +130,13 @@ export function EvolutionForm({
     if (!isSessionActive) return toast.error("⚠️ Inicie a sessão para editar.");
     if (!desc.trim()) return toast.error("A evolução não pode estar vazia.");
     
-    // ✅ Em vez de salvar direto, abre o campo de senha
+    // Bloqueio de Segurança se o termo for pendente
+    if (consentStatus === 'pending') {
+        toast.error("Assinatura do termo é obrigatória!", { icon: "🚫" });
+        onOpenConsent();
+        return;
+    }
+
     setShowSignatureInput(true);
   };
 
@@ -163,6 +195,31 @@ export function EvolutionForm({
           </div>
         </div>
 
+        {/* ✅ BLOCO DE CONSENTIMENTO VINCULADO */}
+        {type && (
+            <div className={`p-4 rounded-2xl border-2 flex items-center justify-between animate-in slide-in-from-top-2 ${
+                consentStatus === 'signed' ? 'bg-emerald-50 border-emerald-100' : 
+                consentStatus === 'pending' ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'
+            }`}>
+                <div className="flex items-center gap-3">
+                    {consentStatus === 'signed' ? <ShieldCheck size={24} className="text-emerald-500"/> : <AlertTriangle size={24} className="text-amber-500"/>}
+                    <div>
+                        <h4 className={`text-sm font-black uppercase ${consentStatus === 'signed' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            {consentStatus === 'signed' ? 'Termo Assinado' : consentStatus === 'pending' ? 'Assinatura Pendente' : 'Termo Não Exigido'}
+                        </h4>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            {consentStatus === 'pending' ? 'Obrigatório para este procedimento' : 'Status Legal Verificado'}
+                        </p>
+                    </div>
+                </div>
+                {consentStatus === 'pending' && (
+                    <Button type="button" onClick={onOpenConsent} size="sm" className="bg-amber-500 hover:bg-amber-600 text-white font-bold uppercase text-[10px]">
+                        Coletar Agora
+                    </Button>
+                )}
+            </div>
+        )}
+
         <form onSubmit={handleInitialSubmit} className="space-y-8">
           
           {/* --- EVOLUÇÃO TÉCNICA (CARD PRINCIPAL) --- */}
@@ -210,7 +267,6 @@ export function EvolutionForm({
             {/* BARRA DE AÇÕES INFERIOR (KIT + INTERCORRÊNCIA) */}
             <div className="flex flex-col sm:flex-row justify-between items-center mt-6 pt-4 border-t border-gray-100 gap-4">
                 
-                {/* ✅ BOTÃO DE INTERCORRÊNCIA (Posicionado aqui) */}
                 <button 
                     type="button"
                     onClick={() => isSessionActive && setIsIntercurrence(!isIntercurrence)}
@@ -300,6 +356,40 @@ export function EvolutionForm({
                 </select>
               </div>
             </div>
+          </div>
+
+          {/* ✅ 3. BLOCO DE ORIENTAÇÕES PÓS (CORRIGIDO: TEXTO ESCAPADO) */}
+          <div className="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100/50 space-y-4 animate-in fade-in">
+                 <div className="flex items-center gap-3">
+                    <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl"><MessageSquare size={18}/></div>
+                    <div>
+                        <h4 className="text-sm font-black text-indigo-900 uppercase italic">Orientações Pós-Procedimento</h4>
+                        <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-wide">Envie instruções ao paciente via WhatsApp</p>
+                    </div>
+                 </div>
+                 
+                 {postTemplates && postTemplates.length > 0 ? (
+                    <div className="flex flex-wrap gap-3">
+                        {postTemplates.map(tmpl => (
+                            <button 
+                                key={tmpl.id}
+                                type="button"
+                                disabled={!isSessionActive}
+                                onClick={() => onSendPostInstruction && onSendPostInstruction(tmpl.id)}
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl shadow-sm hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all group disabled:opacity-50"
+                            >
+                                <Send size={12} className="group-hover:translate-x-0.5 transition-transform"/>
+                                {tmpl.title}
+                            </button>
+                        ))}
+                    </div>
+                 ) : (
+                    <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-indigo-200 rounded-xl text-indigo-400 gap-2">
+                        <Box size={24} />
+                        <span className="text-[10px] font-bold uppercase">Nenhum modelo de "Pós" cadastrado</span>
+                        <span className="text-[9px]">Vá em Configurações &gt; Biblioteca e crie um modelo do tipo "Orientações Pós".</span>
+                    </div>
+                 )}
           </div>
 
           {/* --- RODAPÉ INTELIGENTE (DUPLA CONFIRMAÇÃO) --- */}

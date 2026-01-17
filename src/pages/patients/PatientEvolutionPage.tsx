@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Toaster, toast } from "react-hot-toast";
-import { TrendingUp, Play, Loader2, History, Activity, CheckCircle2 } from "lucide-react"; 
+import { TrendingUp, Play, Loader2, History, Activity, CheckCircle2, FileText, Send } from "lucide-react"; 
 import { Button } from "../../components/ui/button";
 import { supabase } from "../../lib/supabase";
 
@@ -23,7 +23,10 @@ export function PatientEvolutionPage() {
   const [selectedRecord, setSelectedRecord] = useState<ClinicalRecord | null>(null);
   
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [clinicData, setClinicData] = useState<any>(null); // ✅ Novo estado para dados da clínica
+  const [clinicData, setClinicData] = useState<any>(null);
+  
+  const [postTemplates, setPostTemplates] = useState<any[]>([]);
+  const [sendingPost, setSendingPost] = useState(false);
 
   // Hook principal
   const { 
@@ -33,9 +36,11 @@ export function PatientEvolutionPage() {
     activePrescription,
     addPrescriptionItem,
     updatePrescriptionItem,
-    removePrescriptionItem
+    removePrescriptionItem,
+    startSession // ✅ 1. AGORA ESTAMOS IMPORTANDO A FUNÇÃO DO BANCO!
   } = usePatientEvolution(id);
 
+  // Hook de Consentimento
   const { status: consentStatus, pendingTemplate, modalOpen, setModalOpen, checkConsentRequirement, setStatus } = useConsentFlow(
     context.clinicId, 
     id, 
@@ -44,19 +49,29 @@ export function PatientEvolutionPage() {
     context.patientName
   );
 
-  // ✅ Busca dados da clínica para passar para a impressão da Timeline
+  // 1. Busca Dados da Clínica e Templates Pós
   useEffect(() => {
-    async function fetchClinicData() {
+    async function fetchData() {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
             const { data: profile } = await supabase.from('profiles').select('clinic_id').eq('id', user.id).single();
             if (profile?.clinic_id) {
                 const { data: clinic } = await supabase.from('clinics').select('*').eq('id', profile.clinic_id).single();
                 setClinicData(clinic);
+
+                const { data: posts } = await supabase
+                    .from('consent_templates')
+                    .select('*')
+                    .eq('clinic_id', profile.clinic_id)
+                    .eq('type', 'pos')
+                    .eq('status', 'ativo')
+                    .is('deleted_at', null);
+                
+                setPostTemplates(posts || []);
             }
         }
     }
-    fetchClinicData();
+    fetchData();
   }, []);
 
   // Lógica de Sessão e AutoStart
@@ -75,7 +90,6 @@ export function PatientEvolutionPage() {
     }
   }, [id, searchParams, activeAppointmentId, isSessionActive]);
 
-  // Listener de Assinatura
   useEffect(() => {
     if (!id || consentStatus !== 'pending') return;
     const channel = supabase.channel('consent-updates')
@@ -83,31 +97,110 @@ export function PatientEvolutionPage() {
         (payload) => {
           if (payload.new.status === 'signed') {
             if (setStatus) setStatus('signed');
-            toast.success("Assinatura detectada!", { icon: <CheckCircle2 className="text-emerald-500" /> });
+            toast.success("Assinatura do termo detectada!", { icon: <CheckCircle2 className="text-emerald-500" /> });
           }
         }
       ).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [id, consentStatus, setStatus]);
 
-  const handleStartSession = () => {
+  // ✅ 2. FUNÇÃO CORRIGIDA: Agora chama o banco (startSession) ANTES de atualizar a tela
+  const handleStartSession = async () => {
+      // Chama a lógica do Hook (Banco de Dados)
+      await startSession(); 
+
+      // Atualiza a tela (Visual)
       setIsSessionActive(true);
       localStorage.setItem(`session_active_${id}`, 'true');
       if (!localStorage.getItem(`timer_start_${id}`)) {
           localStorage.setItem(`timer_start_${id}`, Date.now().toString());
       }
-      toast.success("Atendimento Iniciado!");
+      // O toast de sucesso já vem do startSession, não precisa duplicar aqui
+  };
+
+  const handleSendPostInstructions = async (templateId: string) => {
+    const template = postTemplates.find(t => t.id === templateId);
+    if (!template || !id) return;
+
+    setSendingPost(true);
+    try {
+        let content = template.content;
+        content = content.replace(/{PACIENTE_NOME}/g, context.patientName);
+        content = content.replace(/{PACIENTE_CPF}/g, "Confidencial");
+        content = content.replace(/{PROFISSIONAL_NOME}/g, context.professionalName);
+        content = content.replace(/{CLINICA_NOME}/g, clinicData?.name || "Clínica");
+        content = content.replace(/{DATA_ATUAL}/g, new Date().toLocaleDateString('pt-BR'));
+
+        const html = `
+            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Orientações Pós - ${context.patientName}</title>
+            <style>@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap'); body { font-family: 'Montserrat', sans-serif; padding: 40px; color: #333; } .header { border-bottom: 2px solid #db2777; padding-bottom: 20px; margin-bottom: 30px; } h1 { color: #db2777; font-size: 24px; text-transform: uppercase; } .content { line-height: 1.6; } .footer { margin-top: 50px; font-size: 12px; color: #666; border-top: 1px solid #eee; padding-top: 20px; }</style>
+            </head><body>
+            <div class="header"><h1>${template.title}</h1><p>Paciente: ${context.patientName}</p></div>
+            <div class="content">${content}</div>
+            <div class="footer">Gerado por ${clinicData?.name || "Sistema VILAGI"}</div>
+            </body></html>
+        `;
+
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const fileName = `pos/${id}-${Date.now()}.html`;
+        
+        await supabase.storage.from('documents').upload(fileName, blob, { upsert: true, contentType: 'text/html;charset=utf-8' });
+
+        const { data: linkData, error: dbError } = await supabase.from('document_links').insert({
+            patient_id: id,
+            file_path: fileName,
+        }).select().single();
+
+        if (dbError) throw dbError;
+
+        const appUrl = `${window.location.origin}/doc/${linkData.token}`;
+        const message = `Olá ${context.patientName.split(' ')[0]}! 👋\n\nAqui estão suas orientações pós-procedimento:\n\n👉 *${appUrl}*\n\nQualquer dúvida, nos chame.`;
+        const encoded = encodeURIComponent(message);
+        
+        window.open(`https://wa.me/?text=${encoded}`, '_blank');
+        toast.success("Link de orientações gerado!");
+
+    } catch (error) {
+        console.error(error);
+        toast.error("Erro ao gerar orientações.");
+    } finally {
+        setSendingPost(false);
+    }
   };
 
   const handleSave = async (data: any, files: File[]): Promise<void> => {
     if (!isSessionActive) { toast.error("Inicie o atendimento!"); return; }
-    if (consentStatus === 'pending') { toast.error("Assinatura do termo obrigatória!"); return; }
+    
+    if (consentStatus === 'pending') { 
+        setModalOpen(true);
+        toast.error("Assinatura do termo obrigatória para este procedimento!"); 
+        return; 
+    }
 
     try {
       await saveEvolution(data, files);
       setIsSessionActive(false);
       localStorage.removeItem(`session_active_${id}`);
       localStorage.removeItem(`timer_start_${id}`);
+      
+      if (postTemplates.length > 0) {
+          toast((t) => (
+              <div className="flex flex-col gap-2">
+                  <span className="font-bold">Evolução Salva! Deseja enviar orientações?</span>
+                  <div className="flex gap-2">
+                      {postTemplates.slice(0, 2).map(tmpl => (
+                          <button key={tmpl.id} onClick={() => { handleSendPostInstructions(tmpl.id); toast.dismiss(t.id); }} className="px-3 py-1 bg-pink-100 text-pink-700 text-xs rounded-lg font-bold hover:bg-pink-200">
+                              {tmpl.title}
+                          </button>
+                      ))}
+                      <button onClick={() => toast.dismiss(t.id)} className="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-lg">Não</button>
+                  </div>
+              </div>
+          ), { duration: 6000, icon: '🎉' });
+      } else {
+          toast.success("Evolução salva com sucesso!");
+      }
+
     } catch (error) {
       console.error(error);
     }
@@ -142,7 +235,7 @@ export function PatientEvolutionPage() {
         patientId={id || ""} 
         professionalId={context.professionalId || ""} 
         clinicId={context.clinicId || ""} 
-        procedureName={pendingTemplate?.title || ""} 
+        procedureName={pendingTemplate?.title || "Procedimento"} 
       />
 
       {/* HEADER PACIENTE */}
@@ -205,6 +298,8 @@ export function PatientEvolutionPage() {
                 addPrescriptionItem={addPrescriptionItem}
                 updatePrescriptionItem={updatePrescriptionItem}
                 removePrescriptionItem={removePrescriptionItem}
+                postTemplates={postTemplates} 
+                onSendPostInstruction={handleSendPostInstructions}
             />
          </div>
 
@@ -226,7 +321,9 @@ export function PatientEvolutionPage() {
               onInvalidate={invalidateRecord} 
               onPrint={printRecord}
               patientName={context.patientName}
-              clinicData={clinicData} // ✅ Passando dados da clínica para a Timeline
+              clinicData={clinicData}
+              postTemplates={postTemplates}
+              onSendPostInstruction={handleSendPostInstructions}
             />
          </div>
       </div>

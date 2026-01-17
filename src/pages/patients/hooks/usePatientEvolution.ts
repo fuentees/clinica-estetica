@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom"; 
 import { supabase } from "../../../lib/supabase"; 
 import { toast } from "react-hot-toast";
 import { ClinicalRecord } from "../types/clinical";
 import { useAuth } from "../../../contexts/AuthContext";
 import { addMinutes } from 'date-fns';
 
+// Definições Locais de Tipo
 export type PrescriptionComponent = { name: string; quantity: string };
 export type PrescriptionTreatment = { 
   name: string; 
@@ -14,94 +16,176 @@ export type PrescriptionTreatment = {
 
 export function usePatientEvolution(patientId: string | undefined) {
   const { user, profile } = useAuth();
+  const location = useLocation(); 
+  const navigate = useNavigate();
+  
+  // ✅ Pega o ID enviado pelo Dashboard
+  const navAppointmentId = location.state?.appointmentId || null;
+
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<ClinicalRecord[]>([]);
   const [servicesList, setServicesList] = useState<any[]>([]);
   const [customTemplates, setCustomTemplates] = useState<any[]>([]); 
   const [stats, setStats] = useState({ totalVisits: 0, lastVisit: 'Nunca' });
   const [activePrescription, setActivePrescription] = useState<PrescriptionTreatment[]>([]);
-  const [activeAppointmentId, setActiveAppointmentId] = useState<string | null>(null);
+  
+  // ✅ Rastreia o agendamento em uso
+  const [currentAppointmentId, setCurrentAppointmentId] = useState<string | null>(navAppointmentId);
 
   const [context, setContext] = useState({ 
     clinicId: null as string | null, 
-    clinicName: "", // ✅ Agora será preenchido dinamicamente
+    clinicName: "", 
     professionalId: null as string | null, 
     professionalName: "", 
     patientName: "" 
   });
 
+  // Auxiliar apenas para IMPRESSÃO (Visual)
   const toLocalISO = (date: Date) => {
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   };
 
+  // ✅ FUNÇÃO: INICIAR SESSÃO
+  const startSession = async () => {
+    if (!patientId || !user?.id) {
+        toast.error("Erro: Usuário não autenticado.");
+        return;
+    }
+
+    try {
+      // 1. Busca Clinic ID (Blindado)
+      let activeClinicId = profile?.clinic_id;
+      
+      if (!activeClinicId) {
+          const { data: pData } = await supabase.from('patients').select('clinic_id').eq('id', patientId).single();
+          activeClinicId = pData?.clinic_id;
+      }
+
+      if (!activeClinicId) {
+          const { data: profData } = await supabase.from('profiles').select('clinic_id').eq('id', user.id).single();
+          activeClinicId = profData?.clinic_id;
+      }
+
+      if (!activeClinicId) {
+          toast.error("Erro Crítico: Clínica não identificada.");
+          return;
+      }
+
+      const now = new Date(); 
+      
+      // 2. Limpa sessões antigas
+      await supabase.from('appointments').update({
+          status: 'completed',
+          updated_at: now.toISOString()
+      }).eq('professional_id', user.id).eq('status', 'arrived');
+
+      let idToStart = currentAppointmentId;
+
+      // 3. Busca agendamento existente
+      if (!idToStart) {
+        const todayStr = now.toISOString().split('T')[0]; 
+        
+        const { data: todayAppt } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('patient_id', patientId)
+          .in('status', ['scheduled', 'confirmed'])
+          .gte('start_time', `${todayStr}T00:00:00`)
+          .lte('start_time', `${todayStr}T23:59:59`)
+          .limit(1)
+          .maybeSingle();
+        
+        if (todayAppt) idToStart = todayAppt.id;
+      }
+
+      if (idToStart) {
+        // Atualiza para arrived
+        const { error: updateError } = await supabase
+          .from('appointments')
+          .update({ 
+            status: 'arrived', 
+            updated_at: now.toISOString() 
+        }).eq('id', idToStart);
+        
+        if (updateError) throw updateError;
+        
+        setCurrentAppointmentId(idToStart);
+        toast.success("Atendimento iniciado!");
+      } else {
+        // Criação Avulsa
+        const endTime = addMinutes(now, 30);
+
+        const { data: newAppt, error: createError } = await supabase
+          .from('appointments')
+          .insert({
+            clinic_id: activeClinicId,
+            patient_id: patientId,
+            professional_id: user.id,
+            status: 'scheduled',             
+            start_time: now.toISOString(),   
+            end_time: endTime.toISOString(), 
+            updated_at: now.toISOString(),
+            service_id: null,                
+            notes: 'Atendimento avulso iniciado via Prontuário'
+          })
+          .select('id')
+          .single();
+
+        if (createError) {
+            console.error("ERRO AO CRIAR:", createError);
+            toast.error(`Falha no agendamento: ${createError.message}`);
+            return;
+        }
+        
+        if (newAppt) {
+            await supabase.from('appointments')
+                .update({ status: 'arrived', updated_at: new Date().toISOString() })
+                .eq('id', newAppt.id);
+
+            setCurrentAppointmentId(newAppt.id);
+            toast.success("Atendimento iniciado e agendado!");
+        }
+      }
+    } catch (e: any) {
+      console.error("Erro startSession:", e);
+      toast.error("Erro ao iniciar sessão.");
+    }
+  };
+
   useEffect(() => {
     if (patientId && user) {
         fetchData();
-        checkActiveAppointment();
     }
   }, [patientId, user, profile?.clinic_id]);
 
-  async function checkActiveAppointment() {
-      if (!patientId) return;
-      try {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const { data } = await supabase
-          .from('appointments')
-          .select('id, status')
-          .eq('patient_id', patientId)
-          .gte('start_time', `${todayStr}T00:00:00`)
-          .lte('start_time', `${todayStr}T23:59:59`)
-          .in('status', ['scheduled', 'confirmed', 'arrived'])
-          .limit(1)
-          .maybeSingle();
-
-        if (data) {
-            setActiveAppointmentId(data.id);
-            if (data.status !== 'arrived') {
-                await supabase.from('appointments').update({ status: 'arrived' }).eq('id', data.id);
-            }
-        }
-      } catch (e) { console.error("Erro checkAppointment", e); }
-  }
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!patientId) return;
     try {
       setLoading(true);
       
-      // ✅ Puxando o nome da clínica via JOIN com a tabela 'clinics'
       const { data: patient } = await supabase
         .from('patients')
-        .select(`
-          name, 
-          clinic_id, 
-          clinics (
-            name
-          )
-        `)
+        .select(`name, clinic_id, clinics ( name )`)
         .eq('id', patientId)
         .single();
 
       const activeClinicId = profile?.clinic_id || patient?.clinic_id;
-      // ✅ Aqui pegamos o nome real configurado no banco de dados
       const clinicName = (patient?.clinics as any)?.name || "Clínica de Estética";
-      
       const p = profile as any;
       const profName = p?.fullName || p?.full_name || `${p?.first_name || ''} ${p?.last_name || ''}`.trim() || "Profissional";
 
       setContext({
         clinicId: activeClinicId,
-        clinicName: clinicName, // ✅ Nome dinâmico injetado aqui
+        clinicName: clinicName, 
         professionalId: user?.id || null,
         professionalName: profName,
         patientName: patient?.name || "Paciente" 
       });
 
       const { data: hist, error: histError } = await supabase.from("evolution_records").select('*').eq("patient_id", patientId).order("date", { ascending: false });
-      if (histError) throw histError;
-
-      if (hist) {
+      
+      if (!histError && hist) {
           const profIds = [...new Set(hist.map(r => r.professional_id))];
           const { data: profs } = await supabase.from('profiles').select('id, first_name, last_name').in('id', profIds);
 
@@ -124,13 +208,41 @@ export function usePatientEvolution(patientId: string | undefined) {
           });
       }
       
-      const { data: srvs } = await supabase.from('services').select('*').eq('clinic_id', activeClinicId).eq('is_active', true);
-      setServicesList(srvs || []);
+      const { data: srvs } = await supabase
+        .from('services') 
+        .select('*')
+        .eq('clinic_id', activeClinicId)
+        .eq('is_active', true)
+        .order('name');
+
+      if (srvs && srvs.length > 0) {
+          const serviceIds = srvs.map(s => s.id);
+          const { data: kits } = await supabase
+            .from('procedure_items') 
+            .select(`procedure_id, quantity_needed, inventory:inventory_id (name)`)
+            .in('procedure_id', serviceIds);
+
+          const mergedServices = srvs.map(service => {
+              const serviceKit = kits?.filter((k: any) => k.procedure_id === service.id) || [];
+              return {
+                  ...service,
+                  products: serviceKit.map((k: any) => ({
+                      name: k.inventory?.name || "Item sem nome",
+                      quantity: k.quantity_needed,
+                      unit: "un" 
+                  }))
+              };
+          });
+          setServicesList(mergedServices);
+      } else {
+          setServicesList([]);
+      }
+
       const { data: tmpl } = await supabase.from('evolution_templates').select('*').eq('clinic_id', activeClinicId);
       setCustomTemplates(tmpl || []);
 
     } catch (err) { console.error("Erro fetchData:", err); } finally { setLoading(false); }
-  };
+  }, [patientId, profile, user]);
 
   const addPrescriptionItem = () => {
     setActivePrescription([...activePrescription, { name: "", components: [{ name: "", quantity: "" }], observations: "" }]);
@@ -146,11 +258,13 @@ export function usePatientEvolution(patientId: string | undefined) {
     setActivePrescription(activePrescription.filter((_, i) => i !== index));
   };
 
-  const saveEvolution = async (data: any, files: File[] = []) => {
+  const saveEvolution = async (data: any, files: File[]) => {
     if (!context.clinicId) { toast.error("Erro: Clínica não identificada."); return; }
     try {
         setLoading(true);
-        const now = toLocalISO(new Date());
+        const now = toLocalISO(new Date()); // Visual apenas
+        
+        // 1. Salva a Evolução
         const { data: newRecord, error: insertError } = await supabase.from("evolution_records").insert({
             clinic_id: context.clinicId, 
             patient_id: patientId, 
@@ -162,7 +276,7 @@ export function usePatientEvolution(patientId: string | undefined) {
                 patient_name: context.patientName,
                 professional_name: context.professionalName,
                 clinic_id: context.clinicId,
-                clinic_name: context.clinicName, // ✅ Gravando o nome dinâmico no histórico
+                clinic_name: context.clinicName, 
                 subject_name: data.subject
             },
             attachments: {
@@ -197,14 +311,27 @@ export function usePatientEvolution(patientId: string | undefined) {
             await supabase.from('appointments').insert({
                 clinic_id: context.clinicId, patient_id: patientId, professional_id: user?.id,
                 service_id: data.return_procedure_id || null,
-                start_time: toLocalISO(startDateTime),
-                end_time: toLocalISO(addMinutes(startDateTime, service?.duration || 30)),
+                start_time: startDateTime.toISOString(),
+                end_time: addMinutes(startDateTime, service?.duration || 30).toISOString(),
                 status: 'scheduled', notes: 'Retorno gerado via Prontuário'
             });
         }
-        if (activeAppointmentId) await supabase.from('appointments').update({ status: 'completed' }).eq('id', activeAppointmentId);
 
-        toast.success("Salvo com sucesso!");
+        // ✅ Finaliza sessão E LIMPA O ESTADO LOCAL
+        if (currentAppointmentId) {
+            await supabase.from('appointments').update({ 
+                status: 'completed', 
+                updated_at: new Date().toISOString() 
+            }).eq('id', currentAppointmentId);
+
+            // CORREÇÃO CRÍTICA: Remove o ID da memória para não reabrir o timer
+            setCurrentAppointmentId(null);
+            
+            // Limpa o histórico de navegação
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+
+        toast.success("Evolução salva!");
         setActivePrescription([]); 
         await fetchData(); 
     } catch (err: any) { toast.error(`Erro: ${err.message}`); } finally { setLoading(false); }
@@ -214,9 +341,9 @@ export function usePatientEvolution(patientId: string | undefined) {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    // ✅ Puxando o nome da clínica dos metadados salvos ou do contexto atual
     const dynamicClinicName = record.metadata?.clinic_name || context.clinicName || "Clínica de Estética";
     const date = new Date(record.date.replace('Z', '')).toLocaleString('pt-BR');
+    
     const treatments = (record.attachments?.prescription as unknown as PrescriptionTreatment[]) || [];
     
     printWindow.document.write(`
@@ -257,11 +384,11 @@ export function usePatientEvolution(patientId: string | undefined) {
           ${treatments.length > 0 ? `
             <div class="section-title">Prescrição Home Care</div>
             <div class="prescription-box">
-              ${treatments.map(t => `
+              ${treatments.map((t: PrescriptionTreatment) => `
                 <div class="t-item">
                   <div class="t-name">${t.name}</div>
                   <ul class="c-list">
-                    ${t.components.map(c => c.name ? `<li>• ${c.name} : <strong>${c.quantity}</strong></li>` : '').join('')}
+                    ${t.components.map((c: PrescriptionComponent) => c.name ? `<li>• ${c.name} : <strong>${c.quantity}</strong></li>` : '').join('')}
                   </ul>
                   ${t.observations ? `<div class="obs">${t.observations}</div>` : ''}
                 </div>
@@ -288,12 +415,17 @@ export function usePatientEvolution(patientId: string | undefined) {
   return { 
     loading, records, servicesList, customTemplates, stats, context, 
     activePrescription, addPrescriptionItem, updatePrescriptionItem, removePrescriptionItem,
-    saveEvolution, invalidateRecord, saveNewTemplate: async (title: string, description: string) => {
+    saveEvolution, invalidateRecord, 
+    saveNewTemplate: async (title: string, description: string) => {
       await supabase.from('evolution_templates').insert({ clinic_id: context.clinicId, professional_id: user?.id, title, description });
       fetchData();
-    }, deleteTemplate: async (id: string) => {
+    }, 
+    deleteTemplate: async (id: string) => {
       await supabase.from('evolution_templates').delete().eq('id', id);
       fetchData();
-    }, activeAppointmentId, printRecord
+    }, 
+    startSession, 
+    activeAppointmentId: currentAppointmentId, 
+    printRecord
   };
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Calendar, dateFnsLocalizer, View, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -32,26 +32,28 @@ export function AppointmentsPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>(Views.WEEK);
+  const [clinicName, setClinicName] = useState(''); // ✅ Estado para o nome da clínica
 
-  useEffect(() => {
-    fetchAppointments();
-  }, []);
-
-  async function fetchAppointments() {
+  // ✅ Função de busca isolada para poder ser chamada pelo Realtime
+  const fetchAppointments = useCallback(async () => {
     try {
-      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // ✅ BUSCA O NOME DA CLÍNICA JUNTO COM O ID
       const { data: profile } = await supabase
         .from('profiles')
-        .select('clinic_id')
+        .select('clinic_id, clinics ( name )')
         .eq('id', user.id)
         .single();
 
-      if (!profile?.clinic_id) throw new Error("Clínica não identificada.");
+      if (!profile?.clinic_id) return;
 
-      // ✅ BUSCA AVANÇADA: Trazendo Serviço e Sala
+      // Define o nome da clínica no estado
+      if (profile.clinics) {
+          setClinicName((profile.clinics as any).name || 'Minha Clínica');
+      }
+
       const { data: appointments, error } = await supabase
         .from('appointments')
         .select(`
@@ -67,8 +69,8 @@ export function AppointmentsPage() {
       const formattedEvents: CalendarEvent[] = (appointments || []).map((appt: any) => ({
         id: appt.id,
         title: `${appt.patient?.name || 'Paciente'} - ${appt.service?.name || 'Consulta'}`,
-        start: new Date(appt.start_time),
-        end: new Date(appt.end_time),
+        start: new Date(appt.start_time), // ✅ O navegador converte UTC -> Local aqui
+        end: new Date(appt.end_time),     // ✅ O navegador converte UTC -> Local aqui
         resource: {
           status: appt.status,
           professionalName: `${appt.professional?.first_name || ''} ${appt.professional?.last_name || ''}`.trim(),
@@ -80,21 +82,44 @@ export function AppointmentsPage() {
 
       setEvents(formattedEvents);
     } catch (error: any) {
+      console.error(error);
       toast.error('Erro ao carregar agenda.');
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  // ✅ ESTILIZAÇÃO POR STATUS (Cores Vilagi)
+  // ✅ UseEffect com REALTIME
+  useEffect(() => {
+    fetchAppointments(); 
+
+    const channel = supabase
+      .channel('agenda-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments' },
+        (payload) => {
+          console.log('Mudança detectada na agenda!', payload);
+          fetchAppointments(); 
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchAppointments]);
+
+  // ✅ ESTILIZAÇÃO POR STATUS
   const eventStyleGetter = (event: CalendarEvent) => {
-    let backgroundColor = '#3b82f6'; // Agendado (Azul)
+    let backgroundColor = '#3b82f6'; 
     const status = event.resource?.status;
 
-    if (status === 'completed') backgroundColor = '#10b981'; // Realizado (Verde)
-    if (status === 'canceled') backgroundColor = '#ef4444';  // Cancelado (Vermelho)
-    if (status === 'confirmed') backgroundColor = '#8b5cf6'; // Confirmado (Roxo)
-    if (status === 'no_show') backgroundColor = '#6b7280';  // Faltou (Cinza)
+    if (status === 'completed') backgroundColor = '#10b981'; 
+    if (status === 'canceled') backgroundColor = '#ef4444';  
+    if (status === 'confirmed') backgroundColor = '#8b5cf6'; 
+    if (status === 'no_show') backgroundColor = '#6b7280';   
+    if (status === 'arrived') backgroundColor = '#db2777';   
 
     return {
       style: {
@@ -137,7 +162,10 @@ export function AppointmentsPage() {
            </div>
            <div>
               <h1 className="text-3xl font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">Agenda <span className="text-pink-600">Global</span></h1>
-              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Vilagi Estética Avançada</p>
+              {/* ✅ NOME DA CLÍNICA DINÂMICO */}
+              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">
+                {clinicName || 'Carregando...'}
+              </p>
            </div>
         </div>
         
@@ -179,11 +207,10 @@ export function AppointmentsPage() {
           onSelectSlot={handleSelectSlot}
           onSelectEvent={handleSelectEvent}
           eventPropGetter={eventStyleGetter}
-          min={new Date(0, 0, 0, 8, 0, 0)} // Início às 08:00
-          max={new Date(0, 0, 0, 21, 0, 0)} // Fim às 21:00
+          min={new Date(0, 0, 0, 8, 0, 0)} 
+          max={new Date(0, 0, 0, 21, 0, 0)} 
           step={30}
           timeslots={2}
-          // Personalização de conteúdo do evento
           components={{
             event: ({ event }: any) => (
               <div className="flex flex-col h-full justify-between">
@@ -202,6 +229,7 @@ export function AppointmentsPage() {
       <div className="flex flex-wrap gap-4 px-2">
           <LegendItem color="bg-blue-500" label="Agendado" />
           <LegendItem color="bg-purple-500" label="Confirmado" />
+          <LegendItem color="bg-pink-600" label="Em Atendimento" />
           <LegendItem color="bg-emerald-500" label="Realizado" />
           <LegendItem color="bg-rose-500" label="Cancelado" />
           <LegendItem color="bg-gray-500" label="Faltou" />

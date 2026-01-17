@@ -35,8 +35,8 @@ import PatientAIAnalysisPage from "./pages/patients/PatientAIAnalysisPage";
 import { PatientBioimpedancePage } from "./pages/patients/PatientBioimpedancePage"; 
 import { PatientEvolutionPage } from "./pages/patients/PatientEvolutionPage";
 
-// ⚠️ CORREÇÃO AQUI: Removi as chaves { } pois a página é export default
-import {PatientFinancialPage}  from "./pages/patients/PatientFinancialPage"; 
+// Importação com chaves {}
+import { PatientFinancialPage } from "./pages/patients/PatientFinancialPage"; 
 
 import { PatientTermsPage } from "./pages/patients/PatientTermsPage";
 import { PatientGalleryPage } from "./pages/patients/PatientGalleryPage";
@@ -75,9 +75,10 @@ import { PatientProfilePage } from "./pages/portal/PatientProfilePage";
 import { PatientAppointmentsPage } from "./pages/portal/PatientAppointmentsPage"; 
 import { PatientPackagesPage } from "./pages/portal/PatientPackagesPage"; 
 
-// --- ✅ PÁGINAS PÚBLICAS DE ASSINATURA ---
+// --- ✅ PÁGINAS PÚBLICAS ---
 import { SignConsentPage } from "./pages/public/SignConsentPage"; 
-import SignGeneralTermPage from "./pages/public/SignGeneralTermPage"; 
+import  SignGeneralTermPage  from "./pages/public/SignGeneralTermPage"; 
+import { DocumentViewerPage } from "./pages/public/DocumentViewerPage";
 
 const queryClient = new QueryClient();
 
@@ -109,11 +110,10 @@ function App() {
               {/* LOGIN DO PACIENTE */}
               <Route path="/portal/login" element={<PatientLoginPage />} />
 
-              {/* ✅ ROTAS PÚBLICAS DE ASSINATURA (QR CODE / WHATSAPP) */}
+              {/* ✅ ROTAS PÚBLICAS */}
               <Route path="/sign" element={<SignConsentPage />} />
-              
-              {/* ✅ NOVA ROTA PÚBLICA PARA O TERMO GERAL */}
               <Route path="/sign-general/:patientId" element={<SignGeneralTermPage />} />
+              <Route path="/doc/:token" element={<DocumentViewerPage />} />
 
               {/* ROTA RAIZ */}
               <Route path="/" element={<ProtectedRoute allowedRoles={['admin', 'profissional', 'recepcionista', 'paciente']} />}>
@@ -133,11 +133,9 @@ function App() {
                       <Route path="prescriptions" element={<PatientPrescriptionsPage />} />
                       <Route path="gallery" element={<PatientGalleryPage />} />
                       <Route path="bioimpedance" element={<PatientBioimpedancePage />} />
-                      <Route path="terms" element={<PatientTermsPage />} />
+                      <Route path="terms" element={<PatientTermsPage />} /> 
                       <Route path="details" element={<PatientFormPage />} /> 
                       <Route path="ai-analysis" element={<PatientAIAnalysisPage />} /> 
-                      
-                      {/* ✅ AS ROTAS ESSENCIAIS PARA O DASHBOARD FUNCIONAR */}
                       <Route path="treatment-plans" element={<PatientPlanningPage />} />
                       <Route path="financial" element={<PatientFinancialPage />} />
                   </Route>
@@ -179,18 +177,18 @@ function App() {
                 </Route>
               </Route>
 
-              {/* 🔒 BLOCO 3: SÓ ADMIN (FINANCEIRO GERAL) */}
+              {/* 🔒 BLOCO 3: SÓ ADMIN (FINANCEIRO E CONFIG) */}
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route element={<Layout />}>
-                  {/* Atenção: O Dashboard pode tentar acessar /financial, redirecione mentalmente para /payments */}
                   <Route path="payments" element={<PaymentsPage />} />
                   <Route path="payments/cash-flow" element={<CashFlowPage />} />
-                  
-                  {/* ✅ Redirecionamento de segurança para evitar erro 404 */}
                   <Route path="financial" element={<Navigate to="/payments" replace />} />
                   
                   <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/config/templates" element={<ConsentTemplatesPage />} />
+                  
+                  {/* ✅ ROTA CORRIGIDA AQUI: DE /config/templates PARA /config/terms */}
+                  <Route path="/config/terms" element={<ConsentTemplatesPage />} />
+                  
                   <Route path="professionals/new" element={<ProfessionalFormPage />} />
                 </Route>
               </Route>

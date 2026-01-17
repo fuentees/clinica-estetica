@@ -1,26 +1,17 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import { 
-  Users, CalendarCheck, Loader2, Sparkles, Clock, User as UserIcon,
+  CalendarCheck, Loader2, Sparkles, Clock, 
   Phone, MessageCircle, Check, PackageCheck, PackageX, Trash2, UserPlus, UserX, 
-  Pencil, Play, ChevronLeft, ChevronRight, AlertTriangle, UserCheck, RotateCcw,
-  Wallet, ArrowRight, CheckCircle2, Eye, ExternalLink, AlertCircle, Timer, Activity
+  Pencil, Play, ChevronLeft, ChevronRight, AlertTriangle, RotateCcw,
+  Wallet, ArrowRight, CheckCircle2, AlertCircle, Timer, Activity, Stethoscope, User as UserIcon
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
-import { format, subDays, isPast, isToday, isFuture, differenceInMinutes } from "date-fns";
+import { format, subDays, isToday, isFuture, differenceInMinutes, isPast } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "react-hot-toast";
-
-// 1️⃣ FLUXO DE STATUS
-const STATUS_FLOW: Record<string, string[]> = {
-  scheduled: ['confirmed', 'arrived', 'completed', 'no_show'],
-  confirmed: ['arrived', 'completed', 'no_show', 'scheduled'],
-  arrived: ['completed', 'confirmed', 'no_show', 'scheduled'], 
-  completed: ['arrived', 'confirmed', 'scheduled'], 
-  no_show: ['scheduled', 'confirmed'], 
-};
 
 const DAILY_PHRASES_LIST = [
   "Pronto para transformar vidas hoje?",
@@ -47,9 +38,10 @@ function LiveTimer({ startTime }: { startTime: string }) {
     }, [startTime]);
 
     return (
-        <span className="bg-purple-100 text-purple-700 text-[10px] font-black px-3 py-1 rounded-full flex items-center gap-1 animate-pulse">
-            <Timer size={12} /> {minutes} min
-        </span>
+        <div className="flex items-center gap-2 bg-purple-100 border border-purple-200 px-3 py-1 rounded-lg animate-pulse">
+            <Timer size={14} className="text-purple-700" /> 
+            <span className="text-xs font-black text-purple-700 uppercase">Há {minutes} min</span>
+        </div>
     );
 }
 
@@ -76,7 +68,7 @@ function StatCard({ title, value, icon, color, customColor }: any) {
 }
 
 function TimelineSection({ title, color, children }: { title: string, color: string, children: React.ReactNode }) {
-    const colors: any = { red: 'text-red-500', purple: 'text-purple-600', gray: 'text-gray-400' };
+    const colors: any = { red: 'text-red-500', purple: 'text-purple-600', gray: 'text-gray-400', green: 'text-emerald-600' };
     return (
       <div className="space-y-6 relative">
         <div className="flex items-center gap-4">
@@ -98,42 +90,51 @@ function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit, onNavig
   
   const diffMinutes = differenceInMinutes(now, apptDate);
   const isLate = isToday(apptDate) && appt.status === 'scheduled' && diffMinutes > 15;
-  const isInAttendance = appt.status === 'arrived'; // Verifica se está em atendimento
+  const isInAttendance = appt.status === 'arrived'; 
 
   let statusColor = clinicColor || '#ec4899';
   if (appt.status === 'confirmed') statusColor = '#3b82f6'; 
-  if (appt.status === 'arrived') statusColor = '#9333ea';   
+  if (appt.status === 'arrived') statusColor = '#9333ea'; 
   if (appt.status === 'completed') statusColor = '#10b981'; 
   if (appt.status === 'no_show') statusColor = '#ef4444';   
 
   return (
-    <div className={`group flex flex-col md:flex-row md:items-center justify-between p-5 rounded-[2rem] border transition-all ${['arrived', 'confirmed'].includes(appt.status) ? 'bg-white shadow-lg border-l-4 border-l-purple-500' : 'bg-white hover:border-gray-200'} ${appt.status === 'completed' ? 'opacity-70 bg-gray-50' : ''} ${appt.status === 'no_show' ? 'opacity-60 bg-red-50' : ''} mb-4`}>
+    <div className={`group flex flex-col md:flex-row md:items-center justify-between p-5 rounded-[2rem] border transition-all 
+        ${isInAttendance ? 'bg-purple-50/50 shadow-xl border-purple-200 ring-2 ring-purple-100 scale-[1.01]' : 
+          appt.status === 'confirmed' ? 'bg-white shadow-lg border-l-4 border-l-blue-500' : 'bg-white hover:border-gray-200'} 
+        ${appt.status === 'completed' ? 'opacity-70 bg-gray-50 border-gray-100' : ''} 
+        ${appt.status === 'no_show' ? 'opacity-60 bg-red-50' : ''} mb-4`}>
+      
       <div className="flex items-center gap-6">
         <div className={`w-16 h-16 rounded-[1.2rem] text-white flex flex-col items-center justify-center font-black shadow-lg transition-colors`} style={{ backgroundColor: statusColor }}>
           <span className="text-[9px] opacity-90">{format(apptDate, 'dd/MM')}</span>
           <span className="text-lg italic leading-none">{format(apptDate, 'HH:mm')}</span>
         </div>
+        
         <div>
-          <div className="flex items-center gap-3">
-            <p 
-                onClick={onNavigateToProfile}
-                className="font-black text-gray-900 uppercase italic text-md leading-tight cursor-pointer hover:text-pink-600 transition-colors hover:underline"
-                title="Ir para o Perfil do Paciente"
-            >
+          <div className="flex flex-wrap items-center gap-3">
+            <p onClick={onNavigateToProfile} className="font-black text-gray-900 uppercase italic text-md leading-tight cursor-pointer hover:text-pink-600 transition-colors hover:underline" title="Ir para o Perfil do Paciente">
                 {patient?.name || 'Paciente'}
             </p>
 
-            {isLate && <span className="bg-red-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1"><AlertCircle size={10}/> ATRASADO</span>}
+            {isInAttendance && (
+                <div className="flex items-center gap-2">
+                    <span className="bg-purple-600 text-white text-[9px] font-black px-3 py-1 rounded-full flex items-center gap-1 shadow-md animate-pulse"><Activity size={10} /> EM SESSÃO</span>
+                    <LiveTimer startTime={appt.updated_at || appt.start_time} />
+                </div>
+            )}
+
+            {isLate && !isInAttendance && <span className="bg-red-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1"><AlertCircle size={10}/> ATRASADO</span>}
             {appt.status === 'confirmed' && <span className="bg-blue-100 text-blue-600 text-[8px] font-black px-2 py-0.5 rounded-full">CONFIRMADO</span>}
-            
-            {/* MOSTRA O CRONÔMETRO SE ESTIVER EM ATENDIMENTO */}
-            {isInAttendance && <LiveTimer startTime={appt.start_time} />}
-            
-            {appt.status === 'completed' && <span className="bg-emerald-100 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded-full">REALIZADO</span>}
+            {appt.status === 'completed' && <span className="bg-emerald-100 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded-full flex items-center gap-1"><CheckCircle2 size={10}/> CONCLUÍDO</span>}
             {appt.status === 'no_show' && <span className="bg-red-100 text-red-600 text-[8px] font-black px-2 py-0.5 rounded-full">AUSENTE</span>}
           </div>
+          
           <div className="mt-1 flex flex-col">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{service?.name || 'Procedimento'}</p>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                {isInAttendance && <Stethoscope size={12} className="text-purple-500"/>}
+                {service?.name || 'Procedimento'}
+            </p>
             <p className="text-[10px] font-black text-pink-600 uppercase tracking-tighter italic mt-0.5">Prof. {prof?.first_name || 'Profissional'}</p>
           </div>
         </div>
@@ -142,59 +143,44 @@ function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit, onNavig
       <div className="flex items-center gap-2 mt-6 md:mt-0">
         {appt.status !== 'completed' && appt.status !== 'no_show' ? (
           <>
-            {/* ESCONDE BOTÃO CHECK SE JÁ ESTIVER EM ATENDIMENTO */}
-            {!isInAttendance && appt.status !== 'confirmed' && (
-                <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'confirmed')} className={`h-10 w-10 p-0 rounded-xl ${appt.status === 'confirmed' ? 'bg-blue-600 text-white border-blue-600' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`} title="Confirmar (Whats/Tel)">
-                    <Check size={18}/>
-                </Button>
-            )}
-            
-            {/* ESCONDE BOTÃO CHEGOU SE JÁ ESTIVER EM ATENDIMENTO */}
             {!isInAttendance && (
-                <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'arrived')} className={`h-10 px-3 rounded-xl font-black uppercase text-[10px] tracking-widest ${appt.status === 'arrived' ? 'bg-purple-600 text-white border-purple-600' : 'border-purple-200 text-purple-600 hover:bg-purple-50'}`} title="Marcar Chegada na Clínica">
-                    <UserCheck size={16} className="mr-1.5"/> Chegou
-                </Button>
+                <>
+                    {appt.status !== 'confirmed' && (
+                        <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'confirmed')} className={`h-10 w-10 p-0 rounded-xl ${appt.status === 'confirmed' ? 'bg-blue-600 text-white border-blue-600' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`} title="Confirmar Presença"><Check size={18}/></Button>
+                    )}
+                    <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'no_show')} className="h-10 w-10 p-0 rounded-xl text-gray-300 border-gray-200 hover:text-red-500 hover:bg-red-50" title="Marcar Falta"><UserX size={18}/></Button>
+                </>
             )}
 
-            {/* BOTÃO INICIAR/EM ATENDIMENTO (O ÚNICO QUE FICA QUANDO ESTÁ ROLANDO) */}
             <Button 
                 disabled={updatingId === appt.id} 
                 size="sm" 
                 variant="outline" 
                 onClick={(e) => onUpdate(e, appt.id, appt.status, 'start_evolution')} 
-                className={`h-10 px-4 rounded-xl font-black uppercase text-[10px] tracking-widest ${
-                    isInAttendance
-                    ? 'bg-purple-600 text-white border-purple-600 animate-pulse' 
-                    : 'text-emerald-600 border-emerald-100 hover:bg-emerald-50'
-                }`} 
-                title="Ir para Evolução"
+                className={`h-10 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-sm transition-all
+                ${isInAttendance 
+                    ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700 hover:scale-105 shadow-purple-200' 
+                    : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'}`} 
+                title={isInAttendance ? "Voltar para Evolução" : "Iniciar Atendimento"}
             >
-                {isInAttendance ? (
-                    <><Activity size={16} className="mr-2"/> Em Atendimento</>
-                ) : (
-                    <><Play size={16} className="mr-2 fill-current"/> Iniciar</>
-                )}
+                {isInAttendance ? <><Activity size={16} className="mr-2 animate-spin-slow"/> ABRIR PRONTUÁRIO</> : <><Play size={16} className="mr-2 fill-current"/> INICIAR SESSÃO</>}
             </Button>
-            
-            {/* ESCONDE BOTÃO FALTOU SE JÁ ESTIVER EM ATENDIMENTO */}
-            {!isInAttendance && (
-                <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'no_show')} className="h-10 w-10 p-0 rounded-xl text-gray-300 border-gray-200 hover:text-red-500" title="Marcar Falta"><UserX size={18}/></Button>
-            )}
           </>
         ) : (
           <>
-             <span className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl mr-2 ${appt.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                {appt.status === 'completed' ? 'Finalizado' : 'Ausente'}
-             </span>
-             <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'confirmed')} className="h-10 w-10 p-0 rounded-xl border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-200" title="Desfazer / Reabrir">
-                <RotateCcw size={16}/>
-             </Button>
+             <div className="flex items-center gap-2">
+                 <span className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl ${appt.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                    {appt.status === 'completed' ? 'Finalizado' : 'Ausente'}
+                 </span>
+                 <Button disabled={updatingId === appt.id} size="sm" variant="outline" onClick={(e) => onUpdate(e, appt.id, appt.status, 'confirmed')} className="h-10 w-10 p-0 rounded-xl border-gray-200 text-gray-400 hover:text-blue-600 hover:border-blue-200" title="Reabrir Agendamento">
+                    <RotateCcw size={16}/>
+                 </Button>
+             </div>
           </>
         )}
         
-        {/* ESCONDE BOTÃO EDITAR SE JÁ ESTIVER EM ATENDIMENTO (Para evitar conflitos) */}
         {!isInAttendance && appt.status !== 'completed' && appt.status !== 'no_show' && (
-            <Button variant="ghost" size="sm" onClick={onEdit} className="rounded-lg h-10 w-10 text-gray-200 hover:text-pink-600" title="Editar"><Pencil size={16}/></Button>
+            <Button variant="ghost" size="sm" onClick={onEdit} className="rounded-lg h-10 w-10 text-gray-300 hover:text-pink-600" title="Editar"><Pencil size={16}/></Button>
         )}
       </div>
     </div>
@@ -205,6 +191,7 @@ function TimelineCard({ appt, clinicColor, updatingId, onUpdate, onEdit, onNavig
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -212,13 +199,10 @@ export default function DashboardPage() {
   const [dailyPhrase, setDailyPhrase] = useState("");
 
   const [stats, setStats] = useState({ 
-    todayTotal: 0, 
-    todayCompleted: 0, 
-    todayNoShow: 0,
-    pendingBudgetsCount: 0 
+    todayTotal: 0, todayCompleted: 0, todayNoShow: 0, pendingBudgetsCount: 0 
   });
 
-  const [nextAppointments, setNextAppointments] = useState<any[]>([]);
+  const [allAppointments, setAllAppointments] = useState<any[]>([]);
   const [pendingBudgets, setPendingBudgets] = useState<any[]>([]); 
   const [activeAgendaTab, setActiveAgendaTab] = useState<'pending' | 'completed'>('pending');
   const [currentPage, setCurrentPage] = useState(1);
@@ -237,177 +221,42 @@ export default function DashboardPage() {
   const displayName = profile?.fullName?.split(' ')[0] || user?.email?.split('@')[0] || 'Doutor(a)';
   const profilePhoto = profile?.avatarUrl || (profile as any)?.avatar_url; 
 
-  // ✅ REALTIME: ATUALIZA O DASHBOARD AUTOMATICAMENTE SE O STATUS MUDAR (POR OUTRA ABA OU TELA)
-  useEffect(() => {
-    if (!profile?.clinic_id) return;
-
-    // Escuta mudanças na tabela appointments
-    const channel = supabase
-      .channel('dashboard-appointments')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'appointments',
-          filter: `clinic_id=eq.${profile.clinic_id}` // Filtra pela clínica
-        },
-        () => {
-          fetchRealDashboardData(); // Recarrega os dados sem piscar a tela
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [profile?.clinic_id]);
-
-  useEffect(() => {
-    const day = new Date().getDate();
-    setDailyPhrase(DAILY_PHRASES_LIST[day % DAILY_PHRASES_LIST.length]);
-    if (profile?.clinic_id) {
-      fetchClinicInfo();
-      fetchRealDashboardData();
-    }
-  }, [profile?.clinic_id, completedTasks]);
-
-  async function fetchClinicInfo() {
-      try {
-          const { data } = await supabase.from('clinics').select('primary_color').eq('id', profile?.clinic_id).single();
-          if (data) setClinicData(data);
-      } catch (e) { console.error(e); }
-  }
-
-  const handleWhatsApp = (mobile: string, msg: string) => {
-    if(!mobile) return toast.error("Sem celular.");
-    window.open(`https://wa.me/55${mobile.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
-  };
-
-  const handleCompleteTask = (taskId: string) => {
-    const newCompleted = [...completedTasks, taskId];
-    setCompletedTasks(newCompleted);
-    localStorage.setItem('vilagi_completed_tasks', JSON.stringify(newCompleted));
-  };
-
-  const clearCompleted = () => {
-    localStorage.removeItem('vilagi_completed_tasks');
-    setCompletedTasks([]);
-    toast.success("Lista restaurada!");
-  };
-
-  // --- NAVEGAÇÃO SEGURA ---
-  const goToPatientFinancial = (pId: string) => {
-      if(!pId) return toast.error("Erro: Cadastro do paciente incompleto. ID não encontrado.");
-      navigate(`/patients/${pId}/financial?tab=orcamentos`);
-  };
-
-  const goToPatientBudget = (pId: string, budgetId: string) => {
-      if(!pId) return toast.error("Erro: Cadastro do paciente incompleto.");
-      navigate(`/patients/${pId}/treatment-plans?edit=${budgetId}`);
-  };
-
-  const handleUpdateStatus = async (e: React.MouseEvent, apptId: string, currentStatus: string, newStatus: string) => {
-    e.stopPropagation();
-    if (updatingId) return;
-
-    // ✅ LÓGICA DO BOTÃO INICIAR/EM ATENDIMENTO
-    if (newStatus === 'start_evolution') {
-        const appt = nextAppointments.find(a => a.id === apptId);
-        const pId = Array.isArray(appt?.patients) ? appt?.patients[0]?.id : appt?.patients?.id;
-        
-        if (currentStatus !== 'arrived') {
-            setUpdatingId(apptId);
-            await supabase.from('appointments').update({ status: 'arrived' }).eq('id', apptId);
-            // O Realtime vai atualizar a tela, mas chamamos o fetch aqui para garantir responsividade imediata
-            await fetchRealDashboardData();
-            setUpdatingId(null);
-        }
-        
-        if (pId) {
-            navigate(`/patients/${pId}/evolution?autoStart=true`);
-        } else {
-            toast.error("Erro ao identificar paciente.");
-        }
-        return;
-    }
-
-    let targetStatus = newStatus;
-    if (currentStatus === 'arrived' && newStatus === 'arrived') targetStatus = 'confirmed';
-    if (currentStatus === 'confirmed' && newStatus === 'confirmed') targetStatus = 'scheduled';
-
-    if (!STATUS_FLOW[currentStatus]?.includes(targetStatus)) {
-        if (!(currentStatus === 'scheduled' && targetStatus === 'arrived')) {
-             console.warn("Transição não padrão.");
-        }
-    }
-
-    setUpdatingId(apptId);
-    try {
-        const { error } = await supabase.from('appointments').update({ status: targetStatus }).eq('id', apptId);
-        
-        if (error) {
-            console.error(error);
-            toast.error("Erro ao atualizar status.");
-            return;
-        }
-        
-        if (targetStatus === 'arrived') toast.success("Paciente na Recepção! 🟣");
-        else if (targetStatus === 'confirmed') {
-            handleCompleteTask(`pre_${apptId}`);
-            toast.success("Confirmado! 🔵");
-        } else if (targetStatus === 'completed') {
-            toast.success("Atendimento Finalizado! 🟢");
-        } else {
-            toast.success("Status atualizado!");
-        }
-        
-        await fetchRealDashboardData();
-    } catch (error) { 
-        toast.error("Erro desconhecido."); 
-    } finally { 
-        setUpdatingId(null); 
-    }
-  };
-
-  async function fetchRealDashboardData() {
+  const fetchRealDashboardData = useCallback(async () => {
     if (!profile?.clinic_id) return;
     try {
-      // Nota: Não setamos loading=true aqui para evitar "piscar" a tela durante updates em realtime
-      
       const [inv, allAppts, pendingBudgetsData] = await Promise.all([
         supabase.from('inventory').select('*').eq('clinic_id', profile.clinic_id),
-        supabase.from('appointments').select(`id, start_time, status, patient_id, patients (id, name, phone), services (name), profiles!professional_id (first_name, last_name)`).eq('clinic_id', profile.clinic_id).gte('start_time', subDays(new Date(), 10).toISOString()).order('start_time', { ascending: true }),
+        // ✅ QUERY DEFINITIVA: STATUS MANDA
+        supabase.from('appointments')
+            .select(`id, start_time, status, updated_at, patient_id, professional_id, patients (id, name, phone), services (name), profiles!professional_id (first_name, last_name)`)
+            .eq('clinic_id', profile.clinic_id)
+            .gte('start_time', subDays(new Date(), 30).toISOString()) 
+            .in('status', ['scheduled', 'confirmed', 'arrived', 'completed', 'no_show'])
+            .order('start_time', { ascending: true }),
         supabase.from('budgets').select(`id, total, items, created_at, patients (id, name, phone)`).eq('clinic_id', profile.clinic_id).eq('status', 'pending').order('created_at', { ascending: false }).limit(5)
       ]);
+
+      const uniqueAppts = Array.from(new Map(allAppts.data?.map(item => [item.id, item])).values());
+      setAllAppointments(uniqueAppts);
+      setPendingBudgets(pendingBudgetsData.data || []);
 
       const crit = (inv.data || []).filter(item => Number(item.quantity) <= Number(item.minimum_quantity));
       setCriticalItems(crit.sort((a, b) => Number(a.quantity) - Number(b.quantity)));
       setInventoryStatus(crit.some(item => Number(item.quantity) <= 0) ? 'critical' : (crit.length > 0 ? 'warning' : 'ok'));
-      
-      setNextAppointments(allAppts.data || []);
-      setPendingBudgets(pendingBudgetsData.data || []);
 
       const tasksList: any[] = [];
-      (allAppts.data || []).forEach((appt: any) => {
+      uniqueAppts.forEach((appt: any) => {
           const apptDate = new Date(appt.start_time);
           const patientData: any = Array.isArray(appt.patients) ? appt.patients[0] : appt.patients;
-          const serviceName = (Array.isArray(appt.services) ? appt.services[0] : appt.services)?.name || 'procedimento';
-          const profName = (Array.isArray(appt.profiles) ? appt.profiles[0] : appt.profiles)?.first_name || 'Especialista';
-          const firstName = patientData?.name?.split(' ')[0] || 'Paciente';
-          const startFormatted = format(apptDate, "dd/MM 'às' HH:mm", { locale: ptBR });
-          
           if (isFuture(apptDate) && appt.status === 'scheduled') {
-              const msg = `Oi *${firstName}*, tudo bem? \nTudo certo para sua sessão de *${serviceName}* com o(a) Dr(a)*${profName}*, no dia *${startFormatted}*.\n\nVocê confirma seu horário? Se tiver alguma dúvida sobre o preparo, é só me chamar aqui! <3`;
-              tasksList.push({ id: `pre_${appt.id}`, type: 'pre', patientName: patientData?.name, mobile: patientData?.phone, service: serviceName, time: appt.start_time, message: msg });
+              tasksList.push({ id: `pre_${appt.id}`, type: 'pre', patientName: patientData?.name, mobile: patientData?.phone, service: (Array.isArray(appt.services) ? appt.services[0] : appt.services)?.name, time: appt.start_time });
           } else if (isPast(apptDate) && appt.status === 'completed') {
-              const msg = `Olá, *${firstName}*! ✨\nComo você está se sentindo após a sua sessão de *${serviceName}* ?\n\n O(a) Dr(a)*${profName}* e toda nossa equipe adoraram te receber. Qualquer dúvida sobre os cuidados pós-procedimento, conte conosco! <3`;
-              tasksList.push({ id: `post_${appt.id}`, type: 'post', patientName: patientData?.name, mobile: patientData?.phone, service: serviceName, time: appt.start_time, message: msg });
+              tasksList.push({ id: `post_${appt.id}`, type: 'post', patientName: patientData?.name, mobile: patientData?.phone, service: (Array.isArray(appt.services) ? appt.services[0] : appt.services)?.name, time: appt.start_time });
           }
       });
       setReceptionTasks(tasksList.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()));
 
-      const todayAppts = (allAppts.data || []).filter(a => isToday(new Date(a.start_time)));
+      const todayAppts = uniqueAppts.filter(a => isToday(new Date(a.start_time)));
       setStats({ 
         todayTotal: todayAppts.length, 
         todayCompleted: todayAppts.filter(a => a.status === 'completed').length,
@@ -416,26 +265,99 @@ export default function DashboardPage() {
       });
 
     } catch (error) { console.error(error); } finally { setLoading(false); }
-  }
+  }, [profile?.clinic_id]);
 
-  const pendingFilter = (nextAppointments || []).filter(a => 
-    isFuture(new Date(a.start_time)) || 
-    (isToday(new Date(a.start_time)) && a.status !== 'completed' && a.status !== 'no_show')
-  );
+  useEffect(() => {
+      fetchRealDashboardData();
+  }, [location.pathname, fetchRealDashboardData]);
 
-  const completedFilter = (nextAppointments || []).filter(a => 
-    isToday(new Date(a.start_time)) && 
-    (a.status === 'completed' || a.status === 'no_show')
-  );
+  // ✅ IMPROVED REALTIME: Listens for INSERT, UPDATE, and DELETE
+  useEffect(() => {
+    if (!profile?.clinic_id) return;
+    const channel = supabase.channel('dashboard-appointments')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `clinic_id=eq.${profile.clinic_id}` }, 
+        (payload) => {
+            // Simply re-fetch data on any change to ensure consistency across clients
+            // This handles INSERTs that were previously missed by local state updates
+            fetchRealDashboardData(); 
+        }
+      ).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [profile?.clinic_id, fetchRealDashboardData]);
 
-  const agendaFiltradaStatus = activeAgendaTab === 'pending' ? pendingFilter : completedFilter;
+  useEffect(() => {
+      const onFocus = () => fetchRealDashboardData();
+      window.addEventListener('focus', onFocus);
+      return () => window.removeEventListener('focus', onFocus);
+  }, [fetchRealDashboardData]);
 
-  const totalPages = Math.ceil(agendaFiltradaStatus.length / itemsPerPage) || 1;
-  const currentAgendaPage = agendaFiltradaStatus.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  useEffect(() => {
+    const day = new Date().getDate();
+    setDailyPhrase(DAILY_PHRASES_LIST[day % DAILY_PHRASES_LIST.length]);
+    if (profile?.clinic_id) {
+      supabase.from('clinics').select('primary_color').eq('id', profile?.clinic_id).single().then(({data}) => setClinicData(data));
+    }
+  }, [profile?.clinic_id]);
 
-  const agendaAgora = currentAgendaPage.filter(a => isToday(new Date(a.start_time)));
+  const handleWhatsApp = (mobile: string, msg: string) => {
+    if(!mobile) return toast.error("Sem celular.");
+    window.open(`https://wa.me/55${mobile.replace(/\D/g, '')}?text=${encodeURIComponent(msg || "Olá!")}`, '_blank');
+  };
+
+  const handleCompleteTask = (taskId: string) => {
+    const newCompleted = [...completedTasks, taskId];
+    setCompletedTasks(newCompleted);
+    localStorage.setItem('vilagi_completed_tasks', JSON.stringify(newCompleted));
+  };
+
+  const handleUpdateStatus = async (e: React.MouseEvent, apptId: string, currentStatus: string, newStatus: string) => {
+    e.stopPropagation();
+    if (updatingId) return;
+
+    if (newStatus === 'start_evolution') {
+        const appt = allAppointments.find(a => a.id === apptId);
+        const pId = Array.isArray(appt?.patients) ? appt?.patients[0]?.id : appt?.patients?.id;
+        const profId = appt?.professional_id || user?.id;
+
+        setUpdatingId(apptId);
+        try {
+            // ✅ LIMPEZA DE SESSÕES ANTIGAS DO MESMO PROFISSIONAL
+            await supabase.from('appointments').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('professional_id', profId).eq('status', 'arrived').neq('id', apptId);
+
+            if (currentStatus !== 'arrived') {
+                await supabase.from('appointments').update({ status: 'arrived', updated_at: new Date().toISOString() }).eq('id', apptId);
+            }
+            // ✅ PASSA O ID PARA O HOOK DA EVOLUÇÃO
+            navigate(`/patients/${pId}/evolution`, { state: { appointmentId: apptId } });
+        } catch (error) { toast.error("Erro ao iniciar."); } finally { setUpdatingId(null); fetchRealDashboardData(); }
+        return;
+    }
+
+    setUpdatingId(apptId);
+    try {
+        let targetStatus = newStatus;
+        if (currentStatus === 'arrived' && newStatus === 'arrived') targetStatus = 'confirmed'; 
+        await supabase.from('appointments').update({ status: targetStatus, updated_at: new Date().toISOString() }).eq('id', apptId);
+        toast.success("Status atualizado!");
+        fetchRealDashboardData();
+    } catch (error) { toast.error("Erro ao atualizar."); } finally { setUpdatingId(null); }
+  };
+
+  const patientsInAttendance = useMemo(() => allAppointments.filter(a => a.status === 'arrived'), [allAppointments]);
   
-  const agendaFutura = currentAgendaPage.filter(a => isFuture(new Date(a.start_time)) && !isToday(new Date(a.start_time)));
+  const pendingList = useMemo(() => allAppointments.filter(a => 
+      a.status !== 'arrived' && a.status !== 'completed' && a.status !== 'no_show' && 
+      (isFuture(new Date(a.start_time)) || isToday(new Date(a.start_time)))
+  ), [allAppointments]);
+
+  const completedList = useMemo(() => allAppointments.filter(a => 
+      (a.status === 'completed' || a.status === 'no_show') &&
+      (isToday(new Date(a.start_time)) || isToday(new Date(a.updated_at || '')))
+  ), [allAppointments]);
+
+  const listToPaginate = activeAgendaTab === 'pending' ? pendingList : completedList;
+  const paginatedList = listToPaginate.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.ceil(listToPaginate.length / itemsPerPage) || 1;
 
   const visibleTasks = receptionTasks.filter(t => !completedTasks.includes(t.id) && t.type === activeTab);
   const countPre = receptionTasks.filter(t => !completedTasks.includes(t.id) && t.type === 'pre').length;
@@ -446,7 +368,6 @@ export default function DashboardPage() {
   return (
     <div className="p-6 max-w-[1600px] mx-auto min-h-screen bg-gray-50 dark:bg-gray-900 space-y-8 animate-in fade-in pb-20">
       
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
         <div className="flex items-center gap-6">
           <div className="h-20 w-20 rounded-3xl border-4 border-pink-50 overflow-hidden shadow-inner">
@@ -463,29 +384,23 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Agendados Hoje (Total)" value={stats.todayTotal} icon={<Clock size={28} />} color="blue" />
-        <StatCard title="Realizados Hoje" value={stats.todayCompleted} icon={<Check size={28} />} color="green" />
-        <StatCard title="Ausentes Hoje" value={stats.todayNoShow} icon={<UserX size={28} />} color="red" />
-        <StatCard title="Cobranças Pendentes" value={stats.pendingBudgetsCount} icon={<AlertTriangle size={28} />} color="amber" />
+        <StatCard title="Agendados Hoje" value={allAppointments.filter(a => isToday(new Date(a.start_time))).length} icon={<Clock size={28} />} color="blue" />
+        <StatCard title="Realizados Hoje" value={completedList.length} icon={<Check size={28} />} color="green" />
+        <StatCard title="Ausentes Hoje" value={allAppointments.filter(a => isToday(new Date(a.start_time)) && a.status === 'no_show').length} icon={<UserX size={28} />} color="red" />
+        <StatCard title="Pendentes Financeiro" value={pendingBudgets.length} icon={<AlertTriangle size={28} />} color="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          
           <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
              <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gradient-to-r from-amber-50 to-orange-50">
                 <div className="flex items-center gap-3">
                    <div className="p-2 bg-white rounded-xl text-amber-600 shadow-sm"><Wallet size={20} /></div>
-                   <div>
-                      <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Aguardando Pagamento</h3>
-                      <p className="text-xs text-amber-700 font-bold uppercase tracking-wider">Atenção Financeira</p>
-                   </div>
+                   <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Aguardando Pagamento</h3>
                 </div>
                 <span className="bg-white px-3 py-1 rounded-full text-xs font-bold text-gray-500 shadow-sm border border-gray-100">{pendingBudgets.length} Pendentes</span>
              </div>
-             
              <div className="divide-y divide-gray-50">
                 {pendingBudgets.length === 0 ? (
                    <div className="p-8 text-center text-gray-400 flex flex-col items-center">
@@ -493,108 +408,50 @@ export default function DashboardPage() {
                       <p className="text-xs font-bold uppercase tracking-widest">Nenhuma pendência financeira.</p>
                    </div>
                 ) : (
-                   pendingBudgets.map((budget: any) => {
-                      const pat = budget.patients;
-                      const pName = Array.isArray(pat) ? pat[0]?.name : pat?.name;
-                      const pId = Array.isArray(pat) ? pat[0]?.id : pat?.id;
-                      
-                      let procName = "Orçamento Geral";
-                      try {
-                          const items = typeof budget.items === 'string' ? JSON.parse(budget.items) : budget.items;
-                          if (items && items.length > 0) procName = items[0].name;
-                      } catch (e) {}
-
-                      return (
-                        <div 
-                            key={budget.id} 
-                            onClick={() => goToPatientFinancial(pId)}
-                            className="p-5 flex items-center justify-between hover:bg-amber-50/30 transition-colors cursor-pointer group"
-                        >
-                           <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold">{pName?.charAt(0)}</div>
-                              <div>
-                                 <h4 className="font-bold text-gray-900">{pName || "Paciente"}</h4>
-                                 <p className="text-xs text-amber-600 font-bold uppercase mt-0.5">{procName}</p>
-                                 <p className="text-[10px] text-gray-400 font-medium mt-0.5">{new Date(budget.created_at).toLocaleDateString()}</p>
-                              </div>
-                           </div>
-                           <div className="flex items-center gap-3">
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); goToPatientBudget(pId, budget.id); }}
-                                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                title="Ver Detalhes do Orçamento"
-                              >
-                                <Eye size={18} />
-                              </button>
-
-                              <div className="text-right hidden sm:block mr-3">
-                                 <p className="text-[10px] text-gray-400 font-bold uppercase">Total</p>
-                                 <p className="font-black text-emerald-600">R$ {Number(budget.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                              </div>
-                              <button onClick={(e) => { e.stopPropagation(); goToPatientFinancial(pId); }} className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-black hover:scale-105 transition-all shadow-lg">
-                                 Cobrar <ArrowRight size={14} />
-                              </button>
-                           </div>
+                   pendingBudgets.map((budget: any) => (
+                    <div key={budget.id} onClick={() => navigate(`/patients/${budget.patients?.id}/financial?tab=orcamentos`)} className="p-5 flex items-center justify-between hover:bg-amber-50/30 transition-colors cursor-pointer group">
+                        <div className="flex items-center gap-4">
+                            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-400">{budget.patients?.name?.charAt(0)}</div>
+                            <div>
+                                <h4 className="font-bold text-gray-900">{budget.patients?.name}</h4>
+                                <p className="text-xs text-amber-600 font-bold uppercase mt-0.5">R$ {budget.total}</p>
+                            </div>
                         </div>
-                      );
-                   })
+                        <Button className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-black hover:scale-105 transition-all shadow-lg">Cobrar <ArrowRight size={14} /></Button>
+                    </div>
+                   ))
                 )}
              </div>
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[600px]">
             <div className="px-10 py-8 border-b bg-gray-50/50 flex flex-col sm:flex-row justify-between items-center gap-4">
-                <h3 className="text-lg font-black uppercase tracking-widest text-gray-900 italic">Cronograma</h3>
+                <h3 className="text-lg font-black uppercase tracking-widest text-gray-900 italic">Cronograma de Atendimentos</h3>
                 <div className="flex bg-gray-100 p-1.5 rounded-xl">
-                  <button onClick={() => { setActiveAgendaTab('pending'); setCurrentPage(1); }} className={`px-8 py-3 rounded-xl text-xs font-black uppercase transition-all ${activeAgendaTab === 'pending' ? 'bg-white text-pink-600 shadow-md' : 'text-gray-400'}`}>Agenda Principal</button>
-                  <button onClick={() => { setActiveAgendaTab('completed'); setCurrentPage(1); }} className={`px-8 py-3 rounded-xl text-sm font-black uppercase transition-all ${activeAgendaTab === 'completed' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Concluídos</button>
+                  <button onClick={() => setActiveAgendaTab('pending')} className={`px-8 py-3 rounded-xl text-xs font-black uppercase transition-all ${activeAgendaTab === 'pending' ? 'bg-white text-pink-600 shadow-md' : 'text-gray-400'}`}>Agenda Principal</button>
+                  <button onClick={() => setActiveAgendaTab('completed')} className={`px-8 py-3 rounded-xl text-sm font-black uppercase transition-all ${activeAgendaTab === 'completed' ? 'bg-white text-emerald-600 shadow-md' : 'text-gray-400'}`}>Concluídos</button>
                 </div>
             </div>
-            
             <div className="flex-1 overflow-y-auto no-scrollbar p-8 space-y-10">
-                {agendaAgora.length > 0 && (
-                    <TimelineSection title={activeAgendaTab === 'pending' ? "Hoje / Em Sala" : "Realizados Hoje"} color={activeAgendaTab === 'pending' ? "red" : "purple"}>
-                        {agendaAgora.map(appt => (
-                            <TimelineCard 
-                                key={appt.id} 
-                                appt={appt} 
-                                clinicColor={clinicData?.primary_color} 
-                                updatingId={updatingId} 
-                                onUpdate={handleUpdateStatus} 
-                                onEdit={() => navigate(`/appointments/${appt.id}/edit`)}
-                                onNavigateToProfile={() => {
-                                    const pId = Array.isArray(appt.patients) ? appt.patients[0]?.id : appt.patients?.id;
-                                    if(pId) navigate(`/patients/${pId}`);
-                                }}
-                            />
+                {activeAgendaTab === 'pending' && patientsInAttendance.length > 0 && (
+                    <TimelineSection title="EM ATENDIMENTO AGORA" color="purple">
+                        {patientsInAttendance.map(appt => (
+                            <TimelineCard key={appt.id} appt={appt} clinicColor={clinicData?.primary_color} updatingId={updatingId} onUpdate={handleUpdateStatus} onEdit={() => navigate(`/appointments/${appt.id}/edit`)} onNavigateToProfile={() => navigate(`/patients/${appt.patient_id}`)} />
                         ))}
                     </TimelineSection>
                 )}
-
-                {activeAgendaTab === 'pending' && agendaFutura.length > 0 && (
-                    <TimelineSection title="Próximos Dias" color="gray">
-                        {agendaFutura.map(appt => (
-                            <TimelineCard 
-                                key={appt.id} 
-                                appt={appt} 
-                                clinicColor={clinicData?.primary_color} 
-                                updatingId={updatingId} 
-                                onUpdate={handleUpdateStatus} 
-                                onEdit={() => navigate(`/appointments/${appt.id}/edit`)} 
-                                onNavigateToProfile={() => {
-                                    const pId = Array.isArray(appt.patients) ? appt.patients[0]?.id : appt.patients?.id;
-                                    if(pId) navigate(`/patients/${pId}`);
-                                }}
-                            />
+                {paginatedList.length > 0 ? (
+                    <TimelineSection title={activeAgendaTab === 'pending' ? "Próximos / Aguardando" : "Finalizados Hoje"} color={activeAgendaTab === 'pending' ? "red" : "green"}>
+                        {paginatedList.map(appt => (
+                            <TimelineCard key={appt.id} appt={appt} clinicColor={clinicData?.primary_color} updatingId={updatingId} onUpdate={handleUpdateStatus} onEdit={() => navigate(`/appointments/${appt.id}/edit`)} onNavigateToProfile={() => navigate(`/patients/${appt.patient_id}`)} />
                         ))}
                     </TimelineSection>
-                )}
-
-                {agendaAgora.length === 0 && agendaFutura.length === 0 && (
-                    <div className="p-20 text-center text-gray-300 font-bold uppercase italic tracking-widest">Nenhum agendamento encontrado</div>
+                ) : (
+                    activeAgendaTab === 'pending' && patientsInAttendance.length === 0 && (
+                        <div className="p-20 text-center text-gray-300 font-bold uppercase italic tracking-widest">Agenda livre por enquanto.</div>
+                    )
                 )}
             </div>
-
             {totalPages > 1 && (
                 <div className="p-4 border-t flex justify-center items-center gap-4 bg-gray-50/50">
                     <Button variant="ghost" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="rounded-xl"><ChevronLeft size={20}/></Button>
@@ -621,11 +478,10 @@ export default function DashboardPage() {
                 </div>
                 <Button onClick={() => navigate('/inventory')} variant="outline" className="w-full mt-8 h-12 rounded-xl border-black/10 font-black uppercase text-[9px] tracking-widest shadow-sm">Almoxarifado</Button>
            </div>
-
            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2.5rem] border border-gray-100 shadow-2xl flex flex-col min-h-[550px]">
               <div className="flex items-center justify-between mb-8">
                  <h4 className="text-sm font-black uppercase tracking-widest text-gray-400 flex items-center gap-2"><Phone size={18} className="text-pink-600" /> Recepção Ativa</h4>
-                 <button onClick={clearCompleted} className="text-gray-300 hover:text-pink-500 transition-colors"><Trash2 size={24}/></button>
+                 <button onClick={() => { localStorage.removeItem('vilagi_completed_tasks'); setCompletedTasks([]); }} className="text-gray-300 hover:text-pink-500 transition-colors"><Trash2 size={24}/></button>
               </div>
               <div className="flex bg-gray-50 p-2 rounded-2xl mb-8 shadow-inner">
                  <button onClick={() => setActiveTab('pre')} className={`flex-1 py-4 rounded-xl text-xs font-black uppercase transition-all ${activeTab === 'pre' ? 'bg-white text-blue-600 shadow-md' : 'text-gray-400'}`}>Confirmar ({countPre})</button>
@@ -642,8 +498,8 @@ export default function DashboardPage() {
                             <span className="text-xs font-black bg-gray-200 px-3 py-1.5 rounded-lg text-gray-500">{format(new Date(task.time), 'dd/MM')}</span>
                         </div>
                         <div className="flex gap-3">
-                            <Button onClick={() => handleWhatsApp(task.mobile, task.message)} className={`flex-1 h-12 rounded-xl text-white font-black uppercase text-xs ${task.type === 'pre' ? 'bg-blue-500' : 'bg-purple-500'}`} title="Enviar WhatsApp"><MessageCircle size={18} className="mr-2"/> WhatsApp</Button>
-                            <Button onClick={() => handleCompleteTask(task.id)} variant="outline" className="h-12 w-12 p-0 rounded-xl border-gray-200 text-gray-400 hover:text-emerald-500" title="Concluir"><Check size={24}/></Button>
+                            <Button onClick={() => handleWhatsApp(task.mobile, task.message)} className="flex-1 h-12 rounded-xl text-white font-black uppercase text-xs bg-emerald-500 hover:bg-emerald-600"><MessageCircle size={18} className="mr-2"/> WhatsApp</Button>
+                            <Button onClick={() => handleCompleteTask(task.id)} variant="outline" className="h-12 w-12 p-0 rounded-xl border-gray-200 text-gray-400 hover:text-emerald-500"><Check size={24}/></Button>
                         </div>
                     </div>
                  ))}
